@@ -1,0 +1,566 @@
+#!/usr/bin/env node
+/**
+ * globant-sdlc studio — servidor local.
+ *
+ * Sin dependencias npm: solo built-ins de Node. En un entorno corporativo eso
+ * significa que no hay supply chain que revisar antes de que el equipo lo use.
+ *
+ *   node studio/server.mjs [--plugin <dir>] [--repo <dir>] [--port 4477]
+ *
+ * Escucha SOLO en 127.0.0.1. No exponerlo en una interfaz de red: el endpoint
+ * de run ejecuta el binario `claude` en la máquina donde corre.
+ */
+
+import http from 'node:http';
+import fs from 'node:fs';
+import fsp from 'node:fs/promises';
+import path from 'node:path';
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { randomUUID } from 'node:crypto';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = path.resolve(HERE, '..');
+
+// ---------------------------------------------------------------- argumentos
+
+function arg(name, fallback) {
+  const i = process.argv.indexOf(`--${name}`);
+  return i !== -1 && process.argv[i + 1] ? process.argv[i + 1] : fallback;
+}
+
+const PLUGIN_DIR = path.resolve(arg('plugin', path.join(REPO_ROOT, 'plugins/globant-sdlc')));
+const TARGET_REPO = path.resolve(arg('repo', process.env.GLOBANT_TARGET_REPO || process.cwd()));
+const PORT = Number(arg('port', 4477));
+const PUBLIC_DIR = path.join(HERE, 'public');
+
+// Extensiones editables. Todo lo demás es de solo lectura desde el studio.
+const EDITABLE = new Set(['.md', '.json', '.sh', '.yml', '.yaml']);
+
+// ------------------------------------------------------------------ helpers
+
+const json = (res, code, body) => {
+  const payload = JSON.stringify(body);
+  res.writeHead(code, {
+    'content-type': 'application/json; charset=utf-8',
+    'content-length': Buffer.byteLength(payload),
+    'cache-control': 'no-store',
+  });
+  res.end(payload);
+};
+
+/** Resuelve una ruta relativa contra el plugin y verifica que no se escape. */
+function safePath(rel) {
+  const abs = path.resolve(PLUGIN_DIR, rel);
+  const root = PLUGIN_DIR.endsWith(path.sep) ? PLUGIN_DIR : PLUGIN_DIR + path.sep;
+  if (abs !== PLUGIN_DIR && !abs.startsWith(root)) {
+    throw Object.assign(new Error('ruta fuera del plugin'), { code: 403 });
+  }
+  return abs;
+}
+
+async function readBody(req, limit = 2_000_000) {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > limit) throw Object.assign(new Error('body demasiado grande'), { code: 413 });
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+/**
+ * Parser de frontmatter para el subconjunto plano que usan estos archivos:
+ * `clave: valor` y listas inline `[a, b]`. No es YAML completo — si el archivo
+ * usa estructuras anidadas, el frontmatter se devuelve como texto crudo y la UI
+ * cae al editor plano.
+ */
+function parseFrontmatter(text) {
+  if (!text.startsWith('---')) return { data: null, raw: '', body: text, flat: true };
+  const end = text.indexOf('\n---', 3);
+  if (end === -1) return { data: null, raw: '', body: text, flat: true };
+
+  const raw = text.slice(4, end);
+  const body = text.slice(end + 4).replace(/^\n/, '');
+  const data = {};
+  let flat = true;
+
+  for (const line of raw.split('\n')) {
+    if (!line.trim() || line.trimStart().startsWith('#')) continue;
+    if (/^\s/.test(line)) { flat = false; continue; }
+    const m = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
+    if (!m) { flat = false; continue; }
+    let [, key, value] = m;
+    value = value.trim();
+    if (value.startsWith('[') && value.endsWith(']')) {
+      data[key] = value.slice(1, -1).split(',').map(s => s.trim()).filter(Boolean);
+    } else {
+      data[key] = value.replace(/^["']|["']$/g, '');
+    }
+  }
+  return { data, raw, body, flat };
+}
+
+const listDir = async (dir, filter = () => true) => {
+  try {
+    return (await fsp.readdir(dir, { withFileTypes: true }))
+      .filter(d => d.isFile() && filter(d.name))
+      .map(d => d.name)
+      .sort();
+  } catch { return []; }
+};
+
+// ---------------------------------------------------------- escaneo del plugin
+
+async function scanPlugin() {
+  const rel = p => path.relative(PLUGIN_DIR, p).split(path.sep).join('/');
+  const out = {
+    pluginDir: PLUGIN_DIR,
+    targetRepo: TARGET_REPO,
+    manifest: null,
+    skills: [],
+    agents: [],
+    hooks: [],
+    scripts: [],
+    mcp: [],
+    problems: [],
+  };
+
+  // manifest
+  const manifestPath = path.join(PLUGIN_DIR, '.claude-plugin/plugin.json');
+  try {
+    out.manifest = {
+      path: rel(manifestPath),
+      data: JSON.parse(await fsp.readFile(manifestPath, 'utf8')),
+    };
+  } catch (e) {
+    out.problems.push(`No se pudo leer plugin.json: ${e.message}`);
+  }
+
+  // skills
+  const skillsDir = path.join(PLUGIN_DIR, 'skills');
+  let skillNames = [];
+  try {
+    skillNames = (await fsp.readdir(skillsDir, { withFileTypes: true }))
+      .filter(d => d.isDirectory()).map(d => d.name).sort();
+  } catch { /* sin skills */ }
+
+  for (const name of skillNames) {
+    const file = path.join(skillsDir, name, 'SKILL.md');
+    try {
+      const text = await fsp.readFile(file, 'utf8');
+      const fm = parseFrontmatter(text);
+      const refDir = path.join(skillsDir, name, 'references');
+      const refs = (await listDir(refDir)).map(f => ({
+        name: f, path: rel(path.join(refDir, f)),
+      }));
+      out.skills.push({
+        kind: 'skill',
+        name: fm.data?.name || name,
+        path: rel(file),
+        description: fm.data?.description || '',
+        bytes: Buffer.byteLength(text),
+        references: refs,
+      });
+    } catch (e) {
+      out.problems.push(`skills/${name}: ${e.message}`);
+    }
+  }
+
+  // agentes
+  const agentsDir = path.join(PLUGIN_DIR, 'agents');
+  for (const f of await listDir(agentsDir, n => n.endsWith('.md'))) {
+    const file = path.join(agentsDir, f);
+    try {
+      const fm = parseFrontmatter(await fsp.readFile(file, 'utf8'));
+      const d = fm.data || {};
+      const denied = Array.isArray(d.disallowedTools)
+        ? d.disallowedTools
+        : String(d.disallowedTools || '').split(',').map(s => s.trim()).filter(Boolean);
+      out.agents.push({
+        kind: 'agent',
+        name: d.name || f.replace(/\.md$/, ''),
+        path: rel(file),
+        description: d.description || '',
+        model: d.model || '(heredado)',
+        effort: d.effort || null,
+        maxTurns: d.maxTurns || null,
+        readOnly: denied.includes('Write') && denied.includes('Edit'),
+        disallowedTools: denied,
+      });
+    } catch (e) {
+      out.problems.push(`agents/${f}: ${e.message}`);
+    }
+  }
+
+  // hooks
+  const hooksPath = path.join(PLUGIN_DIR, 'hooks/hooks.json');
+  try {
+    const data = JSON.parse(await fsp.readFile(hooksPath, 'utf8'));
+    for (const [event, entries] of Object.entries(data.hooks || {})) {
+      for (const entry of entries) {
+        for (const h of entry.hooks || []) {
+          const cmd = String(h.command || '');
+          const scriptName = (cmd.match(/([A-Za-z0-9._-]+\.sh)/) || [])[1] || null;
+          out.hooks.push({
+            kind: 'hook',
+            event,
+            matcher: entry.matcher || '*',
+            description: h.description || '',
+            script: scriptName,
+            scriptPath: scriptName ? `scripts/${scriptName}` : null,
+            path: rel(hooksPath),
+          });
+        }
+      }
+    }
+  } catch (e) {
+    out.problems.push(`hooks.json: ${e.message}`);
+  }
+
+  // scripts
+  const scriptsDir = path.join(PLUGIN_DIR, 'scripts');
+  for (const f of await listDir(scriptsDir, n => n.endsWith('.sh'))) {
+    const file = path.join(scriptsDir, f);
+    let executable = false;
+    try { executable = ((await fsp.stat(file)).mode & 0o111) !== 0; } catch { /* noop */ }
+    out.scripts.push({ kind: 'script', name: f, path: rel(file), executable });
+    if (!executable) {
+      out.problems.push(`scripts/${f} no tiene permiso de ejecución — el hook no va a disparar`);
+    }
+  }
+
+  // mcp
+  try {
+    const data = JSON.parse(await fsp.readFile(path.join(PLUGIN_DIR, '.mcp.json'), 'utf8'));
+    for (const [name, cfg] of Object.entries(data.mcpServers || {})) {
+      out.mcp.push({
+        kind: 'mcp',
+        name,
+        transport: cfg.type || (cfg.command ? 'stdio' : 'desconocido'),
+        target: cfg.url || [cfg.command, ...(cfg.args || [])].filter(Boolean).join(' '),
+        path: '.mcp.json',
+      });
+    }
+  } catch { /* opcional */ }
+
+  return out;
+}
+
+// ------------------------------------------------------------------- runs
+
+/** Fases del skill `us`. El orden es el del SKILL.md. */
+const PHASES = [
+  { id: 0, key: 'resolver',       label: 'Resolver historia', gate: false },
+  { id: 1, key: 'refinamiento',   label: 'Refinamiento',      gate: true  },
+  { id: 2, key: 'arquitectura',   label: 'Arquitectura',      gate: true  },
+  { id: 3, key: 'implementacion', label: 'Implementación',    gate: false },
+  { id: 4, key: 'verificacion',   label: 'Verificación',      gate: false },
+  { id: 5, key: 'revision',       label: 'Revisión',          gate: false },
+  { id: 6, key: 'pr',             label: 'Pull Request',      gate: false },
+];
+
+const AGENT_PHASE = {
+  refinamiento: 1, arquitectura: 2, qa: 4, seguridad: 4, reviewer: 5,
+};
+
+const runs = new Map();
+
+function emit(run, event) {
+  run.events.push(event);
+  if (run.events.length > 3000) run.events.shift();
+  for (const res of run.clients) {
+    res.write(`data: ${JSON.stringify(event)}\n\n`);
+  }
+}
+
+/** Deriva la fase actual a partir de un evento del stream. Es inferencia. */
+function inferPhase(run, msg) {
+  const blocks = msg?.message?.content;
+  if (!Array.isArray(blocks)) return;
+
+  for (const b of blocks) {
+    if (b.type === 'tool_use') {
+      const name = b.name;
+      const input = b.input || {};
+
+      if (name === 'Task') {
+        const agent = String(input.subagent_type || input.agent || '').toLowerCase();
+        const phase = AGENT_PHASE[agent];
+        if (phase !== undefined) {
+          setPhase(run, phase, `@${agent}`);
+          emit(run, { t: 'agent', agent, phase, at: Date.now() });
+        }
+        continue;
+      }
+      if (name === 'Bash') {
+        const cmd = String(input.command || '');
+        if (cmd.includes('resolve-story.sh')) setPhase(run, 0, 'resolve-story.sh');
+        else if (/\b(gh pr create|az repos pr create|glab mr create)\b/.test(cmd)) setPhase(run, 6, 'abriendo PR');
+        continue;
+      }
+      if (['Write', 'Edit', 'MultiEdit', 'NotebookEdit'].includes(name)) {
+        if (run.phase !== null && run.phase < 3) setPhase(run, 3, 'implementando');
+      }
+    }
+
+    // Los agentes devuelven JSON con `verdict`. Un bloqueo detiene el run.
+    if (b.type === 'tool_result' || b.type === 'text') {
+      const text = typeof b.content === 'string' ? b.content
+        : typeof b.text === 'string' ? b.text
+        : Array.isArray(b.content) ? b.content.map(c => c.text || '').join('\n') : '';
+      if (/"verdict"\s*:\s*"BLOCKED"/.test(text)) {
+        run.blocked = { phase: 1, reason: 'La historia no pasó refinamiento' };
+        emit(run, { t: 'blocked', ...run.blocked, at: Date.now() });
+      } else if (/blast_radius\s*:?\s*"?high/i.test(text)) {
+        run.blocked = { phase: 2, reason: 'blast_radius alto — requiere revisión humana' };
+        emit(run, { t: 'blocked', ...run.blocked, at: Date.now() });
+      }
+    }
+  }
+}
+
+function setPhase(run, phase, detail) {
+  if (run.phase === phase) return;
+  run.phase = phase;
+  run.phaseHistory.push({ phase, detail, at: Date.now() });
+  emit(run, { t: 'phase', phase, detail, at: Date.now() });
+}
+
+/** Confirma el avance leyendo los artefactos que el flujo deja en disco. */
+async function pollArtifacts(run) {
+  const dir = path.join(TARGET_REPO, '.claude/run', run.storyId);
+  const map = [
+    ['story.json', 0], ['plan.md', 2], ['qa.json', 4],
+    ['security.json', 4], ['review.json', 5],
+  ];
+  for (const [file, phase] of map) {
+    if (run.artifacts[file]) continue;
+    try {
+      await fsp.access(path.join(dir, file));
+      run.artifacts[file] = true;
+      emit(run, { t: 'artifact', file, phase, at: Date.now() });
+    } catch { /* todavía no existe */ }
+  }
+}
+
+function startRun({ storyId, repoDir, permissionMode, extraFlags }) {
+  const id = randomUUID();
+  const prompt = `/us ${storyId}`;
+  const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose'];
+  if (permissionMode) args.push('--permission-mode', permissionMode);
+  if (extraFlags) args.push(...extraFlags.split(/\s+/).filter(Boolean));
+
+  const run = {
+    id, storyId, prompt, args, cwd: repoDir,
+    startedAt: Date.now(), status: 'running',
+    phase: null, phaseHistory: [], blocked: null,
+    artifacts: {}, events: [], clients: new Set(), child: null,
+  };
+  runs.set(id, run);
+
+  let child;
+  try {
+    child = spawn('claude', args, { cwd: repoDir, stdio: ['ignore', 'pipe', 'pipe'] });
+  } catch (e) {
+    run.status = 'error';
+    emit(run, { t: 'error', message: `No se pudo ejecutar \`claude\`: ${e.message}`, at: Date.now() });
+    return run;
+  }
+  run.child = child;
+
+  emit(run, { t: 'start', storyId, cwd: repoDir, cmd: `claude ${args.join(' ')}`, at: Date.now() });
+
+  child.on('error', (e) => {
+    run.status = 'error';
+    emit(run, {
+      t: 'error',
+      message: e.code === 'ENOENT'
+        ? 'No se encontró el binario `claude` en el PATH.'
+        : e.message,
+      at: Date.now(),
+    });
+  });
+
+  let buf = '';
+  child.stdout.on('data', async (chunk) => {
+    buf += chunk.toString('utf8');
+    const lines = buf.split('\n');
+    buf = lines.pop() || '';
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      let msg;
+      try { msg = JSON.parse(line); } catch { continue; }
+
+      if (msg.type === 'system' && msg.subtype === 'init') {
+        run.sessionId = msg.session_id || null;
+        emit(run, { t: 'init', sessionId: run.sessionId, at: Date.now() });
+      } else if (msg.type === 'assistant') {
+        inferPhase(run, msg);
+        const text = (msg.message?.content || [])
+          .filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
+        if (text) emit(run, { t: 'say', text: text.slice(0, 1200), at: Date.now() });
+      } else if (msg.type === 'user') {
+        inferPhase(run, msg);
+      } else if (msg.type === 'result') {
+        run.status = msg.is_error ? 'error' : 'done';
+        run.cost = msg.total_cost_usd ?? null;
+        run.turns = msg.num_turns ?? null;
+        emit(run, {
+          t: 'result',
+          status: run.status,
+          cost: run.cost,
+          turns: run.turns,
+          text: typeof msg.result === 'string' ? msg.result.slice(0, 4000) : null,
+          at: Date.now(),
+        });
+      }
+    }
+    await pollArtifacts(run);
+  });
+
+  child.stderr.on('data', (chunk) => {
+    emit(run, { t: 'stderr', text: chunk.toString('utf8').slice(0, 800), at: Date.now() });
+  });
+
+  child.on('close', (code) => {
+    if (run.status === 'running') run.status = code === 0 ? 'done' : 'error';
+    emit(run, { t: 'end', code, status: run.status, at: Date.now() });
+    for (const res of run.clients) res.end();
+    run.clients.clear();
+  });
+
+  return run;
+}
+
+// ----------------------------------------------------------------- servidor
+
+const MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.svg': 'image/svg+xml',
+};
+
+const server = http.createServer(async (req, res) => {
+  const url = new URL(req.url, `http://127.0.0.1:${PORT}`);
+  const p = url.pathname;
+
+  try {
+    // --- API ---
+    if (p === '/api/plugin' && req.method === 'GET') {
+      return json(res, 200, await scanPlugin());
+    }
+
+    if (p === '/api/phases' && req.method === 'GET') {
+      return json(res, 200, { phases: PHASES, agentPhase: AGENT_PHASE });
+    }
+
+    if (p === '/api/file' && req.method === 'GET') {
+      const abs = safePath(url.searchParams.get('path') || '');
+      const text = await fsp.readFile(abs, 'utf8');
+      const fm = parseFrontmatter(text);
+      return json(res, 200, {
+        path: url.searchParams.get('path'),
+        content: text,
+        editable: EDITABLE.has(path.extname(abs)),
+        frontmatter: fm.flat ? fm.data : null,
+        body: fm.flat && fm.data ? fm.body : null,
+      });
+    }
+
+    if (p === '/api/file' && req.method === 'PUT') {
+      const { path: rel, content } = JSON.parse(await readBody(req));
+      const abs = safePath(rel || '');
+      if (!EDITABLE.has(path.extname(abs))) {
+        return json(res, 403, { error: 'Tipo de archivo no editable desde el studio' });
+      }
+      const before = await fsp.stat(abs).catch(() => null);
+      await fsp.writeFile(abs, content, 'utf8');
+      if (before) await fsp.chmod(abs, before.mode); // preserva el bit +x
+      return json(res, 200, { ok: true, bytes: Buffer.byteLength(content) });
+    }
+
+    if (p === '/api/validate' && req.method === 'POST') {
+      const out = await new Promise((resolve) => {
+        const c = spawn('claude', ['plugin', 'validate', PLUGIN_DIR, '--strict'], { cwd: REPO_ROOT });
+        let stdout = '', stderr = '';
+        c.stdout.on('data', d => stdout += d);
+        c.stderr.on('data', d => stderr += d);
+        c.on('error', e => resolve({ code: -1, stdout: '', stderr: e.code === 'ENOENT'
+          ? 'No se encontró el binario `claude` en el PATH.' : e.message }));
+        c.on('close', code => resolve({ code, stdout, stderr }));
+      });
+      return json(res, 200, out);
+    }
+
+    if (p === '/api/run' && req.method === 'POST') {
+      const body = JSON.parse(await readBody(req));
+      const storyId = String(body.storyId || '').trim();
+      if (!/^#?[A-Za-z0-9-]{1,40}$/.test(storyId)) {
+        return json(res, 400, { error: 'ID de historia inválido' });
+      }
+      const repoDir = path.resolve(body.repoDir || TARGET_REPO);
+      if (!fs.existsSync(repoDir)) {
+        return json(res, 400, { error: `El directorio no existe: ${repoDir}` });
+      }
+      const run = startRun({
+        storyId,
+        repoDir,
+        permissionMode: body.permissionMode || null,
+        extraFlags: body.extraFlags || '',
+      });
+      return json(res, 200, { runId: run.id, cmd: `claude ${run.args.join(' ')}`, cwd: repoDir });
+    }
+
+    let m = p.match(/^\/api\/run\/([\w-]+)\/stream$/);
+    if (m && req.method === 'GET') {
+      const run = runs.get(m[1]);
+      if (!run) return json(res, 404, { error: 'run no encontrado' });
+      res.writeHead(200, {
+        'content-type': 'text/event-stream; charset=utf-8',
+        'cache-control': 'no-cache',
+        connection: 'keep-alive',
+      });
+      for (const ev of run.events) res.write(`data: ${JSON.stringify(ev)}\n\n`);
+      if (run.status === 'running') {
+        run.clients.add(res);
+        req.on('close', () => run.clients.delete(res));
+      } else {
+        res.end();
+      }
+      return;
+    }
+
+    m = p.match(/^\/api\/run\/([\w-]+)\/stop$/);
+    if (m && req.method === 'POST') {
+      const run = runs.get(m[1]);
+      if (!run) return json(res, 404, { error: 'run no encontrado' });
+      run.child?.kill('SIGTERM');
+      run.status = 'stopped';
+      emit(run, { t: 'end', code: null, status: 'stopped', at: Date.now() });
+      return json(res, 200, { ok: true });
+    }
+
+    // --- estáticos ---
+    const file = p === '/' ? 'index.html' : p.replace(/^\//, '');
+    const abs = path.resolve(PUBLIC_DIR, file);
+    if (!abs.startsWith(PUBLIC_DIR)) { res.writeHead(403); return res.end(); }
+    const data = await fsp.readFile(abs);
+    res.writeHead(200, { 'content-type': MIME[path.extname(abs)] || 'application/octet-stream' });
+    return res.end(data);
+
+  } catch (e) {
+    if (e.code === 'ENOENT') { res.writeHead(404); return res.end('no encontrado'); }
+    return json(res, typeof e.code === 'number' ? e.code : 500, { error: e.message });
+  }
+});
+
+server.listen(PORT, '127.0.0.1', () => {
+  console.log(`\n  globant-sdlc studio`);
+  console.log(`  ───────────────────────────────────────────`);
+  console.log(`  plugin : ${PLUGIN_DIR}`);
+  console.log(`  repo   : ${TARGET_REPO}`);
+  console.log(`  url    : http://127.0.0.1:${PORT}\n`);
+});

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "globant",
+  "description": "Marketplace interno de Globant: plugins de ciclo de desarrollo asistido por agentes.",
+  "owner": {
+    "name": "Globant - Tech Direction",
+    "email": "tech-direction@globant.com"
+  },
+  "plugins": [
+    {
+      "name": "globant-sdlc",
+      "description": "Ciclo de desarrollo de punta a punta desde el ID de una historia de usuario: refinamiento, arquitectura, implementacion, QA, seguridad y PR.",
+      "source": "./plugins/globant-sdlc",
+      "category": "development",
+      "tags": ["sdlc", "agents", "qa", "security"]
+    }
+  ]
+}

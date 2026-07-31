@@ -1,0 +1,636 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>globant-sdlc · studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --panel:#14161a; --raised:#1b1f26; --sunk:#0f1114; --edge:#272d36;
+  --track:#5c6675; --bone:#e8e6e1; --dim:#949ba6;
+  --clear:#3fb984; --caution:#e8a33d; --danger:#e05252;
+  --display:"Barlow Condensed","Arial Narrow",sans-serif;
+  --body:"IBM Plex Sans",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;background:var(--panel);color:var(--bone);
+  font-family:var(--body);font-size:14px;line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--bone);outline-offset:2px}
+
+/* ---------- rail superior ---------- */
+.rail{
+  display:flex;align-items:center;gap:20px;
+  padding:0 20px;height:56px;
+  background:var(--sunk);border-bottom:1px solid var(--edge);
+}
+.brand{font-family:var(--display);font-weight:700;font-size:20px;
+  letter-spacing:.14em;text-transform:uppercase;white-space:nowrap}
+.brand span{color:var(--dim)}
+.rail-meta{font-family:var(--mono);font-size:11px;color:var(--dim);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.rail-actions{display:flex;gap:8px;flex-shrink:0}
+
+.btn{
+  background:transparent;border:1px solid var(--edge);color:var(--bone);
+  padding:6px 14px;border-radius:2px;cursor:pointer;
+  font-family:var(--display);font-size:14px;font-weight:600;
+  letter-spacing:.1em;text-transform:uppercase;
+  transition:background .12s,border-color .12s;
+}
+.btn:hover:not(:disabled){background:var(--raised);border-color:var(--track)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn.lit{background:var(--bone);color:var(--panel);border-color:var(--bone)}
+.btn.lit:hover:not(:disabled){background:#fff}
+.btn.stop{border-color:var(--danger);color:var(--danger)}
+
+/* ---------- grilla ---------- */
+.grid{display:grid;grid-template-columns:340px 1fr;height:calc(100% - 56px)}
+.spine{
+  border-right:1px solid var(--edge);overflow-y:auto;
+  background:linear-gradient(180deg,var(--panel),var(--sunk));
+}
+.inspector{overflow:hidden;display:flex;flex-direction:column;min-width:0}
+
+/* ---------- consola de run ---------- */
+.console{padding:16px 20px;border-bottom:1px solid var(--edge);background:var(--sunk)}
+.console-row{display:flex;gap:8px;align-items:center}
+.field{
+  background:var(--panel);border:1px solid var(--edge);color:var(--bone);
+  padding:7px 10px;border-radius:2px;font-family:var(--mono);font-size:12px;min-width:0;
+}
+.field:focus{border-color:var(--track);outline:none}
+#story{flex:1;font-size:14px;letter-spacing:.04em}
+.console-adv{display:flex;gap:8px;margin-top:8px}
+.console-adv .field{flex:1}
+.hint{font-size:11px;color:var(--dim);margin-top:8px;font-family:var(--mono)}
+
+/* ---------- spine ---------- */
+.section-label{
+  font-family:var(--display);font-size:12px;font-weight:600;letter-spacing:.2em;
+  text-transform:uppercase;color:var(--dim);
+  padding:18px 20px 10px;
+}
+.phase{
+  position:relative;padding:0 20px 0 52px;min-height:62px;
+}
+/* la vía: segmento vertical entre lámparas */
+.phase::before{
+  content:"";position:absolute;left:26px;top:0;bottom:0;width:2px;
+  background:var(--edge);
+}
+.phase:first-of-type::before{top:22px}
+.phase:last-of-type::before{bottom:auto;height:22px}
+.phase[data-state="done"]::before{background:var(--clear)}
+.phase[data-state="active"]::before{
+  background:linear-gradient(180deg,var(--clear) 0 50%,var(--edge) 50% 100%);
+}
+.phase[data-state="blocked"]::before{
+  background:linear-gradient(180deg,var(--danger) 0 50%,var(--edge) 50% 100%);
+}
+/* la lámpara */
+.lamp{
+  position:absolute;left:20px;top:16px;width:14px;height:14px;border-radius:50%;
+  background:var(--sunk);border:2px solid var(--track);
+}
+.phase[data-state="done"] .lamp{background:var(--clear);border-color:var(--clear)}
+.phase[data-state="blocked"] .lamp{background:var(--danger);border-color:var(--danger)}
+.phase[data-state="active"] .lamp{
+  background:var(--caution);border-color:var(--caution);
+  animation:pulse 1.4s ease-in-out infinite;
+}
+@keyframes pulse{
+  0%,100%{box-shadow:0 0 0 0 rgba(232,163,61,.55)}
+  50%{box-shadow:0 0 0 7px rgba(232,163,61,0)}
+}
+/* barra de gantry: marca las fases que pueden abortar el run */
+.phase[data-gate="1"] .lamp::after{
+  content:"";position:absolute;left:-7px;top:4px;width:24px;height:2px;
+  background:var(--track);
+}
+.phase[data-gate="1"][data-state="blocked"] .lamp::after{background:var(--danger)}
+
+.phase-head{display:flex;align-items:baseline;gap:8px;padding-top:12px}
+.phase-num{font-family:var(--mono);font-size:11px;color:var(--dim)}
+.phase-name{
+  font-family:var(--display);font-size:16px;font-weight:600;
+  letter-spacing:.08em;text-transform:uppercase;
+}
+.phase[data-state="idle"] .phase-name{color:var(--dim)}
+.phase-note{font-family:var(--mono);font-size:10px;color:var(--caution);margin-left:auto}
+
+.chips{display:flex;flex-wrap:wrap;gap:5px;padding:6px 0 14px}
+.chip{
+  display:inline-flex;align-items:center;gap:5px;
+  background:var(--raised);border:1px solid var(--edge);border-radius:2px;
+  padding:3px 8px;font-family:var(--mono);font-size:11px;color:var(--bone);
+  cursor:pointer;transition:background .12s,border-color .12s;
+}
+.chip:hover{border-color:var(--track);background:#222831}
+.chip[aria-pressed="true"]{background:var(--bone);color:var(--panel);border-color:var(--bone)}
+.chip .ro{color:var(--dim);font-size:9px;letter-spacing:.08em}
+.chip[aria-pressed="true"] .ro{color:#5a6270}
+.chip.warn{border-color:var(--danger)}
+
+/* enclavamiento: los hooks no son secuenciales, no llevan número */
+.interlock{margin:8px 20px 28px;border:1px solid var(--edge);border-radius:2px;
+  background:var(--raised)}
+.interlock-row{
+  display:flex;align-items:center;gap:8px;padding:8px 10px;
+  border-bottom:1px solid var(--edge);cursor:pointer;
+}
+.interlock-row:last-child{border-bottom:none}
+.interlock-row:hover{background:#222831}
+.interlock-row .dot{width:6px;height:6px;border-radius:50%;background:var(--clear);flex-shrink:0}
+.interlock-row .ev{font-family:var(--mono);font-size:10px;color:var(--dim);flex-shrink:0}
+.interlock-row .desc{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ---------- inspector ---------- */
+.tabs{display:flex;border-bottom:1px solid var(--edge);background:var(--sunk);flex-shrink:0}
+.tab{
+  background:transparent;border:none;border-bottom:2px solid transparent;
+  padding:12px 20px;cursor:pointer;
+  font-family:var(--display);font-size:14px;font-weight:600;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--dim);
+}
+.tab[aria-selected="true"]{color:var(--bone);border-bottom-color:var(--bone)}
+.tab-badge{
+  display:inline-block;margin-left:6px;padding:0 5px;border-radius:2px;
+  background:var(--caution);color:var(--panel);
+  font-family:var(--mono);font-size:9px;vertical-align:2px;
+}
+.pane{flex:1;overflow-y:auto;display:none;min-height:0}
+.pane[data-active="1"]{display:flex;flex-direction:column}
+
+.empty{
+  margin:auto;padding:40px;text-align:center;color:var(--dim);max-width:380px;
+}
+.empty h2{font-family:var(--display);font-size:20px;font-weight:600;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--bone);margin:0 0 8px}
+.empty p{margin:0;font-size:13px}
+
+/* editor */
+.ed-head{padding:16px 20px 12px;border-bottom:1px solid var(--edge);flex-shrink:0}
+.ed-path{font-family:var(--mono);font-size:12px;color:var(--dim)}
+.ed-title{font-family:var(--display);font-size:22px;font-weight:600;
+  letter-spacing:.06em;text-transform:uppercase;margin:2px 0 0}
+.fm{padding:14px 20px;border-bottom:1px solid var(--edge);
+  display:grid;grid-template-columns:120px 1fr;gap:8px 14px;align-items:center;flex-shrink:0}
+.fm-key{font-family:var(--mono);font-size:11px;color:var(--dim);text-align:right}
+.fm .field{width:100%}
+.ed-body{flex:1;display:flex;flex-direction:column;padding:14px 20px 0;min-height:0}
+.ed-body textarea{
+  flex:1;width:100%;resize:none;background:var(--sunk);
+  border:1px solid var(--edge);border-radius:2px;padding:14px;
+  font-family:var(--mono);font-size:12.5px;line-height:1.65;tab-size:2;
+}
+.ed-body textarea:focus{border-color:var(--track);outline:none}
+.ed-foot{display:flex;align-items:center;gap:12px;padding:12px 20px;flex-shrink:0}
+.dirty{font-family:var(--mono);font-size:11px;color:var(--caution);margin-right:auto}
+.dirty:empty{margin-right:auto}
+
+/* log */
+.log{flex:1;overflow-y:auto;padding:14px 20px;font-family:var(--mono);font-size:12px}
+.ev{display:flex;gap:10px;padding:3px 0;border-bottom:1px solid rgba(39,45,54,.5)}
+.ev-t{color:var(--dim);flex-shrink:0;font-size:11px}
+.ev-k{flex-shrink:0;width:74px;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--track)}
+.ev-m{white-space:pre-wrap;word-break:break-word;min-width:0}
+.ev[data-k="phase"] .ev-k,.ev[data-k="agent"] .ev-k{color:var(--caution)}
+.ev[data-k="blocked"] .ev-k,.ev[data-k="error"] .ev-k,.ev[data-k="stderr"] .ev-k{color:var(--danger)}
+.ev[data-k="result"] .ev-k,.ev[data-k="artifact"] .ev-k{color:var(--clear)}
+
+.banner{padding:10px 20px;font-family:var(--mono);font-size:12px;flex-shrink:0}
+.banner.err{background:rgba(224,82,82,.12);color:var(--danger);
+  border-bottom:1px solid rgba(224,82,82,.3)}
+.banner.ok{background:rgba(63,185,132,.1);color:var(--clear);
+  border-bottom:1px solid rgba(63,185,132,.3)}
+
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+@media (max-width:900px){
+  .grid{grid-template-columns:1fr;grid-template-rows:auto 1fr;height:auto}
+  .spine{border-right:none;border-bottom:1px solid var(--edge);max-height:50vh}
+}
+</style>
+</head>
+<body>
+
+<div class="rail">
+  <div class="brand">globant<span>·</span>sdlc <span>studio</span></div>
+  <div class="rail-meta" id="railMeta">cargando…</div>
+  <div class="rail-actions">
+    <button class="btn" id="btnValidate">Validar</button>
+    <button class="btn" id="btnReload">Recargar</button>
+  </div>
+</div>
+
+<div class="grid">
+  <!-- ---------------- spine ---------------- -->
+  <aside class="spine">
+    <div class="section-label">Ciclo · skill /us</div>
+    <div id="phases"></div>
+    <div class="section-label">Enclavamiento · siempre activo</div>
+    <div class="interlock" id="interlock"></div>
+    <div class="section-label">Fuentes de historia</div>
+    <div class="interlock" id="mcp"></div>
+  </aside>
+
+  <!-- ---------------- inspector ---------------- -->
+  <main class="inspector">
+    <div class="console">
+      <div class="console-row">
+        <input class="field" id="story" placeholder="ID de historia — GLOB-1234, 8891, #245" autocomplete="off">
+        <button class="btn lit" id="btnRun">Ejecutar</button>
+        <button class="btn stop" id="btnStop" disabled>Detener</button>
+      </div>
+      <div class="console-adv">
+        <input class="field" id="repoDir" placeholder="Repo objetivo (ruta absoluta)">
+        <select class="field" id="permMode" style="flex:0 0 190px">
+          <option value="">Permisos: por defecto</option>
+          <option value="acceptEdits">Permisos: acceptEdits</option>
+        </select>
+        <input class="field" id="extraFlags" placeholder="Flags extra" style="flex:0 0 160px">
+      </div>
+      <div class="hint" id="cmdHint"></div>
+    </div>
+
+    <div class="tabs">
+      <button class="tab" id="tabEditor" aria-selected="true">Componente</button>
+      <button class="tab" id="tabLog" aria-selected="false">Ejecución<span class="tab-badge" id="logBadge" hidden></span></button>
+    </div>
+
+    <section class="pane" id="paneEditor" data-active="1">
+      <div class="empty" id="edEmpty">
+        <h2>Elegí un componente</h2>
+        <p>Cada chip del ciclo es un archivo real del plugin. Al abrirlo se edita en disco: lo que guardes acá es lo que va a correr.</p>
+      </div>
+      <div id="edView" hidden style="display:flex;flex-direction:column;flex:1;min-height:0">
+        <div class="ed-head">
+          <div class="ed-path" id="edPath"></div>
+          <h2 class="ed-title" id="edTitle"></h2>
+        </div>
+        <div class="fm" id="edFm"></div>
+        <div class="ed-body"><textarea id="edText" spellcheck="false"></textarea></div>
+        <div class="ed-foot">
+          <span class="dirty" id="edDirty"></span>
+          <button class="btn" id="btnRevert">Descartar</button>
+          <button class="btn lit" id="btnSave">Guardar</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="pane" id="paneLog">
+      <div class="log" id="log"></div>
+    </section>
+  </main>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const api = async (url, opts) => {
+  const r = await fetch(url, opts);
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+  return d;
+};
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const hhmm = ts => new Date(ts).toTimeString().slice(0, 8);
+
+// Cada fase declara qué componentes le pertenecen. Es lo que une el plugin
+// en disco con el ciclo que describe el SKILL.md.
+const PHASE_PARTS = {
+  0: { scripts: ['resolve-story.sh'], skills: ['us'] },
+  1: { agents: ['refinamiento'] },
+  2: { agents: ['arquitectura'] },
+  3: { agents: [] },
+  4: { agents: ['qa', 'seguridad'] },
+  5: { agents: ['reviewer'] },
+  6: { agents: [] },
+};
+
+let PLUGIN = null, PHASES = [], current = null, original = '', run = null, es = null;
+
+/* ------------------------------------------------------ carga del plugin */
+
+async function load() {
+  const [plugin, ph] = await Promise.all([api('/api/plugin'), api('/api/phases')]);
+  PLUGIN = plugin; PHASES = ph.phases;
+
+  $('railMeta').textContent = `${plugin.pluginDir}  →  ${plugin.targetRepo}`;
+  if (!$('repoDir').value) $('repoDir').value = plugin.targetRepo;
+
+  renderPhases();
+  renderInterlock();
+  renderMcp();
+
+  if (plugin.problems.length) {
+    banner('err', plugin.problems.join(' · '));
+  }
+}
+
+function renderPhases() {
+  const byName = (arr, n) => arr.find(x => x.name === n);
+  $('phases').innerHTML = PHASES.map(p => {
+    const parts = PHASE_PARTS[p.id] || {};
+    const chips = [];
+
+    for (const n of parts.skills || []) {
+      const s = byName(PLUGIN.skills, n);
+      if (s) chips.push(chip(s.path, `/${s.name}`, ''));
+      for (const r of s?.references || []) chips.push(chip(r.path, r.name, ''));
+    }
+    for (const n of parts.agents || []) {
+      const a = byName(PLUGIN.agents, n);
+      if (a) chips.push(chip(a.path, `@${a.name}`, a.readOnly ? 'audita' : 'escribe'));
+    }
+    for (const n of parts.scripts || []) {
+      const s = PLUGIN.scripts.find(x => x.name === n);
+      if (s) chips.push(chip(s.path, s.name, s.executable ? '' : 'sin +x', !s.executable));
+    }
+
+    return `<div class="phase" data-phase="${p.id}" data-state="idle" data-gate="${p.gate ? 1 : 0}">
+      <span class="lamp"></span>
+      <div class="phase-head">
+        <span class="phase-num">${String(p.id).padStart(2, '0')}</span>
+        <span class="phase-name">${esc(p.label)}</span>
+        <span class="phase-note" data-note></span>
+      </div>
+      <div class="chips">${chips.join('')}</div>
+    </div>`;
+  }).join('');
+
+  $('phases').querySelectorAll('.chip').forEach(c =>
+    c.addEventListener('click', () => open(c.dataset.path)));
+}
+
+const chip = (path, label, tag, warn) =>
+  `<button class="chip${warn ? ' warn' : ''}" data-path="${esc(path)}" aria-pressed="false">
+     ${esc(label)}${tag ? `<span class="ro">${esc(tag)}</span>` : ''}
+   </button>`;
+
+function renderInterlock() {
+  $('interlock').innerHTML = PLUGIN.hooks.map(h => `
+    <div class="interlock-row" data-path="${esc(h.scriptPath || h.path)}">
+      <span class="dot"></span>
+      <span class="ev">${esc(h.event)}</span>
+      <span class="desc">${esc(h.description || h.matcher)}</span>
+    </div>`).join('') || '<div class="interlock-row"><span class="desc">Sin hooks</span></div>';
+
+  $('interlock').querySelectorAll('[data-path]').forEach(r =>
+    r.addEventListener('click', () => open(r.dataset.path)));
+}
+
+function renderMcp() {
+  $('mcp').innerHTML = PLUGIN.mcp.map(m => `
+    <div class="interlock-row" data-path=".mcp.json">
+      <span class="dot"></span>
+      <span class="ev">${esc(m.transport)}</span>
+      <span class="desc">${esc(m.name)} — ${esc(m.target)}</span>
+    </div>`).join('') || '<div class="interlock-row"><span class="desc">Sin MCP configurado</span></div>';
+
+  $('mcp').querySelectorAll('[data-path]').forEach(r =>
+    r.addEventListener('click', () => open(r.dataset.path)));
+}
+
+/* ------------------------------------------------------------- editor */
+
+async function open(path) {
+  if (current && $('edText').value !== original &&
+      !confirm('Hay cambios sin guardar. ¿Descartarlos?')) return;
+
+  const f = await api('/api/file?path=' + encodeURIComponent(path));
+  current = f; original = f.content;
+
+  document.querySelectorAll('.chip').forEach(c =>
+    c.setAttribute('aria-pressed', String(c.dataset.path === path)));
+
+  $('edEmpty').hidden = true; $('edView').hidden = false;
+  $('edPath').textContent = path;
+  $('edTitle').textContent = (f.frontmatter?.name) || path.split('/').pop();
+
+  // El frontmatter son los campos que realmente se tocan al ajustar un agente,
+  // así que van como campos, no perdidos dentro del texto.
+  const fm = f.frontmatter;
+  $('edFm').innerHTML = fm
+    ? Object.entries(fm).map(([k, v]) => `
+        <label class="fm-key" for="fm-${k}">${esc(k)}</label>
+        <input class="field" id="fm-${k}" data-fm="${esc(k)}"
+               value="${esc(Array.isArray(v) ? v.join(', ') : v)}">`).join('')
+    : '';
+  $('edFm').style.display = fm ? 'grid' : 'none';
+
+  $('edText').value = fm ? f.body : f.content;
+  $('edText').readOnly = !f.editable;
+  $('btnSave').disabled = !f.editable;
+  markDirty();
+
+  $('edFm').querySelectorAll('input').forEach(i => i.addEventListener('input', markDirty));
+  selectTab('editor');
+}
+
+function compose() {
+  if (!current) return '';
+  if (!current.frontmatter) return $('edText').value;
+  const lines = [...$('edFm').querySelectorAll('input')].map(i => {
+    const k = i.dataset.fm, v = i.value.trim();
+    const wasArray = Array.isArray(current.frontmatter[k]);
+    return `${k}: ${wasArray ? `[${v}]` : v}`;
+  });
+  return `---\n${lines.join('\n')}\n---\n\n${$('edText').value}`;
+}
+
+function markDirty() {
+  const dirty = current && compose() !== original;
+  $('edDirty').textContent = dirty ? '● sin guardar' : '';
+  $('btnRevert').disabled = !dirty;
+}
+
+$('edText').addEventListener('input', markDirty);
+$('edText').addEventListener('keydown', e => {
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    const t = e.target, s = t.selectionStart;
+    t.value = t.value.slice(0, s) + '  ' + t.value.slice(t.selectionEnd);
+    t.selectionStart = t.selectionEnd = s + 2;
+    markDirty();
+  }
+});
+
+$('btnSave').addEventListener('click', save);
+$('btnRevert').addEventListener('click', () => current && open(current.path));
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); save(); }
+});
+
+async function save() {
+  if (!current || !current.editable) return;
+  const content = compose();
+  try {
+    await api('/api/file', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ path: current.path, content }),
+    });
+    original = content; markDirty();
+    banner('ok', `Guardado ${current.path} — reiniciá Claude Code o corré /reload-plugins para que tome efecto`);
+    load();
+  } catch (e) {
+    banner('err', `No se pudo guardar: ${e.message}`);
+  }
+}
+
+/* --------------------------------------------------------------- run */
+
+$('btnRun').addEventListener('click', start);
+$('story').addEventListener('keydown', e => e.key === 'Enter' && start());
+$('btnStop').addEventListener('click', async () => {
+  if (run) await api(`/api/run/${run}/stop`, { method: 'POST' }).catch(() => {});
+});
+
+async function start() {
+  const storyId = $('story').value.trim();
+  if (!storyId) return $('story').focus();
+
+  resetPhases();
+  $('log').innerHTML = '';
+  selectTab('log');
+
+  try {
+    const r = await api('/api/run', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        storyId,
+        repoDir: $('repoDir').value.trim(),
+        permissionMode: $('permMode').value,
+        extraFlags: $('extraFlags').value.trim(),
+      }),
+    });
+    run = r.runId;
+    $('cmdHint').textContent = `${r.cmd}   ·   cwd ${r.cwd}`;
+    $('btnRun').disabled = true; $('btnStop').disabled = false;
+
+    es?.close();
+    es = new EventSource(`/api/run/${run}/stream`);
+    es.onmessage = e => onEvent(JSON.parse(e.data));
+    es.onerror = () => { es.close(); finish(); };
+  } catch (e) {
+    banner('err', e.message);
+  }
+}
+
+function onEvent(ev) {
+  logEvent(ev);
+  const el = i => $('phases').querySelector(`.phase[data-phase="${i}"]`);
+
+  if (ev.t === 'phase' || ev.t === 'agent') {
+    const i = ev.phase;
+    for (let k = 0; k < i; k++) {
+      const p = el(k);
+      if (p && p.dataset.state !== 'blocked') p.dataset.state = 'done';
+    }
+    const p = el(i);
+    if (p && p.dataset.state !== 'blocked') {
+      p.dataset.state = 'active';
+      p.querySelector('[data-note]').textContent = ev.detail || ev.agent || '';
+    }
+  }
+  if (ev.t === 'blocked') {
+    const p = el(ev.phase);
+    if (p) { p.dataset.state = 'blocked'; p.querySelector('[data-note]').textContent = 'detenido'; }
+    banner('err', `Run detenido en fase ${ev.phase}: ${ev.reason}`);
+  }
+  if (ev.t === 'artifact') {
+    const p = el(ev.phase);
+    if (p && p.dataset.state === 'idle') p.dataset.state = 'done';
+  }
+  if (ev.t === 'result') {
+    if (ev.status === 'done' && !$('phases').querySelector('[data-state="blocked"]')) {
+      $('phases').querySelectorAll('.phase').forEach(p => p.dataset.state = 'done');
+    }
+    const bits = [ev.turns != null ? `${ev.turns} turnos` : null,
+                  ev.cost != null ? `US$ ${ev.cost.toFixed(4)}` : null].filter(Boolean);
+    if (bits.length) banner(ev.status === 'done' ? 'ok' : 'err', bits.join(' · '));
+  }
+  if (ev.t === 'end' || ev.t === 'error') finish();
+}
+
+function logEvent(ev) {
+  const msg = ev.text || ev.message || ev.reason || ev.detail || ev.file ||
+              ev.cmd || ev.agent || ev.status || '';
+  const row = document.createElement('div');
+  row.className = 'ev'; row.dataset.k = ev.t;
+  row.innerHTML = `<span class="ev-t">${hhmm(ev.at)}</span>
+                   <span class="ev-k">${esc(ev.t)}</span>
+                   <span class="ev-m">${esc(msg)}</span>`;
+  $('log').append(row);
+  $('log').scrollTop = $('log').scrollHeight;
+
+  if ($('paneLog').dataset.active !== '1') {
+    $('logBadge').hidden = false;
+    $('logBadge').textContent = '●';
+  }
+}
+
+function finish() {
+  $('btnRun').disabled = false; $('btnStop').disabled = true;
+  $('phases').querySelectorAll('[data-state="active"]').forEach(p => {
+    if (!$('phases').querySelector('[data-state="blocked"]')) p.dataset.state = 'done';
+  });
+  es?.close(); es = null;
+}
+
+function resetPhases() {
+  $('phases').querySelectorAll('.phase').forEach(p => {
+    p.dataset.state = 'idle';
+    p.querySelector('[data-note]').textContent = '';
+  });
+}
+
+/* --------------------------------------------------------- misceláneo */
+
+function selectTab(which) {
+  const isEd = which === 'editor';
+  $('tabEditor').setAttribute('aria-selected', String(isEd));
+  $('tabLog').setAttribute('aria-selected', String(!isEd));
+  $('paneEditor').dataset.active = isEd ? '1' : '0';
+  $('paneLog').dataset.active = isEd ? '0' : '1';
+  if (!isEd) $('logBadge').hidden = true;
+}
+$('tabEditor').addEventListener('click', () => selectTab('editor'));
+$('tabLog').addEventListener('click', () => selectTab('log'));
+
+function banner(kind, text) {
+  document.querySelectorAll('.banner').forEach(b => b.remove());
+  const b = document.createElement('div');
+  b.className = `banner ${kind}`;
+  b.textContent = text;
+  document.querySelector('.tabs').after(b);
+  if (kind === 'ok') setTimeout(() => b.remove(), 6000);
+}
+
+$('btnReload').addEventListener('click', () => load());
+$('btnValidate').addEventListener('click', async () => {
+  $('btnValidate').disabled = true;
+  try {
+    const r = await api('/api/validate', { method: 'POST' });
+    const out = (r.stdout + r.stderr).trim();
+    banner(r.code === 0 ? 'ok' : 'err', out || (r.code === 0 ? 'Plugin válido' : 'Validación falló'));
+  } catch (e) {
+    banner('err', e.message);
+  } finally {
+    $('btnValidate').disabled = false;
+  }
+});
+
+load().catch(e => banner('err', e.message));
+</script>
+</body>
+</html>
