@@ -145,10 +145,17 @@ button,input,select,textarea{font:inherit;color:inherit}
   background:var(--raised)}
 .interlock-row{
   display:flex;align-items:center;gap:8px;padding:8px 10px;
-  border-bottom:1px solid var(--edge);cursor:pointer;
+  border-bottom:1px solid var(--edge);
 }
 .interlock-row:last-child{border-bottom:none}
-.interlock-row:hover{background:#222831}
+/* Cada destino es su propio botón: una fila puede referirse a dos componentes
+   distintos —el hook y el script que ejecuta— y cada uno abre lo que dice ser. */
+.row-btn{
+  display:inline-flex;align-items:center;gap:6px;flex-shrink:0;
+  background:none;border:none;padding:2px 4px;border-radius:2px;cursor:pointer;
+}
+.row-btn:hover{background:#2b323d}
+.row-btn.tail{margin-left:auto}
 .interlock-row .dot{width:6px;height:6px;border-radius:50%;background:var(--clear);flex-shrink:0}
 .interlock-row .ev{font-family:var(--mono);font-size:10px;color:var(--dim);flex-shrink:0}
 .interlock-row .desc{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -609,7 +616,8 @@ function renderPhases() {
 
     for (const n of parts.skills || []) {
       const s = byName(PLUGIN.skills, n);
-      if (s) chips.push(chip({ path: s.path, label: `/${s.name}`, kind: 'skill' }));
+      // El label es el comando real: las skills de un plugin van calificadas.
+      if (s) chips.push(chip({ path: s.path, label: `/${s.command || s.name}`, kind: 'skill' }));
       for (const r of s?.references || []) {
         chips.push(chip({ path: r.path, label: r.name, kind: 'reference' }));
       }
@@ -618,6 +626,7 @@ function renderPhases() {
       const a = byName(PLUGIN.agents, n);
       if (a) chips.push(chip({
         path: a.path, label: `@${a.name}`, kind: 'agent',
+        full: `@${a.qualifiedName || a.name}`, // el nombre completo, en el tooltip
         tag: a.readOnly ? 'solo audita' : 'escribe',
       }));
     }
@@ -645,20 +654,30 @@ function renderPhases() {
     c.addEventListener('click', () => open(c.dataset.path)));
 }
 
-const chip = ({ path, label, kind, tag, warn }) =>
+const chip = ({ path, label, kind, tag, warn, full }) =>
   `<button class="chip${warn ? ' warn' : ''}" data-path="${esc(path)}" aria-pressed="false"
-           title="${esc(KINDS[kind]?.label || '')}: ${esc(label)}">
+           title="${esc(KINDS[kind]?.label || '')}: ${esc(full || label)}">
      ${kindBadge(kind)}${esc(label)}${tag ? `<span class="ro">${esc(tag)}</span>` : ''}
    </button>`;
 
 function renderInterlock() {
+  // Un hook y el script que ejecuta son dos componentes distintos. La fila
+  // ofrece los dos por separado: el badge HOOK abre hooks.json, donde el hook
+  // está declarado, y el chip SCRIPT abre el .sh. Antes el badge decía HOOK y
+  // abría el script, que es justamente lo que no tiene que pasar.
   $('interlock').innerHTML = PLUGIN.hooks.map(h => `
-    <div class="interlock-row" data-path="${esc(h.scriptPath || h.path)}"
-         title="Hook en ${esc(h.event)} — ${esc(h.description || h.matcher)}">
+    <div class="interlock-row">
       <span class="dot"></span>
-      ${kindBadge('hook')}
-      <span class="ev">${esc(h.event)}</span>
+      <button class="row-btn" data-path="${esc(h.path)}"
+              title="Hook — declarado en ${esc(h.path)}, se dispara en ${esc(h.event)}">
+        ${kindBadge('hook')}<span class="ev">${esc(h.event)}</span>
+      </button>
       <span class="desc">${esc(h.description || h.matcher)}</span>
+      ${h.scriptPath ? `
+        <button class="row-btn tail" data-path="${esc(h.scriptPath)}"
+                title="Script que ejecuta este hook — ${esc(h.scriptPath)}">
+          ${kindBadge('script')}<span class="ev">${esc(h.script)}</span>
+        </button>` : ''}
     </div>`).join('') || '<div class="interlock-row"><span class="desc">Sin hooks</span></div>';
 
   $('interlock').querySelectorAll('[data-path]').forEach(r =>
@@ -667,20 +686,24 @@ function renderInterlock() {
 
 function renderMcp() {
   const rows = PLUGIN.mcp.map(m => `
-    <div class="interlock-row" data-path=".mcp.json"
-         title="MCP server ${esc(m.name)} — ${esc(m.target)}">
+    <div class="interlock-row">
       <span class="dot"></span>
-      ${kindBadge('mcp')}
-      <span class="ev">${esc(m.name)}</span>
+      <button class="row-btn" data-path=".mcp.json"
+              title="MCP server — los tres se declaran en .mcp.json">
+        ${kindBadge('mcp')}<span class="ev">${esc(m.name)}</span>
+      </button>
       <span class="desc">${esc(m.target)}</span>
     </div>`);
 
   // Escribir la historia a mano es una fuente más, no un caso degradado: si el
   // equipo no integra con ningún tracker, esta es la única fila que importa.
+  // No lleva badge de tipo: no es un componente de Claude Code, es el studio.
   rows.push(`
-    <div class="interlock-row" data-story="1" title="Escribir la historia en el studio">
+    <div class="interlock-row">
       <span class="dot"></span>
-      <span class="kind" data-k="reference">A mano</span>
+      <button class="row-btn" data-story="1" title="Escribir la historia en el studio">
+        <span class="ev">a mano</span>
+      </button>
       <span class="desc">escribir la historia acá, sin tracker</span>
     </div>`);
 
@@ -697,7 +720,10 @@ function renderMcp() {
 /* ------------------------------------------------------------- editor */
 
 async function open(path) {
-  if (current && $('edText').value !== original &&
+  // Comparar contra `compose()`, no contra el textarea: con frontmatter el
+  // textarea tiene solo el cuerpo y `original` el archivo entero, así que
+  // cualquier archivo con frontmatter parecía modificado apenas se abría.
+  if (current && compose() !== original &&
       !confirm('Hay cambios sin guardar. ¿Descartarlos?')) return;
 
   const f = await api('/api/file?path=' + encodeURIComponent(path));

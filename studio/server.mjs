@@ -37,6 +37,28 @@ const PUBLIC_DIR = path.join(HERE, 'public');
 // Extensiones editables. Todo lo demás es de solo lectura desde el studio.
 const EDITABLE = new Set(['.md', '.json', '.sh', '.yml', '.yaml']);
 
+/**
+ * Nombre del plugin, leído del manifest.
+ *
+ * Hace falta porque las skills y los subagentes de un plugin se invocan
+ * calificados con él: `/globant-sdlc:us`, no `/us`. Sin el prefijo, Claude
+ * responde "Unknown command".
+ */
+const PLUGIN_NAME = (() => {
+  try {
+    const file = path.join(PLUGIN_DIR, '.claude-plugin/plugin.json');
+    return JSON.parse(fs.readFileSync(file, 'utf8')).name || null;
+  } catch {
+    return null;
+  }
+})();
+
+/** `us` → `globant-sdlc:us`. Sin manifest legible cae al nombre suelto. */
+const qualify = name => (PLUGIN_NAME ? `${PLUGIN_NAME}:${name}` : name);
+
+/** `globant-sdlc:refinamiento` → `refinamiento`, para mapear contra AGENT_PHASE. */
+const unqualify = name => String(name).slice(String(name).indexOf(':') + 1);
+
 // ------------------------------------------------------------------ helpers
 
 const json = (res, code, body) => {
@@ -82,7 +104,10 @@ function parseFrontmatter(text) {
   if (end === -1) return { data: null, raw: '', body: text, flat: true };
 
   const raw = text.slice(4, end);
-  const body = text.slice(end + 4).replace(/^\n/, '');
+  // Se sacan TODOS los saltos iniciales, no uno: `compose()` en el front vuelve
+  // a unir con `\n\n`, y si acá queda uno de más el archivo no round-trippea —
+  // el editor se marcaba sucio al abrir y al guardar sumaba una línea vacía.
+  const body = text.slice(end + 4).replace(/^\n+/, '');
   const data = {};
   let flat = true;
 
@@ -174,6 +199,8 @@ async function scanPlugin() {
       out.skills.push({
         kind: 'skill',
         name: fm.data?.name || name,
+        // Con el que se invoca de verdad. Escribir `/us` da "Unknown command".
+        command: qualify(fm.data?.name || name),
         path: rel(file),
         description: fm.data?.description || '',
         bytes: Buffer.byteLength(text),
@@ -197,6 +224,7 @@ async function scanPlugin() {
       out.agents.push({
         kind: 'agent',
         name: d.name || f.replace(/\.md$/, ''),
+        qualifiedName: qualify(d.name || f.replace(/\.md$/, '')),
         path: rel(file),
         description: d.description || '',
         model: d.model || '(heredado)',
@@ -488,7 +516,8 @@ function inferPhase(run, msg) {
       });
 
       if (name === 'Task') {
-        const agent = String(input.subagent_type || input.agent || '').toLowerCase();
+        // Los subagentes de un plugin llegan calificados: `globant-sdlc:qa`.
+        const agent = unqualify(String(input.subagent_type || input.agent || '').toLowerCase());
         const phase = AGENT_PHASE[agent];
         if (phase !== undefined) {
           setPhase(run, phase, `@${agent}`);
@@ -573,8 +602,9 @@ function startRun({ storyId, repoDir, manual, permissionMode, extraFlags }) {
   // El tracker va explícito: story.json ya dice `manual`, pero decirlo también en
   // la invocación evita que el resolver tenga que adivinar por la forma del ID.
   // Sin storyId es una sesión de consola: se abre vacía y la maneja el dev.
+  const skill = `/${qualify('us')}`;
   const prompt = storyId
-    ? (manual ? `/us ${storyId} --tracker manual` : `/us ${storyId}`)
+    ? (manual ? `${skill} ${storyId} --tracker manual` : `${skill} ${storyId}`)
     : null;
 
   const args = [
@@ -582,6 +612,10 @@ function startRun({ storyId, repoDir, manual, permissionMode, extraFlags }) {
     '--input-format', 'stream-json',
     '--output-format', 'stream-json',
     '--verbose',
+    // Sin esto la sesión corre en el repo objetivo sin el plugin cargado, y
+    // `/globant-sdlc:us` no existe. Además hace que corra lo que hay en disco,
+    // que es lo que el studio deja editar.
+    '--plugin-dir', PLUGIN_DIR,
   ];
   if (permissionMode) args.push('--permission-mode', permissionMode);
   if (extraFlags) args.push(...extraFlags.split(/\s+/).filter(Boolean));

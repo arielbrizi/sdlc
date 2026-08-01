@@ -45,6 +45,15 @@ Todo lo que el panel muestra lleva su tipo: **Skill**, **Subagente**, **Hook**,
 el encabezado explica en una línea qué es esa clase de cosa, y el botón Glosario
 lista las siete.
 
+**Cada etiqueta abre lo que dice ser.** Suena obvio y es la parte que más fácil
+se rompe: una fila de hook que abre el `.sh` está mintiendo, porque el hook se
+declara en `hooks/hooks.json` y el script es otro componente. Por eso las filas
+del enclavamiento tienen dos destinos separados —el badge HOOK abre `hooks.json`,
+el chip SCRIPT abre el `.sh`— en vez de uno solo mal etiquetado.
+
+La fila "a mano" de Fuentes de historia no lleva badge de tipo a propósito: no es
+un componente de Claude Code, es una función del studio.
+
 Los nombres son los de Claude Code, no etiquetas del studio. Es deliberado: quien
 use el panel un par de semanas tiene que poder leer la documentación oficial, o
 escuchar "eso es un hook" en una reunión, y saber de qué se habla. Un vocabulario
@@ -107,10 +116,23 @@ un input web sería exactamente lo que `guard-secrets.sh` existe para impedir.
 El botón Ejecutar corre, en el repo objetivo:
 
 ```
-claude -p --input-format stream-json --output-format stream-json --verbose
+claude -p --input-format stream-json --output-format stream-json --verbose \
+       --plugin-dir <PLUGIN_DIR>
 ```
 
-y le manda `/us <ID>` como primer mensaje por stdin. `stream-json` requiere
+y le manda `/globant-sdlc:us <ID>` como primer mensaje por stdin.
+
+Los dos detalles importan y no son obvios:
+
+- **`--plugin-dir`**: sin esto la sesión corre en el repo objetivo sin el plugin
+  cargado y `/globant-sdlc:us` no existe. Además hace que corra el plugin que
+  hay **en disco**, que es el que el studio deja editar.
+- **El nombre va calificado.** Las skills y los subagentes de un plugin se
+  invocan con el nombre del plugin adelante: `/globant-sdlc:us`, no `/us`, y
+  `globant-sdlc:qa`, no `qa`. Escribir el nombre suelto da
+  `Unknown command: /us`. El studio lo arma a partir del `name` del manifest, y
+  por eso el chip del skill muestra el comando completo: es lo que hay que
+  tipear. `stream-json` requiere
 `--verbose`. Con historia escrita a mano el mensaje lleva además
 `--tracker manual`.
 
