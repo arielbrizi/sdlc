@@ -52,6 +52,79 @@ button,input,select,textarea{font:inherit;color:inherit}
 .btn.lit{background:var(--bone);color:var(--panel);border-color:var(--bone)}
 .btn.lit:hover:not(:disabled){background:#fff}
 .btn.stop{border-color:var(--danger);color:var(--danger)}
+.btn.ghost{border-color:transparent;color:var(--dim)}
+.btn.ghost:hover:not(:disabled){color:var(--bone);border-color:var(--edge);background:transparent}
+.btn.ghost[aria-expanded="true"]{color:var(--bone);border-color:var(--track)}
+
+/* ---------- campos ----------
+   Un solo estilo para todo lo que se escribe. Antes cada bloque traía el suyo y
+   varios quedaban con el aspecto por defecto del navegador: fondo blanco sobre
+   un panel oscuro. */
+.field{
+  background:var(--sunk);border:1px solid var(--edge);color:var(--bone);
+  padding:9px 11px;border-radius:4px;min-width:0;
+  font-family:var(--mono);font-size:12.5px;line-height:1.4;
+  transition:border-color .12s,box-shadow .12s;
+}
+.field::placeholder{color:#6b7482}
+.field:hover:not(:disabled):not(:focus){border-color:var(--track)}
+.field:focus{
+  border-color:var(--bone);outline:none;
+  box-shadow:0 0 0 3px rgba(232,230,225,.10);
+}
+.field:disabled{opacity:.45;cursor:not-allowed}
+select.field{cursor:pointer;appearance:none;padding-right:28px;
+  background-image:linear-gradient(45deg,transparent 50%,var(--dim) 50%),
+                   linear-gradient(135deg,var(--dim) 50%,transparent 50%);
+  background-position:calc(100% - 15px) 52%,calc(100% - 10px) 52%;
+  background-size:5px 5px,5px 5px;background-repeat:no-repeat}
+textarea.field{resize:vertical;line-height:1.6}
+
+/* ---------- barra de ejecución ---------- */
+.runbar{display:flex;gap:8px;align-items:center;padding:12px 20px;
+  background:var(--sunk);border-bottom:1px solid var(--edge);flex-shrink:0}
+#source{flex:0 0 220px}
+#story{flex:1;font-size:13.5px;letter-spacing:.03em}
+.rb-sep{flex:0 0 1px;height:24px;background:var(--edge);margin:0 4px}
+
+.settings{background:var(--sunk);border-bottom:1px solid var(--edge);flex-shrink:0}
+.settings summary{display:none}
+.set-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px 16px;padding:4px 20px 18px}
+.set-field{display:flex;flex-direction:column;gap:5px;min-width:0}
+.set-field>span{font-family:var(--display);font-size:11px;font-weight:600;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+.set-field .field{width:100%}
+.set-row{display:flex;gap:8px}
+.set-row .field{flex:1}
+.span2{grid-column:span 2}
+.span4{grid-column:1/-1}
+.hint{font-size:11px;color:var(--dim);font-family:var(--mono);word-break:break-all;line-height:1.5}
+.repo-state{padding:10px 12px;border-radius:4px;border:1px solid var(--edge);
+  background:var(--raised);font-size:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.repo-state .dot{width:8px;height:8px;border-radius:50%;background:var(--track);flex-shrink:0}
+.repo-state[data-ok="1"] .dot{background:var(--clear)}
+.repo-state[data-ok="0"] .dot{background:var(--danger)}
+.repo-state code{font-family:var(--mono);font-size:11px;color:var(--dim)}
+.repo-state .grow,.dock-head .grow{flex:1}
+@media (max-width:900px){.set-grid{grid-template-columns:1fr 1fr}.span2,.span4{grid-column:1/-1}}
+
+/* ---------- paneles ---------- */
+.pane{flex:1;min-height:0;overflow:hidden;display:none}
+.pane[data-active="1"]{display:flex;flex-direction:column}
+.empty{margin:auto;padding:40px;text-align:center;color:var(--dim);max-width:380px}
+
+@keyframes pulse{
+  0%,100%{box-shadow:0 0 0 0 rgba(232,163,61,.55)}
+  50%{box-shadow:0 0 0 7px rgba(232,163,61,0)}
+}
+
+/* Barras de scroll discretas: las del sistema cortaban el panel como un marco. */
+*{scrollbar-width:thin;scrollbar-color:var(--edge) transparent}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--edge);border-radius:6px;
+  border:3px solid transparent;background-clip:content-box}
+::-webkit-scrollbar-thumb:hover{background:var(--track);background-clip:content-box}
 
 /* ---------- una sola pantalla ----------
    El grafo es la vista principal y se queda con todo el alto disponible. La
@@ -204,6 +277,8 @@ dialog::backdrop{background:rgba(0,0,0,.62)}
 .gedge.dashed{stroke-dasharray:3 3}
 .glabel{font-family:var(--display);font-size:11px;letter-spacing:.16em;
   text-transform:uppercase;fill:var(--dim)}
+.gloop{fill:var(--caution);font-size:10px;text-anchor:middle}
+.gnode rect{transition:stroke .12s}
 
 .node-detail{padding:16px 20px;overflow-y:auto;flex:1;min-height:0}
 .nd-head{display:flex;align-items:center;gap:10px;margin-bottom:6px}
@@ -223,14 +298,21 @@ dialog::backdrop{background:rgba(0,0,0,.62)}
 .nd-out.result{border-left:2px solid var(--clear)}
 
 /* historia escrita a mano */
-.story{padding:16px 20px 24px;overflow-y:auto;flex:1;min-height:0}
+.story{padding:18px 20px 24px;overflow-y:auto;flex:1;min-height:0}
+.node-detail code,.story code{background:var(--sunk);padding:1px 5px;border-radius:3px;
+  font-family:var(--mono);font-size:11px}
 .story-lead{margin:0 0 16px;font-size:12.5px;color:var(--dim);max-width:74ch}
-.story-grid{display:grid;grid-template-columns:150px 1fr;gap:10px 14px;align-items:start}
-.story-key{font-family:var(--mono);font-size:11px;color:var(--dim);
-  text-align:right;padding-top:9px}
+/* Etiqueta arriba del campo: en un panel angosto, la etiqueta a la izquierda
+   se comía 150px y dejaba el campo sin ancho para escribir. */
+.story-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px 14px;align-items:start}
+.story-key{font-family:var(--display);font-size:11px;font-weight:600;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--dim);
+  grid-column:1/-1;margin-bottom:-9px}
 .story-key .req{color:var(--caution)}
-.story-grid .field{width:100%}
-.story-grid textarea.field{resize:vertical;line-height:1.65;min-height:70px}
+.story-grid .field{width:100%;grid-column:1/-1}
+.story-grid #stPoints{grid-column:1}
+.story-grid #stLabels{grid-column:2}
+.story-grid textarea.field{min-height:76px}
 .story-note{grid-column:2;font-family:var(--mono);font-size:10.5px;color:var(--dim);
   margin:-4px 0 2px}
 .story-foot{display:flex;align-items:center;gap:10px;padding-top:20px}
@@ -447,7 +529,7 @@ dialog::backdrop{background:rgba(0,0,0,.62)}
           <textarea class="field" id="stDesc" rows="5" spellcheck="false"
                     placeholder="Contexto, qué problema resuelve, para quién."></textarea>
 
-          <label class="story-key" for="stAc">Criterios<br>de aceptación</label>
+          <label class="story-key" for="stAc">Criterios de aceptación</label>
           <textarea class="field" id="stAc" rows="6" spellcheck="false"
                     placeholder="Uno por línea.&#10;El botón Exportar aparece solo para usuarios con rol Analyst&#10;El CSV incluye las columnas fecha, usuario, consumo"></textarea>
           <p class="story-note">
@@ -455,11 +537,10 @@ dialog::backdrop{background:rgba(0,0,0,.62)}
             no son verificables. Escribir la historia acá no saltea ese gate.
           </p>
 
-          <label class="story-key" for="stPoints">Puntos</label>
-          <input class="field" id="stPoints" type="number" min="1" max="100"
-                 style="max-width:110px" placeholder="opcional">
+          <label class="story-key" for="stPoints" style="grid-column:1">Puntos</label>
+          <input class="field" id="stPoints" type="number" min="1" max="100" placeholder="opcional">
 
-          <label class="story-key" for="stLabels">Labels</label>
+          <label class="story-key" for="stLabels" style="grid-column:2;margin-top:0">Labels</label>
           <input class="field" id="stLabels" autocomplete="off" placeholder="separados por coma">
         </div>
         <div class="story-foot">
@@ -1111,7 +1192,9 @@ const pushOut = (node, entry) => {
  * cualquier fase.
  */
 function layout() {
-  const ROW = 92, TOP = 34, PX = 16, PW = 186, CX = 250, CW = 168, GAP = 16;
+  // PX deja el margen izquierdo donde entra el lazo de corrección sin pisar
+  // las cajas; antes la etiqueta caía encima de la fase 03.
+  const ROW = 96, TOP = 40, PX = 54, PW = 190, CX = 292, CW = 176, GAP = 16;
   const nodes = [], edges = [];
 
   PHASES.forEach((p, i) => {
@@ -1183,6 +1266,8 @@ function layout() {
   return { nodes, edges, width: hx + 190 + 20, height, hx };
 }
 
+const TOP_Y = 40, ROW_Y = 96; // mismos valores que layout(), para las etiquetas
+
 function renderGraph() {
   if (!PLUGIN || !PHASES.length) return;
   const g = layout();
@@ -1195,7 +1280,7 @@ function renderGraph() {
       return `M${a.x + 22} ${a.y + a.h} L${a.x + 22} ${b.y}`;
     }
     if (e.kind === 'loop') {
-      const lx = a.x - 10;
+      const lx = a.x - 28;
       return `M${a.x + 6} ${a.y + a.h / 2} L${lx} ${a.y + a.h / 2}`
            + ` L${lx} ${b.y + b.h / 2} L${b.x + 6} ${b.y + b.h / 2}`;
     }
@@ -1209,7 +1294,8 @@ function renderGraph() {
     `<text class="glabel" x="16" y="18">ciclo · ${esc(PLUGIN.skills[0]?.command || 'us')}</text>`,
     ...g.edges.map(e => `<path class="gedge ${e.kind}${e.kind === 'loop' ? ' dashed' : ''}${
       done(e.b) && e.kind !== 'loop' ? ' done' : ''}" d="${edgePath(e)}"/>`),
-    `<text class="glabel" x="2" y="${34 + 3 * 92 + 62}">corrige · hasta 3 ciclos</text>`,
+    // Vertical, sobre el lazo: horizontal se montaba encima de las fases.
+    `<text class="glabel gloop" transform="translate(20,${TOP_Y + 3.6 * ROW_Y}) rotate(-90)">corrige · hasta 3 ciclos</text>`,
     // Los hooks no se conectan a una fase: se marca con una línea punteada.
     `<path class="gedge dashed" d="M${g.hx - 26} 30 L${g.hx - 26} ${g.height - 30}"/>`,
     ...g.nodes.filter(n => n.kind === 'titulo').map(n =>
