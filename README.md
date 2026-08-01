@@ -61,10 +61,17 @@ automáticamente. `docs/decisiones.md` explica por qué el framework es como es.
 
 ## Versionado
 
-Durante el desarrollo, `plugin.json` **no** lleva campo `version`: Claude Code
-usa el SHA del commit y el equipo recibe cada cambio mergeado. Cuando el plugin
-se estabilice, agregar `version` y bumpearlo en cada release — a partir de ahí,
-sin bump no hay actualización aunque pushees.
+`plugin.json` lleva `version` en semver. El validador de Claude Code lo pide, y
+como `validate.sh` corre con `--strict`, esa advertencia es un error: sin el
+campo, CI no pasa.
+
+Hoy va en `0.1.0`. El `0.x` es deliberado —en semver significa desarrollo
+inicial, donde cualquier cosa puede cambiar sin aviso— y pasa a `1.0.0` cuando el
+plugin se estabilice.
+
+**Bumpear en todo cambio que el equipo tenga que recibir.** Con `version`
+presente manda ese número y no el SHA del commit: sin bump, quien ya lo tiene
+instalado no ve el cambio aunque esté mergeado en `main`.
 
 ## CI
 

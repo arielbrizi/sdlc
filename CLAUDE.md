@@ -30,9 +30,11 @@ que corre CI. Un manifest inválido rompe el plugin para todo el equipo.
 perdió. El validador lo chequea porque es el error más frecuente y el más
 silencioso: el hook simplemente no dispara.
 
-**No bumpear `version` en `plugin.json` durante desarrollo.** Sin el campo,
-Claude Code usa el SHA del commit y el equipo recibe cada cambio. Se pone
-`version` recién cuando el plugin se estabiliza y querés controlar el release.
+**Bumpear `version` en `plugin.json` en todo cambio que el equipo deba recibir.**
+El campo es obligatorio: `claude plugin validate --strict` falla sin él. Y una
+vez presente manda ese número, no el SHA del commit — sin bump, quien ya tiene el
+plugin instalado no ve el cambio aunque esté mergeado en `main`. Va en `0.x`
+mientras el plugin no se estabilice.
 
 **Todo path relativo arranca con `./`** y no sale del root del plugin. Los
 plugins se copian a un cache al instalarse: un `../shared/` funciona en local
@@ -108,10 +110,11 @@ Los cambios en un `SKILL.md` toman efecto en la sesión activa. Los cambios en
 ## Antes de dar por terminado un cambio
 
 1. `./scripts/validate.sh` pasa
-2. Probaste el flujo end-to-end contra un ticket real en un repo sandbox
-3. Si tocaste un agente, verificaste que su salida JSON sigue parseando en el skill
-4. Si tocaste un hook, lo probaste en los dos sentidos: que bloquee lo que debe
+2. Bumpeaste `version` si el equipo tiene que recibir el cambio
+3. Probaste el flujo end-to-end contra un ticket real en un repo sandbox
+4. Si tocaste un agente, verificaste que su salida JSON sigue parseando en el skill
+5. Si tocaste un hook, lo probaste en los dos sentidos: que bloquee lo que debe
    y que **no** bloquee lo que no debe
 
-El punto 4 es el que más se saltea. Un hook con falsos positivos hace que el
+El punto 5 es el que más se saltea. Un hook con falsos positivos hace que el
 equipo lo desactive, y ahí perdiste la política entera.
