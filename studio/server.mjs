@@ -659,7 +659,7 @@ const PHASES = [
 ];
 
 const AGENT_PHASE = {
-  refinamiento: 1, arquitectura: 2, qa: 4, seguridad: 4, reviewer: 5,
+  refinamiento: 1, arquitectura: 2, desarrollador: 3, qa: 4, seguridad: 4, reviewer: 5,
 };
 
 const runs = new Map();

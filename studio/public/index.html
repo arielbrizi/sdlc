@@ -591,7 +591,7 @@ const PHASE_PARTS = {
   0: { scripts: ['resolve-story.sh'], skills: ['us'] },
   1: { agents: ['refinamiento'] },
   2: { agents: ['arquitectura'] },
-  3: { main: true },
+  3: { agents: ['desarrollador'] },
   4: { agents: ['qa', 'seguridad'] },
   5: { agents: ['reviewer'] },
   6: { main: true },
@@ -600,7 +600,7 @@ const PHASE_PARTS = {
 // Las fases sin subagente no estan vacias: las hace la sesion principal, la
 // misma que corre el skill. Que no figurara nada se leia como un componente
 // faltante, cuando es una decision de diseno: ningun subagente puede escribir.
-const MAIN_TAG = { 3: 'escribe el código', 6: 'abre el PR' };
+const MAIN_TAG = { 6: 'abre el PR' };
 
 // Los nombres son los de Claude Code, no etiquetas inventadas para el studio:
 // quien use el panel tiene que poder buscar estos términos en la documentación
@@ -649,8 +649,8 @@ const PHASE_HELP = {
   0: 'Busca la historia y la deja siempre en el mismo formato.',
   1: 'Decide si la historia se puede implementar. Si es ambigua, el ciclo corta acá.',
   2: 'Diseña el cambio antes de tocar una línea de código.',
-  3: 'Escribe el código y los tests, en una branch nueva. Lo hace la sesión principal: ningún subagente puede escribir.',
-  4: 'Dos subagentes revisan en paralelo: uno calidad, otro seguridad. Solo reportan; las correcciones vuelven a la fase 3, hasta 3 ciclos.',
+  3: 'Escribe el código y los tests en una branch nueva. Es el único subagente que escribe: los demás auditan.',
+  4: 'Dos subagentes revisan en paralelo: uno calidad, otro seguridad. Solo reportan; las correcciones vuelven a @desarrollador, hasta 3 ciclos.',
   5: 'Una última lectura del diff, buscando razones para rechazarlo.',
   6: 'Abre el Pull Request en draft para que lo revise una persona.',
 };
@@ -1380,7 +1380,7 @@ function renderNodeDetail() {
     </div>
     ${kind === 'phase' && PHASE_HELP[name] ? `<p class="what">${esc(PHASE_HELP[name])}</p>` : ''}
     <p class="what">${kind === 'main'
-      ? 'La sesión que corre el skill, no un subagente. Acá se escribe el código y se aplican las correcciones que reportan @qa y @seguridad: ningún subagente puede escribir (todos tienen Write y Edit prohibidos).'
+      ? 'La sesión que corre el skill, no un subagente. Orquesta el ciclo: pasa el contexto a cada agente, encadena las fases y abre el PR.'
       : esc(KINDS[NODE_KIND[kind] || 'skill']?.what || '')}</p>
     ${cuerpo}`;
 

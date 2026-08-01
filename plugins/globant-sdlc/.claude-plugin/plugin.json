@@ -1,12 +1,20 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "globant-sdlc",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "displayName": "Globant SDLC",
   "description": "Ciclo de desarrollo automatizado a partir del ID de una historia de usuario: refinamiento, arquitectura, implementacion, QA, seguridad y PR.",
-  "author": { "name": "Globant - Tech Direction" },
+  "author": {
+    "name": "Globant - Tech Direction"
+  },
   "license": "UNLICENSED",
-  "keywords": ["sdlc", "user-story", "qa", "security", "architecture"],
+  "keywords": [
+    "sdlc",
+    "user-story",
+    "qa",
+    "security",
+    "architecture"
+  ],
   "userConfig": {
     "tracker_default": {
       "type": "string",

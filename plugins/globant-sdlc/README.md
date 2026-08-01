@@ -20,8 +20,8 @@ punta, desde el ID del ticket hasta un Pull Request en draft.
   ├─ 0  resolve-story.sh   detecta tracker, normaliza la historia
   ├─ 1  @refinamiento      ⛔ CIRCUIT BREAKER: aborta si la US es ambigua
   ├─ 2  @arquitectura      plan.md  (⛔ aborta si blast_radius: high)
-  ├─ 3  implementación     branch + código + tests
-  ├─ 4  @qa ‖ @seguridad   auditan en paralelo, máx. 3 ciclos de corrección
+  ├─ 3  @desarrollador     branch + código + tests (el único que escribe)
+  ├─ 4  @qa ‖ @seguridad   auditan en paralelo; corrigen volviendo a la 3
   ├─ 5  @reviewer          revisión adversarial del diff
   └─ 6  PR en draft + comentario en el ticket
 ```
@@ -95,9 +95,11 @@ el error detectado tarde: es haber gastado 40 minutos y contexto sobre una
 historia que nadie podía implementar. Además convierte la calidad del backlog
 en una señal medible.
 
-**3. Quien audita no escribe.** `qa`, `seguridad`, `arquitectura` y `reviewer`
-tienen `disallowedTools: Write, Edit`. Un agente que puede corregir lo que
-audita termina aprobándose solo. La separación es estructural, no de prompt.
+**3. Quien audita no escribe.** `qa`, `seguridad`, `arquitectura`,
+`refinamiento` y `reviewer` tienen `disallowedTools: Write, Edit`. El único que
+escribe es `desarrollador`. Un agente que puede corregir lo que audita termina
+aprobándose solo, así que la separación es estructural —a nivel de herramientas
+disponibles— y no una instrucción en el prompt.
 
 ## Qué es hook y qué es prompt
 

@@ -175,3 +175,40 @@ simplificación va en la explicación, nunca en el término.
 
 **Dónde vive.** `KINDS` en `public/index.html`. Un tipo de componente que no se
 agregue ahí aparece sin etiqueta.
+
+## D11 — La implementación también es un subagente
+
+**Contexto.** Hasta acá los cinco agentes auditaban y la sesión principal
+escribía el código. Funcionaba, pero dejaba el rol más pesado del ciclo sin
+instructivo propio: la calidad de la implementación dependía del prompt del
+skill orquestador, mezclado con la lógica de encadenar fases.
+
+**Decisión.** Un sexto agente, `desarrollador`, con perfil de developer senior
+fullstack. Es el único del ciclo que escribe: implementa la fase 3 y recibe las
+correcciones de `qa`, `seguridad` y `reviewer`. La sesión principal pasa a
+orquestar y nada más.
+
+**Por qué.** Tres cosas que antes no se podían hacer:
+
+1. **Calibrarlo.** Modelo, esfuerzo y turnos de la implementación ahora se
+   ajustan solos, sin tocar el skill. Es lo mismo que ya valía para los otros
+   cinco.
+2. **Auditarlo.** Su salida es JSON con `verdict`, así que un run bloqueado en
+   implementación se ve igual que uno bloqueado en refinamiento, con sus
+   `blocking_questions`.
+3. **Frenar donde corresponde.** Antes, si el plan no alcanzaba, la sesión
+   principal improvisaba —tenía todo el contexto y ninguna instrucción de
+   parar—. El agente tiene criterio explícito de cuándo devolver BLOCKED.
+
+**Lo que no cambia.** D3 sigue en pie y se refuerza: quien audita no escribe, y
+ahora hay exactamente un agente que escribe. Los otros cinco conservan
+`disallowedTools: Write, Edit`.
+
+**Costo.** El contexto ya no es gratis. La sesión principal tenía el plan y el
+código que acababa de escribir; el subagente arranca limpio en cada ciclo de
+corrección y hay que volver a pasarle `plan.md` y los hallazgos. Por eso los
+hallazgos de `qa` y `seguridad` se le mandan **juntos**: invocarlo dos veces
+seguidas le hace releer el mismo código para nada.
+
+Si en el piloto los ciclos de corrección resultan caros, la salida no es volver
+atrás sino que el agente reciba el diff en vez del repo entero.

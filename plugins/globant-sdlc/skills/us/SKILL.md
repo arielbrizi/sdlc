@@ -70,13 +70,18 @@ escrito, no implementes y pedí revisión humana explícita.
 
 ## Fase 3 — Implementación
 
-1. Creá la branch desde la branch base configurada: `feature/<ID>-<slug>`
-2. Implementá siguiendo `plan.md` y las reglas del repo (`CLAUDE.md`, `.claude/rules/`)
-3. Escribí los tests **junto con** el código, no al final
-4. Commits atómicos, con el ID de la historia en el mensaje
+Delegá en el subagente `desarrollador`, pasándole `plan.md` y `story.json`.
 
-Respetá el stack y las convenciones que ya existen en el repo. Ante duda entre
-dos formas, mirá cómo está resuelto un caso análogo en el codebase.
+Es el único agente del ciclo que escribe código: branch `feature/<ID>-<slug>`,
+implementación siguiendo el plan, tests junto con el código y commits atómicos
+con el ID de la historia.
+
+Si devuelve `verdict: "BLOCKED"`, no implementes vos lo que él frenó: sus
+`blocking_questions` son las mismas que frenarían a cualquiera. Reportá al dev y
+parás, igual que en la fase 1.
+
+**Vos no escribís código en esta fase.** Tu trabajo es orquestar: pasarle el
+contexto, leer su salida y encadenar la fase siguiente.
 
 ## Fase 4 — Verificación (en paralelo)
 
@@ -85,7 +90,9 @@ Delegá simultáneamente en:
 - `qa` — cobertura de los criterios de aceptación, casos de borde, regresión
 - `seguridad` — OWASP, secretos, authz, dependencias
 
-Ninguno de los dos modifica código: reportan. Vos aplicás las correcciones.
+Ninguno de los dos modifica código: reportan. Las correcciones vuelven a
+`desarrollador`, con los hallazgos de ambos en una sola pasada — invocarlo dos
+veces seguidas le hace releer el mismo código para nada.
 
 Iterá hasta que ambos devuelvan `PASS`, con un **máximo de 3 ciclos**. Si al
 tercero sigue habiendo hallazgos de severidad alta, abrí el PR igual pero
@@ -95,7 +102,8 @@ un hallazgo para poder cerrar el flujo.
 ## Fase 5 — Revisión adversarial
 
 Delegá en `reviewer` con el diff completo. Su trabajo es buscar razones para
-rechazar el cambio, no para aprobarlo. Aplicá lo que corresponda.
+rechazar el cambio, no para aprobarlo. Lo que corresponda corregir vuelve a
+`desarrollador`, igual que en la fase 4.
 
 ## Fase 6 — Pull Request
 
