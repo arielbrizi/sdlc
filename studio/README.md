@@ -62,13 +62,10 @@ el encabezado explica en una línea qué es esa clase de cosa, y el botón Glosa
 lista las siete.
 
 **Cada etiqueta abre lo que dice ser.** Suena obvio y es la parte que más fácil
-se rompe: una fila de hook que abre el `.sh` está mintiendo, porque el hook se
-declara en `hooks/hooks.json` y el script es otro componente. Por eso las filas
-del enclavamiento tienen dos destinos separados —el badge HOOK abre `hooks.json`,
-el chip SCRIPT abre el `.sh`— en vez de uno solo mal etiquetado.
-
-La fila "a mano" de Fuentes de historia no lleva badge de tipo a propósito: no es
-un componente de Claude Code, es una función del studio.
+se rompe: un nodo de hook que abre el `.sh` está mintiendo, porque el hook se
+declara en `hooks/hooks.json` y el script es otro componente. Por eso el nodo de
+un hook ofrece los dos por separado: "Abrir archivo" lleva a `hooks.json` y
+"Abrir el script" al `.sh`.
 
 Los nombres son los de Claude Code, no etiquetas del studio. Es deliberado: quien
 use el panel un par de semanas tiene que poder leer la documentación oficial, o
@@ -80,30 +77,9 @@ Las explicaciones sí están escritas para alguien que recién arranca, y viven 
 `KINDS`, dentro de `public/index.html`. Si agregás un tipo de componente,
 agregalo ahí o va a aparecer sin etiqueta.
 
-## El grafo de ejecución
-
-La pestaña **Grafo de ejecución** dibuja el sistema completo como diagrama: la
-vía de fases a la izquierda, y colgando de cada una los componentes que
-intervienen ahí —el script en la 0, `@refinamiento` en la 1, `@qa` y
-`@seguridad` en paralelo en la 4—. Los hooks van en una banda aparte, unida con
-línea punteada, porque no cuelgan de ninguna fase: corren sobre cualquiera.
-
-**Un clic en un nodo muestra lo que dijo el modelo ahí**, no el log entero. Para
-un subagente eso es la llamada que lo invocó y el JSON que devolvió; para una
-fase, el texto que Claude escribió mientras estaba en ella. Es la diferencia
-entre "el run se detuvo" y "esto contestó refinamiento, palabra por palabra".
-
-Funciona porque el servidor recuerda el `tool_use_id` de cada llamada y le
-cuelga el resultado cuando llega. Los hooks son la excepción honesta: no
-reportan al stream, así que su nodo lo dice y apunta a `timeline.log`.
-
-Los nodos se pintan con el estado del run —en curso, hecho, bloqueado— con la
-misma regla que la vía: un nodo bloqueado no vuelve a "en curso" por más que
-sigan pasando cosas después.
-
 ## Editar
 
-Un clic en cualquier chip abre el archivo real.
+Un clic en cualquier nodo del grafo abre el archivo real.
 
 La configuración del componente —el frontmatter— se muestra como campos con
 nombre en criollo, la clave real al lado y una línea de qué significa. `model` y
@@ -112,10 +88,7 @@ nombre en criollo, la clave real al lado y una línea de qué significa. `model`
 decidir si invoca ese componente.
 
 El bloque es plegable a propósito: ocupaba media pantalla y empujaba fuera de
-vista las instrucciones, que son lo que uno viene a editar. El frontmatter se muestra como
-campos separados del cuerpo — `model`, `effort`, `maxTurns`, `disallowedTools`
-son exactamente lo que se toca al calibrar un agente, y no tiene sentido que
-haya que buscarlos dentro del texto.
+vista las instrucciones, que son lo que uno viene a editar.
 
 `Cmd/Ctrl+S` guarda. La escritura preserva el modo del archivo, así que un
 script no pierde su bit de ejecución al editarlo desde acá.
@@ -126,9 +99,9 @@ script no pierde su bit de ejecución al editarlo desde acá.
 
 ## Escribir la historia acá, sin tracker
 
-El selector **Fuente** de la consola tiene dos modos. En `tracker`, pasás un ID y
-la historia la lee el agente por MCP. En `escrita acá`, la tipeás en la pestaña
-**Historia**: título, descripción y criterios de aceptación, uno por línea.
+El selector de historia tiene tres modos. En `tracker`, pasás un ID y
+la historia la lee el agente por MCP. En `escrita acá`, la escribís en el panel
+de la derecha: título, descripción y criterios de aceptación, uno por línea.
 
 Al ejecutar, el studio la guarda en `.claude/run/<ID>/story.json` con el esquema
 canónico —el mismo que produce Jira— y recién ahí lanza el run. El resolver la
@@ -177,8 +150,8 @@ Los dos detalles importan y no son obvios:
   invocan con el nombre del plugin adelante: `/globant-sdlc:us`, no `/us`, y
   `globant-sdlc:qa`, no `qa`. Escribir el nombre suelto da
   `Unknown command: /us`. El studio lo arma a partir del `name` del manifest, y
-  por eso el chip del skill muestra el comando completo: es lo que hay que
-  tipear. `stream-json` requiere
+  por eso el encabezado del grafo muestra el comando completo: es lo que hay
+  que tipear. `stream-json` requiere
 `--verbose`. Con historia escrita a mano el mensaje lleva además
 `--tracker manual`.
 
@@ -271,8 +244,8 @@ Dos correcciones sobre esa inferencia, que valen porque el modo de falla es
 mostrar progreso que no ocurrió:
 
 - **Un run bloqueado no avanza más.** El corte es terminal (D2), así que después
-  de un `BLOCKED` la vía se congela. Si no, el `blocked.md` que escribe el
-  propio corte disparaba la regla de `Write` y la vía saltaba a
+  de un `BLOCKED` el grafo se congela. Si no, el `blocked.md` que escribe el
+  propio corte disparaba la regla de `Write` y el ciclo saltaba a
   "implementando" — justo lo contrario de lo que acababa de pasar.
 - **Escribir en `.claude/run/<ID>/` no es implementar.** Ahí van `story.json`,
   `plan.md` y `blocked.md`: es la evidencia del run, no el código de la

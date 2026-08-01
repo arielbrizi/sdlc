@@ -1237,6 +1237,11 @@ function renderNodeDetail() {
   const [kind, name] = id.split(':');
   const entries = NODE_OUT[id] || [];
   const file = nodeFile(id);
+  // Un hook se declara en hooks.json y ejecuta un script: son dos componentes,
+  // y desde el nodo se llega a los dos por separado.
+  const hookScript = kind === 'hook'
+    ? PLUGIN.hooks[Number(id.split(':')[2])]?.scriptPath
+    : null;
 
   const faseDe = n => PHASES.find(p => String(p.id) === n)?.label || n;
   const title = kind === 'phase' ? faseDe(name)
@@ -1258,6 +1263,7 @@ function renderNodeDetail() {
       ${kindBadge(NODE_KIND[kind] || 'skill')}
       <h3 class="nd-title">${esc(title)}</h3>
       ${file ? `<button class="btn" id="ndOpen">Abrir archivo</button>` : ''}
+      ${hookScript ? `<button class="btn" id="ndScript">Abrir el script</button>` : ''}
     </div>
     ${kind === 'phase' && PHASE_HELP[name] ? `<p class="what">${esc(PHASE_HELP[name])}</p>` : ''}
     <p class="what">${kind === 'main'
@@ -1266,6 +1272,7 @@ function renderNodeDetail() {
     ${cuerpo}`;
 
   if (file) $('ndOpen').addEventListener('click', () => open(file));
+  if (hookScript) $('ndScript').addEventListener('click', () => open(hookScript));
   showPanel('paneDetail');
 }
 
