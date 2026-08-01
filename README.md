@@ -27,6 +27,12 @@ ciclo no cambia.
 Panel local para ver el plugin como sistema, editar cualquier componente,
 escribir una historia sin tracker y seguir un run fase por fase.
 
+Cada componente muestra qué es —skill, subagente, hook, MCP server— con los
+nombres de Claude Code, así que usarlo enseña la herramienta. La sesión queda
+abierta cuando el ciclo termina: el panel de ejecución es también una consola
+donde seguir preguntándole al run, viendo cada herramienta que usa. El login se
+maneja desde ahí, delegando en `claude auth`.
+
 ```bash
 ./scripts/studio.sh --repo ~/repos/mi-proyecto
 # http://127.0.0.1:4477

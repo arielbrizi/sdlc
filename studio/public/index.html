@@ -197,6 +197,77 @@ button,input,select,textarea{font:inherit;color:inherit}
 .dirty{font-family:var(--mono);font-size:11px;color:var(--caution);margin-right:auto}
 .dirty:empty{margin-right:auto}
 
+/* ---------- identidad de cada componente ---------- */
+/* Cada cosa que el panel muestra dice qué es. Los nombres son los de Claude
+   Code — skill, subagente, hook, MCP server — para que usar el studio enseñe
+   el vocabulario real y no uno inventado acá. */
+.kind{
+  display:inline-block;padding:1px 5px;border-radius:2px;
+  font-family:var(--display);font-size:10px;font-weight:600;
+  letter-spacing:.1em;text-transform:uppercase;
+  border:1px solid currentColor;flex-shrink:0;
+}
+.kind[data-k="skill"]{color:#7fb2f0}
+.kind[data-k="agent"]{color:#c79bf0}
+.kind[data-k="hook"]{color:var(--caution)}
+.kind[data-k="script"]{color:#8fd0c0}
+.kind[data-k="mcp"]{color:#e8a0b8}
+.kind[data-k="reference"]{color:var(--dim)}
+.kind[data-k="manifest"]{color:var(--dim)}
+.chip[aria-pressed="true"] .kind{color:#4a525f}
+
+.what{font-size:12px;color:var(--dim);line-height:1.55;margin:6px 0 0;max-width:74ch}
+.phase-help{font-size:11.5px;color:var(--dim);line-height:1.45;padding:2px 0 0}
+
+/* ---------- barra de sesión de Claude ---------- */
+.auth{
+  display:flex;align-items:center;gap:7px;padding:5px 10px;border-radius:2px;
+  background:var(--raised);border:1px solid var(--edge);cursor:pointer;
+  font-family:var(--mono);font-size:11px;color:var(--bone);flex-shrink:0;
+}
+.auth:hover{border-color:var(--track)}
+.auth .dot{width:7px;height:7px;border-radius:50%;background:var(--track);flex-shrink:0}
+.auth[data-on="1"] .dot{background:var(--clear)}
+.auth[data-on="0"] .dot{background:var(--danger)}
+
+dialog{
+  border:1px solid var(--edge);border-radius:3px;background:var(--panel);
+  color:var(--bone);padding:0;max-width:640px;width:calc(100% - 40px);
+}
+dialog::backdrop{background:rgba(0,0,0,.62)}
+.dlg-head{display:flex;align-items:baseline;gap:10px;padding:16px 20px 12px;
+  border-bottom:1px solid var(--edge)}
+.dlg-head h2{font-family:var(--display);font-size:19px;font-weight:600;
+  letter-spacing:.1em;text-transform:uppercase;margin:0}
+.dlg-body{padding:16px 20px;max-height:60vh;overflow-y:auto}
+.dlg-foot{display:flex;gap:8px;padding:12px 20px;border-top:1px solid var(--edge)}
+.dlg-foot .grow{flex:1}
+.auth-out{
+  background:var(--sunk);border:1px solid var(--edge);border-radius:2px;
+  padding:10px;margin-top:12px;font-family:var(--mono);font-size:11px;
+  white-space:pre-wrap;word-break:break-word;max-height:200px;overflow-y:auto;
+}
+.auth-out a{color:var(--clear)}
+.glos{display:grid;grid-template-columns:auto 1fr;gap:12px 14px;align-items:start}
+.glos dd{margin:0;font-size:12.5px;color:var(--dim);line-height:1.55}
+
+/* ---------- consola de la sesión ---------- */
+.send{display:flex;gap:8px;padding:12px 20px;border-top:1px solid var(--edge);
+  background:var(--sunk);flex-shrink:0}
+.send textarea{
+  flex:1;resize:none;height:38px;background:var(--panel);border:1px solid var(--edge);
+  border-radius:2px;padding:9px 10px;font-family:var(--mono);font-size:12px;
+}
+.send textarea:focus{border-color:var(--track);outline:none}
+.send textarea:disabled{opacity:.45}
+.session{padding:8px 20px;font-family:var(--mono);font-size:11px;color:var(--dim);
+  border-top:1px solid var(--edge);display:flex;gap:8px;align-items:center;flex-shrink:0}
+.session .dot{width:7px;height:7px;border-radius:50%;background:var(--track)}
+.session[data-s="running"] .dot{background:var(--caution);animation:pulse 1.4s ease-in-out infinite}
+.session[data-s="idle"] .dot{background:var(--clear)}
+.session[data-s="done"] .dot,.session[data-s="stopped"] .dot{background:var(--track)}
+.session[data-s="error"] .dot{background:var(--danger)}
+
 /* historia escrita a mano */
 .story{padding:16px 20px 24px;overflow-y:auto;flex:1;min-height:0}
 .story-lead{margin:0 0 16px;font-size:12.5px;color:var(--dim);max-width:74ch}
@@ -220,6 +291,11 @@ button,input,select,textarea{font:inherit;color:inherit}
 .ev[data-k="phase"] .ev-k,.ev[data-k="agent"] .ev-k{color:var(--caution)}
 .ev[data-k="blocked"] .ev-k,.ev[data-k="error"] .ev-k,.ev[data-k="stderr"] .ev-k{color:var(--danger)}
 .ev[data-k="result"] .ev-k,.ev[data-k="artifact"] .ev-k{color:var(--clear)}
+.ev[data-k="tool"] .ev-k{color:#8fd0c0}
+.ev[data-k="ask"] .ev-k{color:#7fb2f0}
+.ev[data-k="ask"] .ev-m{color:#cfe2fa}
+.ev-tool{font-family:var(--mono);color:var(--bone)}
+.ev-tool b{font-weight:500;color:#8fd0c0}
 
 .banner{padding:10px 20px;font-family:var(--mono);font-size:12px;flex-shrink:0}
 .banner.err{background:rgba(224,82,82,.12);color:var(--danger);
@@ -240,10 +316,58 @@ button,input,select,textarea{font:inherit;color:inherit}
   <div class="brand">globant<span>·</span>sdlc <span>studio</span></div>
   <div class="rail-meta" id="railMeta">cargando…</div>
   <div class="rail-actions">
+    <button class="auth" id="authChip" title="Sesión de Claude Code">
+      <span class="dot"></span><span id="authText">sesión…</span>
+    </button>
+    <button class="btn" id="btnGlosario" title="Qué es cada componente">Glosario</button>
     <button class="btn" id="btnValidate">Validar</button>
     <button class="btn" id="btnReload">Recargar</button>
   </div>
 </div>
+
+<!-- Sesión de Claude Code: el studio no guarda credenciales, delega en el CLI. -->
+<dialog id="dlgAuth">
+  <div class="dlg-head">
+    <h2>Sesión de Claude Code</h2>
+  </div>
+  <div class="dlg-body">
+    <p class="what" id="authDetail">Consultando…</p>
+    <p class="what">
+      El studio no guarda credenciales: le pide el login al CLI de Claude Code, que
+      es el mismo que usás en la terminal. Iniciar sesión abre el flujo en tu
+      navegador; si el proceso pide un código, pegalo abajo.
+    </p>
+    <div class="auth-out" id="authOut" hidden></div>
+    <div class="console-adv" id="authInputRow" hidden>
+      <input class="field" id="authInput" placeholder="Pegá acá el código y Enter" autocomplete="off">
+    </div>
+  </div>
+  <div class="dlg-foot">
+    <button class="btn" id="btnAuthRefresh">Actualizar</button>
+    <span class="grow"></span>
+    <button class="btn" id="btnAuthLogout">Cerrar sesión</button>
+    <button class="btn lit" id="btnAuthLogin">Iniciar sesión</button>
+    <button class="btn" id="btnAuthClose">Salir</button>
+  </div>
+</dialog>
+
+<!-- Glosario: los nombres son los de Claude Code, no etiquetas del studio. -->
+<dialog id="dlgGlosario">
+  <div class="dlg-head">
+    <h2>Qué es cada cosa</h2>
+  </div>
+  <div class="dlg-body">
+    <p class="what">
+      Todos estos nombres son los de Claude Code. Si los aprendés acá, los vas a
+      reconocer en la documentación y en la terminal.
+    </p>
+    <dl class="glos" id="glosList"></dl>
+  </div>
+  <div class="dlg-foot">
+    <span class="grow"></span>
+    <button class="btn lit" id="btnGlosClose">Entendido</button>
+  </div>
+</dialog>
 
 <div class="grid">
   <!-- ---------------- spine ---------------- -->
@@ -260,9 +384,10 @@ button,input,select,textarea{font:inherit;color:inherit}
   <main class="inspector">
     <div class="console">
       <div class="console-row">
-        <select class="field" id="source" style="flex:0 0 165px">
-          <option value="tracker">Fuente: tracker</option>
-          <option value="manual">Fuente: escrita acá</option>
+        <select class="field" id="source" style="flex:0 0 185px">
+          <option value="tracker">Historia: desde tracker</option>
+          <option value="manual">Historia: escrita acá</option>
+          <option value="console">Solo consola, sin historia</option>
         </select>
         <input class="field" id="story" placeholder="ID de historia — GLOB-1234, 8891, #245" autocomplete="off">
         <button class="btn lit" id="btnRun">Ejecutar</button>
@@ -294,6 +419,8 @@ button,input,select,textarea{font:inherit;color:inherit}
         <div class="ed-head">
           <div class="ed-path" id="edPath"></div>
           <h2 class="ed-title" id="edTitle"></h2>
+          <div id="edKind"></div>
+          <p class="what" id="edWhat"></p>
         </div>
         <div class="fm" id="edFm"></div>
         <div class="ed-body"><textarea id="edText" spellcheck="false"></textarea></div>
@@ -350,6 +477,15 @@ button,input,select,textarea{font:inherit;color:inherit}
 
     <section class="pane" id="paneLog">
       <div class="log" id="log"></div>
+      <div class="session" id="sessionBar" data-s="none">
+        <span class="dot"></span><span id="sessionText">Sin sesión abierta</span>
+      </div>
+      <div class="send">
+        <textarea id="sendText" spellcheck="false" disabled
+          placeholder="Abrí una sesión para escribirle a Claude. Enter envía, Shift+Enter hace salto de línea."></textarea>
+        <button class="btn lit" id="btnSend" disabled>Enviar</button>
+        <button class="btn" id="btnCloseSession" disabled title="Termina la sesión de Claude">Cerrar</button>
+      </div>
     </section>
   </main>
 </div>
@@ -377,7 +513,75 @@ const PHASE_PARTS = {
   6: { agents: [] },
 };
 
+// Los nombres son los de Claude Code, no etiquetas inventadas para el studio:
+// quien use el panel tiene que poder buscar estos términos en la documentación
+// y encontrarlos. La explicación sí está escrita para alguien que recién empieza.
+const KINDS = {
+  skill: {
+    label: 'Skill',
+    what: 'Un instructivo que Claude Code carga cuando la tarea lo amerita. Este es el que corre cuando escribís /us: define el ciclo completo y en qué orden interviene cada quien.',
+  },
+  agent: {
+    label: 'Subagente',
+    what: 'Claude trabajando en una sesión aparte, con su propio instructivo y sus propias herramientas. No ve el contexto de la sesión principal, y por eso puede auditar sin arrastrar lo que ya se venía decidiendo.',
+  },
+  hook: {
+    label: 'Hook',
+    what: 'Un comando que Claude Code ejecuta por su cuenta, antes o después de usar una herramienta. Es código, no una instrucción: se cumple siempre, sin depender de que el modelo se acuerde.',
+  },
+  script: {
+    label: 'Script',
+    what: 'Un archivo .sh que vive en el plugin. Lo llama un hook o el skill; Claude no lo ejecuta por su cuenta.',
+  },
+  mcp: {
+    label: 'MCP server',
+    what: 'Model Context Protocol: la conexión a un sistema externo —Jira, Azure DevOps, GitHub— que le agrega herramientas nuevas a Claude para leer y escribir ahí.',
+  },
+  reference: {
+    label: 'Referencia',
+    what: 'Un archivo que el skill trae consigo y abre solo cuando lo necesita. No ocupa contexto hasta que se lee.',
+  },
+  manifest: {
+    label: 'Manifiesto',
+    what: 'plugin.json: declara el plugin —nombre, descripción— y las opciones que cada equipo puede configurar al instalarlo.',
+  },
+  tool: {
+    label: 'Herramienta',
+    what: 'Lo que Claude puede hacer además de escribir texto: Bash, Read, Edit, Write, Task. En la consola vas a ver cada una a medida que la usa.',
+  },
+  plugin: {
+    label: 'Plugin',
+    what: 'El paquete que junta todo lo anterior y se instala desde un marketplace. Acá el plugin es globant-sdlc.',
+  },
+};
+
+// Qué pasa en cada fase, en una línea y sin jerga.
+const PHASE_HELP = {
+  0: 'Busca la historia y la deja siempre en el mismo formato.',
+  1: 'Decide si la historia se puede implementar. Si es ambigua, el ciclo corta acá.',
+  2: 'Diseña el cambio antes de tocar una línea de código.',
+  3: 'Escribe el código y los tests, en una branch nueva.',
+  4: 'Dos subagentes revisan en paralelo: uno calidad, otro seguridad.',
+  5: 'Una última lectura del diff, buscando razones para rechazarlo.',
+  6: 'Abre el Pull Request en draft para que lo revise una persona.',
+};
+
+/** Deduce qué tipo de componente es un archivo, por dónde vive en el plugin. */
+function kindOf(path) {
+  if (/^skills\/[^/]+\/references\//.test(path)) return 'reference';
+  if (/^skills\//.test(path)) return 'skill';
+  if (/^agents\//.test(path)) return 'agent';
+  if (/^hooks\//.test(path)) return 'hook';
+  if (/^scripts\//.test(path)) return 'script';
+  if (/\.mcp\.json$/.test(path)) return 'mcp';
+  if (/plugin\.json$/.test(path)) return 'manifest';
+  return null;
+}
+
+const kindBadge = k => (KINDS[k] ? `<span class="kind" data-k="${k}">${esc(KINDS[k].label)}</span>` : '');
+
 let PLUGIN = null, PHASES = [], current = null, original = '', run = null, es = null;
+let runHasStory = false, authES = null;
 
 /* ------------------------------------------------------ carga del plugin */
 
@@ -405,16 +609,24 @@ function renderPhases() {
 
     for (const n of parts.skills || []) {
       const s = byName(PLUGIN.skills, n);
-      if (s) chips.push(chip(s.path, `/${s.name}`, ''));
-      for (const r of s?.references || []) chips.push(chip(r.path, r.name, ''));
+      if (s) chips.push(chip({ path: s.path, label: `/${s.name}`, kind: 'skill' }));
+      for (const r of s?.references || []) {
+        chips.push(chip({ path: r.path, label: r.name, kind: 'reference' }));
+      }
     }
     for (const n of parts.agents || []) {
       const a = byName(PLUGIN.agents, n);
-      if (a) chips.push(chip(a.path, `@${a.name}`, a.readOnly ? 'audita' : 'escribe'));
+      if (a) chips.push(chip({
+        path: a.path, label: `@${a.name}`, kind: 'agent',
+        tag: a.readOnly ? 'solo audita' : 'escribe',
+      }));
     }
     for (const n of parts.scripts || []) {
       const s = PLUGIN.scripts.find(x => x.name === n);
-      if (s) chips.push(chip(s.path, s.name, s.executable ? '' : 'sin +x', !s.executable));
+      if (s) chips.push(chip({
+        path: s.path, label: s.name, kind: 'script',
+        tag: s.executable ? '' : 'sin +x', warn: !s.executable,
+      }));
     }
 
     return `<div class="phase" data-phase="${p.id}" data-state="idle" data-gate="${p.gate ? 1 : 0}">
@@ -424,6 +636,7 @@ function renderPhases() {
         <span class="phase-name">${esc(p.label)}</span>
         <span class="phase-note" data-note></span>
       </div>
+      <div class="phase-help">${esc(PHASE_HELP[p.id] || '')}</div>
       <div class="chips">${chips.join('')}</div>
     </div>`;
   }).join('');
@@ -432,15 +645,18 @@ function renderPhases() {
     c.addEventListener('click', () => open(c.dataset.path)));
 }
 
-const chip = (path, label, tag, warn) =>
-  `<button class="chip${warn ? ' warn' : ''}" data-path="${esc(path)}" aria-pressed="false">
-     ${esc(label)}${tag ? `<span class="ro">${esc(tag)}</span>` : ''}
+const chip = ({ path, label, kind, tag, warn }) =>
+  `<button class="chip${warn ? ' warn' : ''}" data-path="${esc(path)}" aria-pressed="false"
+           title="${esc(KINDS[kind]?.label || '')}: ${esc(label)}">
+     ${kindBadge(kind)}${esc(label)}${tag ? `<span class="ro">${esc(tag)}</span>` : ''}
    </button>`;
 
 function renderInterlock() {
   $('interlock').innerHTML = PLUGIN.hooks.map(h => `
-    <div class="interlock-row" data-path="${esc(h.scriptPath || h.path)}">
+    <div class="interlock-row" data-path="${esc(h.scriptPath || h.path)}"
+         title="Hook en ${esc(h.event)} — ${esc(h.description || h.matcher)}">
       <span class="dot"></span>
+      ${kindBadge('hook')}
       <span class="ev">${esc(h.event)}</span>
       <span class="desc">${esc(h.description || h.matcher)}</span>
     </div>`).join('') || '<div class="interlock-row"><span class="desc">Sin hooks</span></div>';
@@ -451,19 +667,21 @@ function renderInterlock() {
 
 function renderMcp() {
   const rows = PLUGIN.mcp.map(m => `
-    <div class="interlock-row" data-path=".mcp.json">
+    <div class="interlock-row" data-path=".mcp.json"
+         title="MCP server ${esc(m.name)} — ${esc(m.target)}">
       <span class="dot"></span>
-      <span class="ev">${esc(m.transport)}</span>
-      <span class="desc">${esc(m.name)} — ${esc(m.target)}</span>
+      ${kindBadge('mcp')}
+      <span class="ev">${esc(m.name)}</span>
+      <span class="desc">${esc(m.target)}</span>
     </div>`);
 
   // Escribir la historia a mano es una fuente más, no un caso degradado: si el
   // equipo no integra con ningún tracker, esta es la única fila que importa.
   rows.push(`
-    <div class="interlock-row" data-story="1">
+    <div class="interlock-row" data-story="1" title="Escribir la historia en el studio">
       <span class="dot"></span>
-      <span class="ev">manual</span>
-      <span class="desc">escribir la historia en el studio</span>
+      <span class="kind" data-k="reference">A mano</span>
+      <span class="desc">escribir la historia acá, sin tracker</span>
     </div>`);
 
   $('mcp').innerHTML = rows.join('');
@@ -491,6 +709,11 @@ async function open(path) {
   $('edEmpty').hidden = true; $('edView').hidden = false;
   $('edPath').textContent = path;
   $('edTitle').textContent = (f.frontmatter?.name) || path.split('/').pop();
+
+  // Abrir un archivo tiene que decirte qué clase de cosa es, no solo su nombre.
+  const kind = kindOf(path);
+  $('edKind').innerHTML = kindBadge(kind);
+  $('edWhat').textContent = KINDS[kind]?.what || '';
 
   // El frontmatter son los campos que realmente se tocan al ajustar un agente,
   // así que van como campos, no perdidos dentro del texto.
@@ -595,13 +818,19 @@ function requireTitle() {
 }
 
 const manualMode = () => $('source').value === 'manual';
+const consoleMode = () => $('source').value === 'console';
 
 function syncSource() {
-  const manual = manualMode();
-  $('story').placeholder = manual
-    ? 'ID — opcional, se deriva del título'
-    : 'ID de historia — GLOB-1234, 8891, #245';
+  const manual = manualMode(), consola = consoleMode();
+  $('story').disabled = consola;
+  $('story').placeholder = consola
+    ? 'sin historia — la sesión se abre vacía y le escribís vos'
+    : manual
+      ? 'ID — opcional, se deriva del título'
+      : 'ID de historia — GLOB-1234, 8891, #245';
+  $('tabStory').hidden = consola;
   if (manual) selectTab('story');
+  if (consola) selectTab('log');
 }
 $('source').addEventListener('change', syncSource);
 
@@ -650,21 +879,23 @@ $('btnStop').addEventListener('click', async () => {
 });
 
 async function start() {
-  const manual = manualMode();
+  const manual = manualMode(), consola = consoleMode();
   const storyId = $('story').value.trim();
 
   if (manual && !requireTitle()) return;
-  if (!manual && !storyId) return $('story').focus();
+  if (!manual && !consola && !storyId) return $('story').focus();
 
   resetPhases();
   $('log').innerHTML = '';
   selectTab('log');
+  runHasStory = !consola;
 
   try {
     const r = await api('/api/run', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
+        mode: consola ? 'console' : (manual ? 'manual' : 'tracker'),
         storyId,
         story: manual ? storyPayload() : null,
         repoDir: $('repoDir').value.trim(),
@@ -674,10 +905,14 @@ async function start() {
     });
     run = r.runId;
     // Con ID derivado del título, es la primera vez que el dev lo ve.
-    $('story').value = r.storyId;
-    if (manual) $('stId').value = r.storyId;
-    $('cmdHint').textContent = `${r.cmd}   ·   cwd ${r.cwd}`;
-    $('btnRun').disabled = true; $('btnStop').disabled = false;
+    if (r.storyId) {
+      $('story').value = r.storyId;
+      if (manual) $('stId').value = r.storyId;
+    }
+    $('cmdHint').textContent = r.prompt
+      ? `${r.cmd}   ·   primer mensaje: ${r.prompt}   ·   cwd ${r.cwd}`
+      : `${r.cmd}   ·   cwd ${r.cwd}`;
+    setSession('running', 'Abriendo la sesión…');
 
     es?.close();
     es = new EventSource(`/api/run/${run}/stream`);
@@ -687,6 +922,48 @@ async function start() {
     banner('err', e.message);
   }
 }
+
+/* ------------------------------------------- consola de la sesión abierta */
+
+// La sesión de Claude no termina cuando responde: queda esperando. Eso es lo
+// que permite seguir la conversación donde la dejó el ciclo automático.
+function setSession(status, text) {
+  $('sessionBar').dataset.s = status;
+  $('sessionText').textContent = text;
+
+  const alive = status === 'running' || status === 'idle';
+  const canType = status === 'idle';
+  $('sendText').disabled = !canType;
+  $('btnSend').disabled = !canType;
+  $('btnCloseSession').disabled = !alive;
+  $('btnStop').disabled = !alive;
+  $('btnRun').disabled = alive;
+}
+
+async function send() {
+  const text = $('sendText').value.trim();
+  if (!text || !run) return;
+  $('sendText').value = '';
+  setSession('running', 'Claude está trabajando…');
+  try {
+    await api(`/api/run/${run}/send`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+  } catch (e) {
+    banner('err', e.message);
+    setSession('idle', 'Sesión abierta — escribile abajo');
+  }
+}
+
+$('btnSend').addEventListener('click', send);
+$('sendText').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+});
+$('btnCloseSession').addEventListener('click', async () => {
+  if (run) await api(`/api/run/${run}/close`, { method: 'POST' }).catch(() => {});
+});
 
 function onEvent(ev) {
   logEvent(ev);
@@ -713,25 +990,40 @@ function onEvent(ev) {
     const p = el(ev.phase);
     if (p && p.dataset.state === 'idle') p.dataset.state = 'done';
   }
+  if (ev.t === 'ready') setSession('idle', 'Sesión abierta — escribile abajo');
   if (ev.t === 'result') {
-    if (ev.status === 'done' && !$('phases').querySelector('[data-state="blocked"]')) {
+    // El ciclo completo termina en un `result` sin bloqueo: recién ahí se
+    // encienden todas las estaciones de la vía.
+    if (ev.ok && runHasStory && !$('phases').querySelector('[data-state="blocked"]')) {
       $('phases').querySelectorAll('.phase').forEach(p => p.dataset.state = 'done');
     }
     const bits = [ev.turns != null ? `${ev.turns} turnos` : null,
                   ev.cost != null ? `US$ ${ev.cost.toFixed(4)}` : null].filter(Boolean);
-    if (bits.length) banner(ev.status === 'done' ? 'ok' : 'err', bits.join(' · '));
+    if (bits.length) banner(ev.ok ? 'ok' : 'err', bits.join(' · '));
+    if (ev.status === 'idle') setSession('idle', 'Sesión abierta — escribile abajo');
   }
   if (ev.t === 'end' || ev.t === 'error') finish();
 }
 
+// El tipo crudo del evento no le dice nada a quien no escribió el servidor.
+const EV_LABEL = {
+  start: 'inicio', init: 'sesión', ready: 'lista', phase: 'fase', agent: 'subagente',
+  tool: 'herramienta', say: 'claude', ask: 'vos', artifact: 'archivo',
+  blocked: 'bloqueo', result: 'turno', end: 'fin', error: 'error', stderr: 'stderr',
+};
+
 function logEvent(ev) {
-  const msg = ev.text || ev.message || ev.reason || ev.detail || ev.file ||
-              ev.cmd || ev.agent || ev.status || '';
   const row = document.createElement('div');
   row.className = 'ev'; row.dataset.k = ev.t;
+
+  // Una tool call se lee mejor con el nombre de la herramienta destacado.
+  const body = ev.t === 'tool'
+    ? `<span class="ev-m ev-tool"><b>${esc(ev.name)}</b> ${esc(ev.summary || '')}</span>`
+    : `<span class="ev-m">${esc(ev.text || ev.message || ev.reason || ev.detail ||
+        ev.file || ev.cmd || ev.agent || ev.status || '')}</span>`;
+
   row.innerHTML = `<span class="ev-t">${hhmm(ev.at)}</span>
-                   <span class="ev-k">${esc(ev.t)}</span>
-                   <span class="ev-m">${esc(msg)}</span>`;
+                   <span class="ev-k">${esc(EV_LABEL[ev.t] || ev.t)}</span>${body}`;
   $('log').append(row);
   $('log').scrollTop = $('log').scrollHeight;
 
@@ -742,7 +1034,7 @@ function logEvent(ev) {
 }
 
 function finish() {
-  $('btnRun').disabled = false; $('btnStop').disabled = true;
+  setSession('none', 'Sesión cerrada');
   $('phases').querySelectorAll('[data-state="active"]').forEach(p => {
     if (!$('phases').querySelector('[data-state="blocked"]')) p.dataset.state = 'done';
   });
@@ -776,6 +1068,94 @@ for (const [name, [tab]] of Object.entries(TABS)) {
   $(tab).addEventListener('click', () => selectTab(name));
 }
 
+/* ------------------------------------------- sesión de Claude Code (login) */
+
+// El studio no guarda credenciales: pregunta y delega en el CLI, que es donde
+// ya viven. Todo lo que hace es mostrar el estado y levantar el flujo de login.
+async function refreshAuth() {
+  try {
+    const a = await api('/api/auth');
+    const on = !!a.loggedIn;
+    $('authChip').dataset.on = on ? '1' : '0';
+    $('authText').textContent = on ? (a.authMethod || 'conectado') : 'sin sesión';
+    $('authDetail').textContent = on
+      ? `Conectado con ${a.authMethod || 'método desconocido'}${a.apiProvider ? ` · ${a.apiProvider}` : ''}. Los runs del studio usan esta sesión.`
+      : `Sin sesión iniciada${a.error ? ` — ${a.error}` : ''}. Sin esto, ejecutar una historia va a fallar.`;
+    $('btnAuthLogin').disabled = on;
+    $('btnAuthLogout').disabled = !on;
+    return a;
+  } catch (e) {
+    $('authChip').dataset.on = '0';
+    $('authText').textContent = 'sin sesión';
+    $('authDetail').textContent = e.message;
+  }
+}
+
+function authLog(html) {
+  $('authOut').hidden = false;
+  $('authOut').insertAdjacentHTML('beforeend', html);
+  $('authOut').scrollTop = $('authOut').scrollHeight;
+}
+
+$('authChip').addEventListener('click', async () => { await refreshAuth(); $('dlgAuth').showModal(); });
+$('btnAuthClose').addEventListener('click', () => $('dlgAuth').close());
+$('btnAuthRefresh').addEventListener('click', refreshAuth);
+
+$('btnAuthLogin').addEventListener('click', async () => {
+  $('authOut').innerHTML = ''; $('authOut').hidden = false;
+  $('authInputRow').hidden = false;
+  try {
+    await api('/api/auth/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ mode: 'claudeai' }),
+    });
+  } catch (e) { return banner('err', e.message); }
+
+  authES?.close();
+  authES = new EventSource('/api/auth/stream');
+  authES.onmessage = async (e) => {
+    const ev = JSON.parse(e.data);
+    // La URL es lo único accionable del stream: se muestra como link.
+    if (ev.t === 'url') authLog(`\n<a href="${esc(ev.url)}" target="_blank" rel="noreferrer">${esc(ev.url)}</a>\n`);
+    else if (ev.t === 'out') authLog(esc(ev.text));
+    else if (ev.t === 'error') authLog(`\n${esc(ev.message)}\n`);
+    else if (ev.t === 'end') {
+      authLog(`\n— login terminado (${ev.code}) —\n`);
+      $('authInputRow').hidden = true;
+      await refreshAuth();
+    }
+  };
+  authES.onerror = () => { authES.close(); authES = null; };
+});
+
+$('authInput').addEventListener('keydown', async (e) => {
+  if (e.key !== 'Enter') return;
+  const text = $('authInput').value;
+  $('authInput').value = '';
+  await api('/api/auth/input', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ text }),
+  }).catch(err => banner('err', err.message));
+});
+
+$('btnAuthLogout').addEventListener('click', async () => {
+  if (!confirm('¿Cerrar la sesión de Claude Code en esta máquina?')) return;
+  try {
+    await api('/api/auth/logout', { method: 'POST' });
+    await refreshAuth();
+  } catch (e) { banner('err', e.message); }
+});
+
+/* ------------------------------------------------------------- glosario */
+
+$('glosList').innerHTML = Object.entries(KINDS).map(([k, v]) => `
+  <dt>${kindBadge(k)}</dt>
+  <dd>${esc(v.what)}</dd>`).join('');
+$('btnGlosario').addEventListener('click', () => $('dlgGlosario').showModal());
+$('btnGlosClose').addEventListener('click', () => $('dlgGlosario').close());
+
 function banner(kind, text) {
   document.querySelectorAll('.banner').forEach(b => b.remove());
   const b = document.createElement('div');
@@ -799,7 +1179,10 @@ $('btnValidate').addEventListener('click', async () => {
   }
 });
 
+setSession('none', 'Sin sesión abierta');
+syncSource();
 load().catch(e => banner('err', e.message));
+refreshAuth();
 </script>
 </body>
 </html>

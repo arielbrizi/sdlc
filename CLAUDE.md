@@ -74,8 +74,14 @@ o el panel queda desincronizado del plugin real:
 
 - `PHASES` y `AGENT_PHASE` en `studio/server.mjs` — el modelo de fases y qué
   agente corresponde a cuál
-- `PHASE_PARTS` en `studio/public/index.html` — qué componentes cuelgan de cada
-  fase en el diagrama
+- `PHASE_PARTS` y `PHASE_HELP` en `studio/public/index.html` — qué componentes
+  cuelgan de cada fase en el diagrama, y la línea que explica qué pasa ahí
+
+Si agregás un **tipo** de componente nuevo (no un componente, un tipo), va
+también en `KINDS` de `studio/public/index.html`: es lo que le pone la etiqueta
+—Skill, Subagente, Hook— y alimenta el glosario. Usá el nombre que le da Claude
+Code, no uno inventado: el studio enseña el vocabulario real. Lo que se escribe
+en criollo es la explicación, nunca el término.
 
 Es duplicación deliberada: el studio conoce el ciclo del skill `us`, que es
 específico, mientras que el escaneo del plugin es genérico. Si algún día hay más

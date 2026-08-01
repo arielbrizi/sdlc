@@ -1,7 +1,8 @@
 # studio
 
 Panel local para ver el plugin como sistema, editar cualquier componente en
-disco y seguir un run fase por fase.
+disco, seguir un run fase por fase y seguir hablando con esa misma sesión cuando
+termina.
 
 ```bash
 node studio/server.mjs --repo ~/repos/mi-proyecto
@@ -36,6 +37,23 @@ bloquea una historia, la vía se corta ahí y se ve dónde.
 
 Los hooks no aparecen en la vía porque no son secuenciales: corren en cualquier
 momento, sobre cualquier fase. Van abajo, sin numerar, como enclavamiento.
+
+## Cada componente dice qué es
+
+Todo lo que el panel muestra lleva su tipo: **Skill**, **Subagente**, **Hook**,
+**Script**, **MCP server**, **Referencia**, **Manifiesto**. Al abrir un archivo,
+el encabezado explica en una línea qué es esa clase de cosa, y el botón Glosario
+lista las siete.
+
+Los nombres son los de Claude Code, no etiquetas del studio. Es deliberado: quien
+use el panel un par de semanas tiene que poder leer la documentación oficial, o
+escuchar "eso es un hook" en una reunión, y saber de qué se habla. Un vocabulario
+propio sería más fácil de escribir y le enseñaría a la gente algo que no existe
+afuera de esta herramienta.
+
+Las explicaciones sí están escritas para alguien que recién arranca, y viven en
+`KINDS`, dentro de `public/index.html`. Si agregás un tipo de componente,
+agregalo ahí o va a aparecer sin etiqueta.
 
 ## Editar
 
@@ -73,17 +91,53 @@ la historia de vuelta al formulario para corregirla y volver a tirar el run.
 Como no hay ticket al que escribirle, el PR es el único registro: en este modo la
 descripción lleva los criterios completos en vez de un link.
 
+## Sesión de Claude Code
+
+El chip de la barra superior muestra si hay sesión iniciada, con qué método y
+contra qué proveedor. Sale de `claude auth status --json`.
+
+**El studio no guarda credenciales ni las pide por formulario.** Delega en el
+CLI, que es donde ya viven: el botón Iniciar sesión levanta `claude auth login`,
+muestra la URL del flujo OAuth como link y deja un campo para pegar el código si
+el proceso lo pide. Cerrar sesión corre `claude auth logout`. Un token escrito en
+un input web sería exactamente lo que `guard-secrets.sh` existe para impedir.
+
 ## Ejecutar
 
-El botón Ejecutar corre:
+El botón Ejecutar corre, en el repo objetivo:
 
 ```
-claude -p "/us <ID>" --output-format stream-json --verbose
+claude -p --input-format stream-json --output-format stream-json --verbose
 ```
 
-en el repo objetivo, y consume el NDJSON que sale por stdout. `stream-json`
-requiere `--verbose`. Con historia escrita a mano el prompt lleva además
+y le manda `/us <ID>` como primer mensaje por stdin. `stream-json` requiere
+`--verbose`. Con historia escrita a mano el mensaje lleva además
 `--tracker manual`.
+
+El prompt va por stdin y no en la línea de comandos porque así la sesión queda
+abierta: cuando el ciclo termina, el proceso sigue vivo esperando el próximo
+mensaje. Eso es lo que convierte el panel de ejecución en una consola.
+
+## La consola
+
+El panel Ejecución muestra el stream y abajo tiene un campo para escribirle a
+Claude. Dos cosas que antes no se veían:
+
+- **Cada herramienta que usa**, a medida que la usa: `Bash echo hola`,
+  `Read src/api.ts`, `Task @seguridad`. Es lo que el run está haciendo ahora, no
+  solo en qué fase va.
+- **Tus propios mensajes**, marcados como `vos`, en la misma línea de tiempo.
+
+La sesión no se cierra cuando el ciclo termina: queda en `Sesión abierta` y podés
+seguir la conversación con todo el contexto del run —preguntarle por qué tomó una
+decisión, pedirle que corrija algo, revisar el diff—. `Cerrar` la termina;
+`Detener` mata el proceso.
+
+Con **Solo consola, sin historia** la sesión se abre vacía, sin invocar `/us`:
+sirve para usar el repo objetivo de forma interactiva sin arrancar el ciclo.
+
+Ojo: mientras la sesión esté abierta hay un proceso `claude` vivo. El botón
+Ejecutar queda deshabilitado hasta que la cierres — un run a la vez.
 
 ### Cómo se sabe en qué paso está
 
@@ -124,6 +178,12 @@ guardas puestas:
 - La historia escrita a mano es la única escritura fuera del plugin, y va
   siempre a `.claude/run/<ID>/story.json` del repo objetivo: el ID pasa por la
   misma validación y la ruta resuelta se verifica contra ese directorio.
+- El studio nunca ve ni almacena credenciales: el login lo hace el CLI en su
+  propio proceso, y el studio solo muestra su salida y le pasa lo que escribas
+  en el campo de código.
+- Lo que mandás por la consola se le escribe a `claude` por stdin, como un
+  mensaje de usuario más. Vale lo mismo que la caja de "Flags extra": el
+  proceso corre en tu máquina y hace lo que le pidas.
 
 El campo "Flags extra" pasa lo que escribas directo al CLI. Es una puerta
 abierta a propósito, para poder probar flags sin tocar el código — pero es tu

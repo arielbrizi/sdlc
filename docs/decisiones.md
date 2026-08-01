@@ -125,3 +125,53 @@ todos lados, que es exactamente lo que D2 evita.
 flujo hacía sobre el ticket se vuelven archivos del run: las preguntas
 bloqueantes a `blocked.md`, y el PR pasa a ser el único registro de la historia
 —por eso en este modo lleva los criterios completos en vez de un link.
+
+## D9 — La sesión del run queda abierta
+
+**Contexto.** El studio corría `claude -p "/us <ID>"` y el proceso moría al
+terminar. Si el run se bloqueaba en refinamiento, o tomaba una decisión rara en
+arquitectura, no había forma de preguntarle nada: el contexto se iba con el
+proceso. La única salida era abrir una terminal aparte y empezar de cero.
+
+**Decisión.** El prompt pasa a mandarse por stdin con
+`--input-format stream-json`, que mantiene el proceso vivo después de responder.
+El panel de ejecución gana un campo de mensaje: cuando el ciclo termina, la
+sesión queda abierta y el dev sigue la conversación con todo el contexto del run.
+También se puede abrir una sesión vacía, sin invocar `/us`.
+
+**Además.** El stream emite un evento por cada llamada a herramienta, así que el
+log muestra qué está haciendo el run —`Bash`, `Read`, `Task @seguridad`— y no
+solo en qué fase va. Era información que ya pasaba por stdout y se descartaba.
+
+**Por qué.** El PR sigue siendo el gate (D1) y esto no lo toca: no agrega un paso
+ni pide intervención durante el ciclo. Lo que agrega es poder interrogar el run
+*después*, que es justo cuando aparecen las preguntas. Un flujo automático que no
+se puede interrogar cuando falla obliga a reconstruir el contexto a mano, y ahí
+se pierde más tiempo del que el modo automático ahorró.
+
+**Costo.** Mientras la sesión esté abierta hay un proceso vivo, así que el studio
+maneja un run a la vez y hay que cerrarla explícitamente. Es aceptable para una
+herramienta local de un solo usuario; si hiciera falta concurrencia, `runs` ya es
+un Map y soporta varios.
+
+## D10 — La UI usa el vocabulario de Claude Code, no uno propio
+
+**Contexto.** El panel mostraba `@seguridad`, `guard-git.sh` y `/us` como chips
+indistintos. Para quien ya conocía el plugin alcanzaba; para cualquier otro no
+había forma de saber que uno es un subagente, otro un script y otro un skill —ni
+qué significa cada una de esas cosas.
+
+**Decisión.** Cada componente lleva su tipo visible —Skill, Subagente, Hook,
+Script, MCP server, Referencia, Manifiesto— con los nombres exactos de Claude
+Code, más una explicación en lenguaje llano al abrirlo y un glosario completo en
+la barra superior.
+
+**Por qué los nombres oficiales.** Era tentador traducirlos a algo más amable
+("revisores", "reglas automáticas"). Se descartó: el objetivo no es que el panel
+se entienda solo, es que quien lo use termine entendiendo Claude Code. Un
+vocabulario propio se entiende más rápido y no sirve en ningún otro lado —ni en
+la documentación, ni en la terminal, ni hablando con otro equipo. La
+simplificación va en la explicación, nunca en el término.
+
+**Dónde vive.** `KINDS` en `public/index.html`. Un tipo de componente que no se
+agregue ahí aparece sin etiqueta.

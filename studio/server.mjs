@@ -102,6 +102,22 @@ function parseFrontmatter(text) {
   return { data, raw, body, flat };
 }
 
+/** Corre un subcomando de `claude` y junta su salida. Para comandos cortos. */
+function runClaude(args, { cwd = REPO_ROOT } = {}) {
+  return new Promise((resolve) => {
+    let stdout = '', stderr = '';
+    const c = spawn('claude', args, { cwd });
+    c.stdout.on('data', d => stdout += d);
+    c.stderr.on('data', d => stderr += d);
+    c.on('error', e => resolve({
+      code: -1,
+      stdout: '',
+      stderr: e.code === 'ENOENT' ? 'No se encontró el binario `claude` en el PATH.' : e.message,
+    }));
+    c.on('close', code => resolve({ code, stdout, stderr }));
+  });
+}
+
 const listDir = async (dir, filter = () => true) => {
   try {
     return (await fsp.readdir(dir, { withFileTypes: true }))
@@ -334,6 +350,83 @@ async function writeManualStory(repoDir, input) {
   return { id, file, story };
 }
 
+// ------------------------------------------------------------------- auth
+
+/** Manda un evento a los clientes SSE de un canal y lo guarda para los que lleguen tarde. */
+function push(channel, event, cap = 3000) {
+  channel.events.push(event);
+  if (channel.events.length > cap) channel.events.shift();
+  for (const res of channel.clients) res.write(`data: ${JSON.stringify(event)}\n\n`);
+}
+
+/**
+ * El login de `claude` es un flujo OAuth por browser: el proceso imprime una URL
+ * y espera. Como el studio ya corre en la máquina del dev y se ve en un browser,
+ * alcanza con levantar el proceso, mostrar la URL y poder escribirle a stdin
+ * (algunos flujos piden pegar un código de vuelta).
+ *
+ * Es un proceso único: dos logins en paralelo compiten por las mismas credenciales.
+ */
+const login = { child: null, status: 'idle', events: [], clients: new Set() };
+
+async function authStatus() {
+  const { code, stdout, stderr } = await runClaude(['auth', 'status', '--json']);
+  try {
+    return { ok: true, ...JSON.parse(stdout) };
+  } catch {
+    return {
+      ok: false,
+      loggedIn: false,
+      error: (stderr || stdout || `exit ${code}`).trim().slice(0, 400),
+    };
+  }
+}
+
+function startLogin(mode) {
+  if (login.child) return { already: true };
+
+  const args = ['auth', 'login'];
+  if (mode === 'console') args.push('--console');
+  if (mode === 'sso') args.push('--sso');
+
+  login.events = [];
+  login.status = 'running';
+  push(login, { t: 'start', cmd: `claude ${args.join(' ')}`, at: Date.now() });
+
+  const child = spawn('claude', args, { cwd: REPO_ROOT, stdio: ['pipe', 'pipe', 'pipe'] });
+  login.child = child;
+
+  // La URL es lo único que el dev necesita del stream: se emite aparte para que
+  // la UI la muestre como link en vez de hacerlo cazarla en el texto.
+  const scan = (text, kind) => {
+    push(login, { t: kind, text: text.slice(0, 2000), at: Date.now() });
+    for (const url of text.match(/https?:\/\/[^\s'"]+/g) || []) {
+      push(login, { t: 'url', url, at: Date.now() });
+    }
+  };
+
+  child.stdout.on('data', d => scan(d.toString('utf8'), 'out'));
+  child.stderr.on('data', d => scan(d.toString('utf8'), 'out'));
+  child.on('error', e => {
+    login.status = 'error';
+    push(login, {
+      t: 'error',
+      message: e.code === 'ENOENT' ? 'No se encontró el binario `claude` en el PATH.' : e.message,
+      at: Date.now(),
+    });
+  });
+  child.on('close', async (code) => {
+    login.child = null;
+    login.status = code === 0 ? 'done' : 'error';
+    const status = await authStatus();
+    push(login, { t: 'end', code, status: login.status, auth: status, at: Date.now() });
+    for (const res of login.clients) res.end();
+    login.clients.clear();
+  });
+
+  return { already: false };
+}
+
 // ------------------------------------------------------------------- runs
 
 /** Fases del skill `us`. El orden es el del SKILL.md. */
@@ -361,6 +454,25 @@ function emit(run, event) {
   }
 }
 
+/**
+ * Resumen corto de una llamada a herramienta, para que el log muestre qué está
+ * haciendo el run y no solo en qué fase va.
+ */
+function toolSummary(name, input = {}) {
+  if (name === 'Bash') return String(input.command || '');
+  if (name === 'Task') {
+    const agent = input.subagent_type || input.agent || '?';
+    return `@${agent}${input.description ? ` — ${input.description}` : ''}`;
+  }
+  if (['Read', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit'].includes(name)) {
+    return String(input.file_path || input.notebook_path || '');
+  }
+  if (['Glob', 'Grep'].includes(name)) return String(input.pattern || '');
+  if (name === 'WebFetch' || name === 'WebSearch') return String(input.url || input.query || '');
+  const [first] = Object.keys(input);
+  return first ? `${first}: ${String(input[first])}` : '';
+}
+
 /** Deriva la fase actual a partir de un evento del stream. Es inferencia. */
 function inferPhase(run, msg) {
   const blocks = msg?.message?.content;
@@ -370,6 +482,10 @@ function inferPhase(run, msg) {
     if (b.type === 'tool_use') {
       const name = b.name;
       const input = b.input || {};
+
+      emit(run, {
+        t: 'tool', name, summary: toolSummary(name, input).slice(0, 400), at: Date.now(),
+      });
 
       if (name === 'Task') {
         const agent = String(input.subagent_type || input.agent || '').toLowerCase();
@@ -416,6 +532,7 @@ function setPhase(run, phase, detail) {
 
 /** Confirma el avance leyendo los artefactos que el flujo deja en disco. */
 async function pollArtifacts(run) {
+  if (!run.storyId) return; // sesión de consola: no hay run de historia que auditar
   const dir = path.join(TARGET_REPO, '.claude/run', run.storyId);
   const map = [
     ['story.json', 0], ['plan.md', 2], ['qa.json', 4],
@@ -431,12 +548,41 @@ async function pollArtifacts(run) {
   }
 }
 
+/**
+ * Manda un turno de usuario a una sesión abierta.
+ *
+ * Con `--input-format stream-json` el proceso no termina cuando responde: queda
+ * esperando más mensajes por stdin. Eso es lo que convierte al panel de ejecución
+ * en una consola — el dev puede seguir la conversación donde el run la dejó, en
+ * la misma sesión y con el mismo contexto.
+ */
+function sendToRun(run, text) {
+  if (!run.child || run.stdinClosed) {
+    throw Object.assign(new Error('la sesión ya está cerrada'), { code: 409 });
+  }
+  run.child.stdin.write(JSON.stringify({
+    type: 'user',
+    message: { role: 'user', content: [{ type: 'text', text }] },
+  }) + '\n');
+  run.status = 'running';
+  emit(run, { t: 'ask', text: text.slice(0, 2000), at: Date.now() });
+}
+
 function startRun({ storyId, repoDir, manual, permissionMode, extraFlags }) {
   const id = randomUUID();
   // El tracker va explícito: story.json ya dice `manual`, pero decirlo también en
   // la invocación evita que el resolver tenga que adivinar por la forma del ID.
-  const prompt = manual ? `/us ${storyId} --tracker manual` : `/us ${storyId}`;
-  const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose'];
+  // Sin storyId es una sesión de consola: se abre vacía y la maneja el dev.
+  const prompt = storyId
+    ? (manual ? `/us ${storyId} --tracker manual` : `/us ${storyId}`)
+    : null;
+
+  const args = [
+    '-p',
+    '--input-format', 'stream-json',
+    '--output-format', 'stream-json',
+    '--verbose',
+  ];
   if (permissionMode) args.push('--permission-mode', permissionMode);
   if (extraFlags) args.push(...extraFlags.split(/\s+/).filter(Boolean));
 
@@ -444,21 +590,28 @@ function startRun({ storyId, repoDir, manual, permissionMode, extraFlags }) {
     id, storyId, prompt, args, cwd: repoDir,
     startedAt: Date.now(), status: 'running',
     phase: null, phaseHistory: [], blocked: null,
-    artifacts: {}, events: [], clients: new Set(), child: null,
+    artifacts: {}, events: [], clients: new Set(), child: null, stdinClosed: false,
   };
   runs.set(id, run);
 
   let child;
   try {
-    child = spawn('claude', args, { cwd: repoDir, stdio: ['ignore', 'pipe', 'pipe'] });
+    child = spawn('claude', args, { cwd: repoDir, stdio: ['pipe', 'pipe', 'pipe'] });
   } catch (e) {
     run.status = 'error';
     emit(run, { t: 'error', message: `No se pudo ejecutar \`claude\`: ${e.message}`, at: Date.now() });
     return run;
   }
   run.child = child;
+  child.stdin.on('error', () => { /* la sesión se cerró del otro lado */ });
 
   emit(run, { t: 'start', storyId, cwd: repoDir, cmd: `claude ${args.join(' ')}`, at: Date.now() });
+
+  if (prompt) sendToRun(run, prompt);
+  else {
+    run.status = 'idle';
+    emit(run, { t: 'ready', at: Date.now() });
+  }
 
   child.on('error', (e) => {
     run.status = 'error';
@@ -492,11 +645,13 @@ function startRun({ storyId, repoDir, manual, permissionMode, extraFlags }) {
       } else if (msg.type === 'user') {
         inferPhase(run, msg);
       } else if (msg.type === 'result') {
-        run.status = msg.is_error ? 'error' : 'done';
-        run.cost = msg.total_cost_usd ?? null;
+        run.cost = msg.total_cost_usd ?? run.cost ?? null;
         run.turns = msg.num_turns ?? null;
+        // Terminó el turno, no la sesión: queda esperando el próximo mensaje.
+        run.status = run.stdinClosed ? 'done' : 'idle';
         emit(run, {
           t: 'result',
+          ok: !msg.is_error,
           status: run.status,
           cost: run.cost,
           turns: run.turns,
@@ -513,7 +668,7 @@ function startRun({ storyId, repoDir, manual, permissionMode, extraFlags }) {
   });
 
   child.on('close', (code) => {
-    if (run.status === 'running') run.status = code === 0 ? 'done' : 'error';
+    if (run.status !== 'stopped') run.status = code === 0 ? 'done' : 'error';
     emit(run, { t: 'end', code, status: run.status, at: Date.now() });
     for (const res of run.clients) res.end();
     run.clients.clear();
@@ -571,16 +726,53 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (p === '/api/validate' && req.method === 'POST') {
-      const out = await new Promise((resolve) => {
-        const c = spawn('claude', ['plugin', 'validate', PLUGIN_DIR, '--strict'], { cwd: REPO_ROOT });
-        let stdout = '', stderr = '';
-        c.stdout.on('data', d => stdout += d);
-        c.stderr.on('data', d => stderr += d);
-        c.on('error', e => resolve({ code: -1, stdout: '', stderr: e.code === 'ENOENT'
-          ? 'No se encontró el binario `claude` en el PATH.' : e.message }));
-        c.on('close', code => resolve({ code, stdout, stderr }));
+      return json(res, 200, await runClaude(['plugin', 'validate', PLUGIN_DIR, '--strict']));
+    }
+
+    // --- autenticación ---
+    if (p === '/api/auth' && req.method === 'GET') {
+      return json(res, 200, { ...await authStatus(), login: login.status });
+    }
+
+    if (p === '/api/auth/login' && req.method === 'POST') {
+      const { mode } = JSON.parse(await readBody(req) || '{}');
+      const { already } = startLogin(mode);
+      return json(res, already ? 409 : 200, already
+        ? { error: 'ya hay un login en curso' }
+        : { ok: true });
+    }
+
+    if (p === '/api/auth/input' && req.method === 'POST') {
+      const { text } = JSON.parse(await readBody(req));
+      if (!login.child) return json(res, 409, { error: 'no hay login en curso' });
+      login.child.stdin.write(String(text ?? '') + '\n');
+      return json(res, 200, { ok: true });
+    }
+
+    if (p === '/api/auth/cancel' && req.method === 'POST') {
+      login.child?.kill('SIGTERM');
+      return json(res, 200, { ok: true });
+    }
+
+    if (p === '/api/auth/logout' && req.method === 'POST') {
+      const out = await runClaude(['auth', 'logout']);
+      return json(res, 200, { ...out, auth: await authStatus() });
+    }
+
+    if (p === '/api/auth/stream' && req.method === 'GET') {
+      res.writeHead(200, {
+        'content-type': 'text/event-stream; charset=utf-8',
+        'cache-control': 'no-cache',
+        connection: 'keep-alive',
       });
-      return json(res, 200, out);
+      for (const ev of login.events) res.write(`data: ${JSON.stringify(ev)}\n\n`);
+      if (login.child) {
+        login.clients.add(res);
+        req.on('close', () => login.clients.delete(res));
+      } else {
+        res.end();
+      }
+      return;
     }
 
     if (p === '/api/story' && req.method === 'POST') {
@@ -613,15 +805,20 @@ const server = http.createServer(async (req, res) => {
         return json(res, 400, { error: `El directorio no existe: ${repoDir}` });
       }
 
+      // Sin historia es una sesión de consola: se abre vacía, sin invocar /us.
+      const consoleMode = body.mode === 'console';
+
       // Con historia escrita a mano, se persiste antes de arrancar: el resolver
       // la encuentra en disco en la fase 0 y no consulta ningún tracker.
       let storyId = String(body.storyId || '').trim();
-      const manual = !!(body.story && typeof body.story === 'object');
+      const manual = !consoleMode && !!(body.story && typeof body.story === 'object');
       if (manual) {
         const story = { ...body.story, id: body.story.id || storyId };
         storyId = (await writeManualStory(repoDir, story)).id;
       }
-      if (!STORY_ID_RE.test(storyId)) {
+      if (consoleMode) {
+        storyId = null;
+      } else if (!STORY_ID_RE.test(storyId)) {
         return json(res, 400, { error: 'ID de historia inválido' });
       }
 
@@ -633,7 +830,11 @@ const server = http.createServer(async (req, res) => {
         extraFlags: body.extraFlags || '',
       });
       return json(res, 200, {
-        runId: run.id, storyId, cmd: `claude ${run.args.join(' ')}`, cwd: repoDir,
+        runId: run.id,
+        storyId,
+        cmd: `claude ${run.args.join(' ')}`,
+        prompt: run.prompt, // va por stdin, no en la línea de comandos
+        cwd: repoDir,
       });
     }
 
@@ -647,13 +848,33 @@ const server = http.createServer(async (req, res) => {
         connection: 'keep-alive',
       });
       for (const ev of run.events) res.write(`data: ${JSON.stringify(ev)}\n\n`);
-      if (run.status === 'running') {
+      // Mientras el proceso viva la sesión sigue: `idle` es esperando input, no fin.
+      if (run.child) {
         run.clients.add(res);
         req.on('close', () => run.clients.delete(res));
       } else {
         res.end();
       }
       return;
+    }
+
+    m = p.match(/^\/api\/run\/([\w-]+)\/send$/);
+    if (m && req.method === 'POST') {
+      const run = runs.get(m[1]);
+      if (!run) return json(res, 404, { error: 'run no encontrado' });
+      const { text } = JSON.parse(await readBody(req));
+      if (!String(text || '').trim()) return json(res, 400, { error: 'mensaje vacío' });
+      sendToRun(run, String(text));
+      return json(res, 200, { ok: true });
+    }
+
+    m = p.match(/^\/api\/run\/([\w-]+)\/close$/);
+    if (m && req.method === 'POST') {
+      const run = runs.get(m[1]);
+      if (!run) return json(res, 404, { error: 'run no encontrado' });
+      run.stdinClosed = true;
+      run.child?.stdin.end();
+      return json(res, 200, { ok: true });
     }
 
     m = p.match(/^\/api\/run\/([\w-]+)\/stop$/);
