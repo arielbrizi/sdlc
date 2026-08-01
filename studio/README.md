@@ -25,18 +25,34 @@ que sirve un HTML, no una aplicación desplegada.
 Cero dependencias npm — solo built-ins de Node. En un entorno corporativo eso
 significa que no hay supply chain que revisar antes de que el equipo lo use.
 
-## Las tres vistas son la misma
+## Una sola pantalla
 
-El ciclo del skill `us` se dibuja como un diagrama de vía: siete estaciones
-numeradas, unidas por un riel. Los componentes cuelgan de la estación donde
-intervienen — `@seguridad` bajo Verificación, `resolve-story.sh` bajo Resolver.
+Arriba los controles, en el medio el grafo con su panel contextual, abajo la
+consola siempre visible. No hay pestañas: lo que se muestra en el panel depende
+de lo que clickeaste, no de un menú que hay que recorrer antes de saber qué hay
+adentro.
 
-Esa misma geometría es la que se ilumina durante un run. No hay una pestaña
-"componentes" y otra "ejecución": el mapa **es** el tablero. Cuando `refinamiento`
-bloquea una historia, la vía se corta ahí y se ve dónde.
+El ciclo del skill `us` se dibuja como un grafo: la vía de fases a la izquierda
+y colgando de cada una los componentes que intervienen ahí. Los hooks van en una
+banda aparte, unida con línea punteada, porque no cuelgan de ninguna fase: corren
+sobre cualquiera.
 
-Los hooks no aparecen en la vía porque no son secuenciales: corren en cualquier
-momento, sobre cualquier fase. Van abajo, sin numerar, como enclavamiento.
+**Antes había una vía lateral además del grafo.** Se eliminó: era el mismo
+diagrama dibujado dos veces, con su propio acumulador de estado, y esa
+duplicación terminó mostrando la misma fase en curso de un lado y terminada del
+otro. Hoy el estado de una fase vive en una sola variable y hay una sola vista.
+
+Un clic en un nodo llena el panel: si el componente tiene archivo se abre para
+editar, y si ya corrió se ve lo que dijo el modelo ahí.
+
+## Recargar no pierde el run
+
+El servidor guarda los eventos de cada run, así que un F5 se reengancha al
+stream y el replay reconstruye fases, grafo, log y sesión. El panel recuerda
+también lo que habías escrito en los controles.
+
+Si el servidor se reinició, el run guardado ya no existe: el studio lo detecta y
+arranca limpio en vez de quedarse esperando un stream que no va a llegar.
 
 ## Cada componente dice qué es
 

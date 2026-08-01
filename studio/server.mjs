@@ -1172,7 +1172,20 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    let m = p.match(/^\/api\/run\/([\w-]+)\/stream$/);
+    // Resumen de un run. Lo usa el front al recargar la página para saber si el
+    // run que tenía guardado sigue existiendo antes de reengancharse al stream.
+    let m = p.match(/^\/api\/run\/([\w-]+)$/);
+    if (m && req.method === 'GET') {
+      const run = runs.get(m[1]);
+      if (!run) return json(res, 404, { error: 'run no encontrado' });
+      return json(res, 200, {
+        id: run.id, storyId: run.storyId, status: run.status, phase: run.phase,
+        blocked: run.blocked, cost: run.cost ?? null, turns: run.turns ?? null,
+        cwd: run.cwd, prompt: run.prompt, vivo: !!run.child,
+      });
+    }
+
+    m = p.match(/^\/api\/run\/([\w-]+)\/stream$/);
     if (m && req.method === 'GET') {
       const run = runs.get(m[1]);
       if (!run) return json(res, 404, { error: 'run no encontrado' });

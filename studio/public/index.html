@@ -19,7 +19,8 @@
 *{box-sizing:border-box}
 html,body{height:100%}
 body{
-  margin:0;background:var(--panel);color:var(--bone);
+  margin:0;display:flex;flex-direction:column;overflow:hidden;
+  background:var(--panel);color:var(--bone);
   font-family:var(--body);font-size:14px;line-height:1.5;
   -webkit-font-smoothing:antialiased;
 }
@@ -52,13 +53,22 @@ button,input,select,textarea{font:inherit;color:inherit}
 .btn.lit:hover:not(:disabled){background:#fff}
 .btn.stop{border-color:var(--danger);color:var(--danger)}
 
-/* ---------- grilla ---------- */
-.grid{display:grid;grid-template-columns:340px 1fr;height:calc(100% - 56px)}
-.spine{
-  border-right:1px solid var(--edge);overflow-y:auto;
-  background:linear-gradient(180deg,var(--panel),var(--sunk));
+/* ---------- una sola pantalla ----------
+   Arriba los controles, en el medio el grafo con su panel contextual, abajo la
+   consola siempre visible. Sin pestañas: lo que se muestra depende de lo que
+   clickeaste, no de un menú que hay que recorrer antes de saber qué hay. */
+.stage{
+  display:grid;grid-template-columns:1fr minmax(340px,32%);
+  flex:1;min-height:0;border-bottom:1px solid var(--edge);
 }
-.inspector{overflow:hidden;display:flex;flex-direction:column;min-width:0}
+.canvas{overflow:auto;background:var(--sunk);padding:16px 20px}
+.panel{border-left:1px solid var(--edge);overflow:hidden;
+  display:flex;flex-direction:column;min-width:0}
+.dock{display:flex;flex-direction:column;min-height:0;height:32vh;background:var(--panel)}
+@media (max-width:980px){
+  .stage{grid-template-columns:1fr;grid-template-rows:1fr auto}
+  .panel{border-left:none;border-top:1px solid var(--edge);max-height:45vh}
+}
 
 /* ---------- consola de run ---------- */
 .console{padding:16px 20px;border-bottom:1px solid var(--edge);background:var(--sunk)}
@@ -83,108 +93,14 @@ button,input,select,textarea{font:inherit;color:inherit}
 .repo-state code{font-family:var(--mono);font-size:11px;color:var(--dim)}
 .repo-state .grow{flex:1}
 
-/* ---------- spine ---------- */
-.section-label{
-  font-family:var(--display);font-size:12px;font-weight:600;letter-spacing:.2em;
-  text-transform:uppercase;color:var(--dim);
-  padding:18px 20px 10px;
-}
-.phase{
-  position:relative;padding:0 20px 0 52px;min-height:62px;
-}
-/* la vía: segmento vertical entre lámparas */
-.phase::before{
-  content:"";position:absolute;left:26px;top:0;bottom:0;width:2px;
-  background:var(--edge);
-}
-.phase:first-of-type::before{top:22px}
-.phase:last-of-type::before{bottom:auto;height:22px}
-.phase[data-state="done"]::before{background:var(--clear)}
-.phase[data-state="active"]::before{
-  background:linear-gradient(180deg,var(--clear) 0 50%,var(--edge) 50% 100%);
-}
-.phase[data-state="blocked"]::before{
-  background:linear-gradient(180deg,var(--danger) 0 50%,var(--edge) 50% 100%);
-}
-/* la lámpara */
-.lamp{
-  position:absolute;left:20px;top:16px;width:14px;height:14px;border-radius:50%;
-  background:var(--sunk);border:2px solid var(--track);
-}
-.phase[data-state="done"] .lamp{background:var(--clear);border-color:var(--clear)}
-.phase[data-state="blocked"] .lamp{background:var(--danger);border-color:var(--danger)}
-.phase[data-state="active"] .lamp{
-  background:var(--caution);border-color:var(--caution);
-  animation:pulse 1.4s ease-in-out infinite;
-}
+/* la lámpara del grafo y la barra de sesión comparten el pulso */
 @keyframes pulse{
   0%,100%{box-shadow:0 0 0 0 rgba(232,163,61,.55)}
   50%{box-shadow:0 0 0 7px rgba(232,163,61,0)}
 }
-/* barra de gantry: marca las fases que pueden abortar el run */
-.phase[data-gate="1"] .lamp::after{
-  content:"";position:absolute;left:-7px;top:4px;width:24px;height:2px;
-  background:var(--track);
-}
-.phase[data-gate="1"][data-state="blocked"] .lamp::after{background:var(--danger)}
-
-.phase-head{display:flex;align-items:baseline;gap:8px;padding-top:12px}
-.phase-num{font-family:var(--mono);font-size:11px;color:var(--dim)}
-.phase-name{
-  font-family:var(--display);font-size:16px;font-weight:600;
-  letter-spacing:.08em;text-transform:uppercase;
-}
-.phase[data-state="idle"] .phase-name{color:var(--dim)}
-.phase-note{font-family:var(--mono);font-size:10px;color:var(--caution);margin-left:auto}
-
-.chips{display:flex;flex-wrap:wrap;gap:5px;padding:6px 0 14px}
-.chip{
-  display:inline-flex;align-items:center;gap:5px;
-  background:var(--raised);border:1px solid var(--edge);border-radius:2px;
-  padding:3px 8px;font-family:var(--mono);font-size:11px;color:var(--bone);
-  cursor:pointer;transition:background .12s,border-color .12s;
-}
-.chip:hover{border-color:var(--track);background:#222831}
-.chip[aria-pressed="true"]{background:var(--bone);color:var(--panel);border-color:var(--bone)}
-.chip .ro{color:var(--dim);font-size:9px;letter-spacing:.08em}
-.chip[aria-pressed="true"] .ro{color:#5a6270}
-.chip.warn{border-color:var(--danger)}
-
-/* enclavamiento: los hooks no son secuenciales, no llevan número */
-.interlock{margin:8px 20px 28px;border:1px solid var(--edge);border-radius:2px;
-  background:var(--raised)}
-.interlock-row{
-  display:flex;align-items:center;gap:8px;padding:8px 10px;
-  border-bottom:1px solid var(--edge);
-}
-.interlock-row:last-child{border-bottom:none}
-/* Cada destino es su propio botón: una fila puede referirse a dos componentes
-   distintos —el hook y el script que ejecuta— y cada uno abre lo que dice ser. */
-.row-btn{
-  display:inline-flex;align-items:center;gap:6px;flex-shrink:0;
-  background:none;border:none;padding:2px 4px;border-radius:2px;cursor:pointer;
-}
-.row-btn:hover{background:#2b323d}
-.row-btn.tail{margin-left:auto}
-.interlock-row .dot{width:6px;height:6px;border-radius:50%;background:var(--clear);flex-shrink:0}
-.interlock-row .ev{font-family:var(--mono);font-size:10px;color:var(--dim);flex-shrink:0}
-.interlock-row .desc{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 /* ---------- inspector ---------- */
-.tabs{display:flex;border-bottom:1px solid var(--edge);background:var(--sunk);flex-shrink:0}
-.tab{
-  background:transparent;border:none;border-bottom:2px solid transparent;
-  padding:12px 20px;cursor:pointer;
-  font-family:var(--display);font-size:14px;font-weight:600;
-  letter-spacing:.12em;text-transform:uppercase;color:var(--dim);
-}
-.tab[aria-selected="true"]{color:var(--bone);border-bottom-color:var(--bone)}
-.tab-badge{
-  display:inline-block;margin-left:6px;padding:0 5px;border-radius:2px;
-  background:var(--caution);color:var(--panel);
-  font-family:var(--mono);font-size:9px;vertical-align:2px;
-}
-.pane{flex:1;overflow-y:auto;display:none;min-height:0}
+.pane{flex:1;overflow:hidden;display:none;min-height:0}
 .pane[data-active="1"]{display:flex;flex-direction:column}
 
 .empty{
@@ -310,7 +226,6 @@ dialog::backdrop{background:rgba(0,0,0,.62)}
 .session[data-s="error"] .dot{background:var(--danger)}
 
 /* ---------- grafo de ejecución ---------- */
-.graph-wrap{flex:1;min-height:0;overflow:auto;padding:16px 20px;background:var(--sunk)}
 #graph{display:block}
 .gnode rect{fill:var(--raised);stroke:var(--edge);stroke-width:1.5;rx:3}
 .gnode text{font-family:var(--mono);font-size:11px;fill:var(--bone)}
@@ -334,10 +249,7 @@ dialog::backdrop{background:rgba(0,0,0,.62)}
 .glabel{font-family:var(--display);font-size:11px;letter-spacing:.16em;
   text-transform:uppercase;fill:var(--dim)}
 
-.node-detail{
-  border-top:1px solid var(--edge);padding:14px 20px;max-height:46%;
-  overflow-y:auto;flex-shrink:0;background:var(--panel);
-}
+.node-detail{padding:16px 20px;overflow-y:auto;flex:1;min-height:0}
 .nd-head{display:flex;align-items:center;gap:10px;margin-bottom:6px}
 .nd-title{font-family:var(--display);font-size:17px;font-weight:600;
   letter-spacing:.08em;text-transform:uppercase;margin:0}
@@ -390,10 +302,6 @@ dialog::backdrop{background:rgba(0,0,0,.62)}
   border-bottom:1px solid rgba(63,185,132,.3)}
 
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
-@media (max-width:900px){
-  .grid{grid-template-columns:1fr;grid-template-rows:auto 1fr;height:auto}
-  .spine{border-right:none;border-bottom:1px solid var(--edge);max-height:50vh}
-}
 </style>
 </head>
 <body>
@@ -455,19 +363,9 @@ dialog::backdrop{background:rgba(0,0,0,.62)}
   </div>
 </dialog>
 
-<div class="grid">
-  <!-- ---------------- spine ---------------- -->
-  <aside class="spine">
-    <div class="section-label">Ciclo · skill /us</div>
-    <div id="phases"></div>
-    <div class="section-label">Enclavamiento · siempre activo</div>
-    <div class="interlock" id="interlock"></div>
-    <div class="section-label">Fuentes de historia</div>
-    <div class="interlock" id="mcp"></div>
-  </aside>
-
-  <!-- ---------------- inspector ---------------- -->
-  <main class="inspector">
+<!-- Una sola pantalla: el grafo es el mapa y el tablero a la vez. La via
+     lateral se elimino porque era el mismo diagrama dibujado dos veces, y esa
+     duplicacion es la que permitio que mostraran estados distintos. -->
     <div class="console">
       <div class="console-row">
         <select class="field" id="source" style="flex:0 0 185px">
@@ -508,12 +406,17 @@ dialog::backdrop{background:rgba(0,0,0,.62)}
       <div class="hint" id="cmdHint"></div>
     </div>
 
-    <div class="tabs">
-      <button class="tab" id="tabEditor" aria-selected="true">Componente</button>
-      <button class="tab" id="tabStory" aria-selected="false">Historia</button>
-      <button class="tab" id="tabGrafo" aria-selected="false">Grafo de ejecución</button>
-      <button class="tab" id="tabLog" aria-selected="false">Ejecución<span class="tab-badge" id="logBadge" hidden></span></button>
-    </div>
+<div class="stage">
+  <div class="canvas"><svg id="graph" role="img" aria-label="Grafo de ejecución"></svg></div>
+
+  <!-- Panel contextual: muestra lo que corresponda a lo que clickeaste, en vez
+       de obligar a elegir una pestana antes de saber que hay adentro. -->
+  <aside class="panel">
+    <section class="pane" id="paneDetail" data-active="1">
+      <div class="node-detail" id="nodeDetail">
+        <p class="what">Clickeá cualquier componente del grafo: si tiene archivo se abre para editar, y si ya corrió se ve lo que dijo el modelo ahí.</p>
+      </div>
+    </section>
 
     <section class="pane" id="paneEditor" data-active="1">
       <div class="empty" id="edEmpty">
@@ -582,16 +485,12 @@ dialog::backdrop{background:rgba(0,0,0,.62)}
         </div>
       </div>
     </section>
+  </aside>
+</div>
 
-    <section class="pane" id="paneGrafo">
-      <div class="graph-wrap"><svg id="graph" role="img" aria-label="Grafo de ejecución"></svg></div>
-      <div class="node-detail" id="nodeDetail">
-        <p class="what">Clickeá cualquier componente del grafo para ver qué dijo el modelo ahí durante el run.</p>
-      </div>
-    </section>
+<div class="dock">
+  <div class="log" id="log"></div>
 
-    <section class="pane" id="paneLog">
-      <div class="log" id="log"></div>
       <div class="session" id="sessionBar" data-s="none">
         <span class="dot"></span><span id="sessionText">Sin sesión abierta</span>
       </div>
@@ -601,8 +500,6 @@ dialog::backdrop{background:rgba(0,0,0,.62)}
         <button class="btn lit" id="btnSend" disabled>Enviar</button>
         <button class="btn" id="btnCloseSession" disabled title="Termina la sesión de Claude">Cerrar</button>
       </div>
-    </section>
-  </main>
 </div>
 
 <script>
@@ -615,6 +512,10 @@ const api = async (url, opts) => {
 };
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const hhmm = ts => new Date(ts).toTimeString().slice(0, 8);
+
+// El panel muestra lo que corresponda a lo último que clickeaste.
+const PANELS = ['paneDetail', 'paneEditor', 'paneStory'];
+const showPanel = id => PANELS.forEach(p => { $(p).dataset.active = p === id ? '1' : '0'; });
 
 // Cada fase declara qué componentes le pertenecen. Es lo que une el plugin
 // en disco con el ciclo que describe el SKILL.md.
@@ -712,131 +613,11 @@ async function load() {
   $('railMeta').textContent = `${plugin.pluginDir}  →  ${plugin.targetRepo}`;
   if (!$('repoDir').value) $('repoDir').value = plugin.targetRepo;
 
-  renderPhases();
-  renderInterlock();
-  renderMcp();
   renderGraph();
 
   if (plugin.problems.length) {
     banner('err', plugin.problems.join(' · '));
   }
-}
-
-function renderPhases() {
-  const byName = (arr, n) => arr.find(x => x.name === n);
-  $('phases').innerHTML = PHASES.map(p => {
-    const parts = PHASE_PARTS[p.id] || {};
-    const chips = [];
-
-    for (const n of parts.skills || []) {
-      const s = byName(PLUGIN.skills, n);
-      // El label es el comando real: las skills de un plugin van calificadas.
-      if (s) chips.push(chip({ path: s.path, label: `/${s.command || s.name}`, kind: 'skill' }));
-      for (const r of s?.references || []) {
-        chips.push(chip({ path: r.path, label: r.name, kind: 'reference' }));
-      }
-    }
-    for (const n of parts.agents || []) {
-      const a = byName(PLUGIN.agents, n);
-      if (a) chips.push(chip({
-        path: a.path, label: `@${a.name}`, kind: 'agent',
-        full: `@${a.qualifiedName || a.name}`, // el nombre completo, en el tooltip
-        tag: a.readOnly ? 'solo audita' : 'escribe',
-      }));
-    }
-    if (parts.main) {
-      const sk = PLUGIN.skills[0];
-      if (sk) chips.push(chip({
-        path: sk.path, label: 'sesión principal', kind: 'skill',
-        full: `/${sk.command || sk.name} — la sesión que corre el skill`,
-        tag: MAIN_TAG[p.id] || '',
-      }));
-    }
-    for (const n of parts.scripts || []) {
-      const s = PLUGIN.scripts.find(x => x.name === n);
-      if (s) chips.push(chip({
-        path: s.path, label: s.name, kind: 'script',
-        tag: s.executable ? '' : 'sin +x', warn: !s.executable,
-      }));
-    }
-
-    return `<div class="phase" data-phase="${p.id}" data-state="idle" data-gate="${p.gate ? 1 : 0}">
-      <span class="lamp"></span>
-      <div class="phase-head">
-        <span class="phase-num">${String(p.id).padStart(2, '0')}</span>
-        <span class="phase-name">${esc(p.label)}</span>
-        <span class="phase-note" data-note></span>
-      </div>
-      <div class="phase-help">${esc(PHASE_HELP[p.id] || '')}</div>
-      <div class="chips">${chips.join('')}</div>
-    </div>`;
-  }).join('');
-
-  $('phases').querySelectorAll('.chip').forEach(c =>
-    c.addEventListener('click', () => open(c.dataset.path)));
-}
-
-const chip = ({ path, label, kind, tag, warn, full }) =>
-  `<button class="chip${warn ? ' warn' : ''}" data-path="${esc(path)}" aria-pressed="false"
-           title="${esc(KINDS[kind]?.label || '')}: ${esc(full || label)}">
-     ${kindBadge(kind)}${esc(label)}${tag ? `<span class="ro">${esc(tag)}</span>` : ''}
-   </button>`;
-
-function renderInterlock() {
-  // Un hook y el script que ejecuta son dos componentes distintos. La fila
-  // ofrece los dos por separado: el badge HOOK abre hooks.json, donde el hook
-  // está declarado, y el chip SCRIPT abre el .sh. Antes el badge decía HOOK y
-  // abría el script, que es justamente lo que no tiene que pasar.
-  $('interlock').innerHTML = PLUGIN.hooks.map(h => `
-    <div class="interlock-row">
-      <span class="dot"></span>
-      <button class="row-btn" data-path="${esc(h.path)}"
-              title="Hook — declarado en ${esc(h.path)}, se dispara en ${esc(h.event)}">
-        ${kindBadge('hook')}<span class="ev">${esc(h.event)}</span>
-      </button>
-      <span class="desc">${esc(h.description || h.matcher)}</span>
-      ${h.scriptPath ? `
-        <button class="row-btn tail" data-path="${esc(h.scriptPath)}"
-                title="Script que ejecuta este hook — ${esc(h.scriptPath)}">
-          ${kindBadge('script')}<span class="ev">${esc(h.script)}</span>
-        </button>` : ''}
-    </div>`).join('') || '<div class="interlock-row"><span class="desc">Sin hooks</span></div>';
-
-  $('interlock').querySelectorAll('[data-path]').forEach(r =>
-    r.addEventListener('click', () => open(r.dataset.path)));
-}
-
-function renderMcp() {
-  const rows = PLUGIN.mcp.map(m => `
-    <div class="interlock-row">
-      <span class="dot"></span>
-      <button class="row-btn" data-path=".mcp.json"
-              title="MCP server — los tres se declaran en .mcp.json">
-        ${kindBadge('mcp')}<span class="ev">${esc(m.name)}</span>
-      </button>
-      <span class="desc">${esc(m.target)}</span>
-    </div>`);
-
-  // Escribir la historia a mano es una fuente más, no un caso degradado: si el
-  // equipo no integra con ningún tracker, esta es la única fila que importa.
-  // No lleva badge de tipo: no es un componente de Claude Code, es el studio.
-  rows.push(`
-    <div class="interlock-row">
-      <span class="dot"></span>
-      <button class="row-btn" data-story="1" title="Escribir la historia en el studio">
-        <span class="ev">a mano</span>
-      </button>
-      <span class="desc">escribir la historia acá, sin tracker</span>
-    </div>`);
-
-  $('mcp').innerHTML = rows.join('');
-
-  $('mcp').querySelectorAll('[data-path]').forEach(r =>
-    r.addEventListener('click', () => open(r.dataset.path)));
-  $('mcp').querySelector('[data-story]').addEventListener('click', () => {
-    $('source').value = 'manual';
-    syncSource();
-  });
 }
 
 /* ------------------------------------------------------------- editor */
@@ -959,7 +740,7 @@ async function open(path) {
     i.addEventListener('input', markDirty);
     i.addEventListener('change', markDirty);
   });
-  selectTab('editor');
+  showPanel('paneEditor');
 }
 
 function compose() {
@@ -1038,7 +819,7 @@ function fillStory(s) {
 /** Sin título no hay historia: es el único campo que el studio exige. */
 function requireTitle() {
   if ($('stTitle').value.trim()) return true;
-  selectTab('story');
+  showPanel('paneStory');
   banner('err', 'La historia necesita un título');
   $('stTitle').focus();
   return false;
@@ -1055,9 +836,7 @@ function syncSource() {
     : manual
       ? 'ID — opcional, se deriva del título'
       : 'ID de historia — GLOB-1234, 8891, #245';
-  $('tabStory').hidden = consola;
-  if (manual) selectTab('story');
-  if (consola) selectTab('log');
+  if (manual) showPanel('paneStory');
 }
 $('source').addEventListener('change', syncSource);
 
@@ -1114,7 +893,6 @@ async function start() {
 
   resetPhases();
   $('log').innerHTML = '';
-  selectTab('log');
   runHasStory = !consola;
   runBlocked = false;
   NODE_OUT = {}; NODE_STATE = {}; renderGraph();
@@ -1135,6 +913,7 @@ async function start() {
       }),
     });
     run = r.runId;
+    guardar();
     // Con ID derivado del título, es la primera vez que el dev lo ve.
     if (r.storyId) {
       $('story').value = r.storyId;
@@ -1198,31 +977,23 @@ $('btnCloseSession').addEventListener('click', async () => {
 
 function onEvent(ev) {
   logEvent(ev);
-  const el = i => $('phases').querySelector(`.phase[data-phase="${i}"]`);
+  // Después de un bloqueo el ciclo no avanza más, pase lo que pase en el stream.
+  const marcar = (i, estado) => { if (PHASE_STATE[i] !== 'blocked') PHASE_STATE[i] = estado; };
 
-  // Después de un bloqueo la vía no avanza más, pase lo que pase en el stream.
   if (ev.t === 'phase' || ev.t === 'agent') {
     if (runBlocked) return;
-    const i = ev.phase;
-    for (let k = 0; k < i; k++) {
-      const p = el(k);
-      if (p && p.dataset.state !== 'blocked') p.dataset.state = 'done';
-    }
-    const p = el(i);
-    if (p && p.dataset.state !== 'blocked') {
-      p.dataset.state = 'active';
-      p.querySelector('[data-note]').textContent = ev.detail || ev.agent || '';
-    }
+    for (let k = 0; k < ev.phase; k++) marcar(k, 'done');
+    marcar(ev.phase, 'active');
+    PHASE_NOTE[ev.phase] = ev.detail || ev.agent || '';
   }
   if (ev.t === 'blocked') {
     runBlocked = true;
-    const p = el(ev.phase);
-    if (p) { p.dataset.state = 'blocked'; p.querySelector('[data-note]').textContent = 'detenido'; }
+    PHASE_STATE[ev.phase] = 'blocked';
+    PHASE_NOTE[ev.phase] = 'detenido';
     banner('err', `Run detenido en fase ${ev.phase}: ${ev.reason}`);
   }
-  if (ev.t === 'artifact' && !runBlocked) {
-    const p = el(ev.phase);
-    if (p && p.dataset.state === 'idle') p.dataset.state = 'done';
+  if (ev.t === 'artifact' && !runBlocked && !PHASE_STATE[ev.phase]) {
+    PHASE_STATE[ev.phase] = 'done';
   }
   // El grafo se alimenta del mismo stream: cada salida queda pegada al nodo
   // que la produjo, que es lo que se ve al clickearlo.
@@ -1248,9 +1019,8 @@ function onEvent(ev) {
   if (ev.t === 'result') {
     // El ciclo completo termina en un `result` sin bloqueo: recién ahí se
     // encienden todas las estaciones de la vía.
-    if (ev.ok && runHasStory && !runBlocked
-        && !$('phases').querySelector('[data-state="blocked"]')) {
-      $('phases').querySelectorAll('.phase').forEach(p => p.dataset.state = 'done');
+    if (ev.ok && runHasStory && !runBlocked) {
+      for (const p of PHASES) PHASE_STATE[p.id] = 'done';
     }
     const bits = [ev.turns != null ? `${ev.turns} turnos` : null,
                   ev.cost != null ? `US$ ${ev.cost.toFixed(4)}` : null].filter(Boolean);
@@ -1282,47 +1052,23 @@ function logEvent(ev) {
   $('log').append(row);
   $('log').scrollTop = $('log').scrollHeight;
 
-  if ($('paneLog').dataset.active !== '1') {
-    $('logBadge').hidden = false;
-    $('logBadge').textContent = '●';
-  }
 }
 
 function finish() {
   setSession('none', 'Sesión cerrada');
-  $('phases').querySelectorAll('[data-state="active"]').forEach(p => {
-    if (!$('phases').querySelector('[data-state="blocked"]')) p.dataset.state = 'done';
-  });
+  if (!runBlocked) {
+    for (const [i, st] of Object.entries(PHASE_STATE)) if (st === 'active') PHASE_STATE[i] = 'done';
+  }
+  renderGraph();
   es?.close(); es = null;
 }
 
 function resetPhases() {
-  $('phases').querySelectorAll('.phase').forEach(p => {
-    p.dataset.state = 'idle';
-    p.querySelector('[data-note]').textContent = '';
-  });
+  PHASE_STATE = {}; PHASE_NOTE = {};
 }
 
 /* --------------------------------------------------------- misceláneo */
 
-const TABS = {
-  editor: ['tabEditor', 'paneEditor'],
-  story: ['tabStory', 'paneStory'],
-  grafo: ['tabGrafo', 'paneGrafo'],
-  log: ['tabLog', 'paneLog'],
-};
-
-function selectTab(which) {
-  for (const [name, [tab, pane]] of Object.entries(TABS)) {
-    const on = name === which;
-    $(tab).setAttribute('aria-selected', String(on));
-    $(pane).dataset.active = on ? '1' : '0';
-  }
-  if (which === 'log') $('logBadge').hidden = true;
-}
-for (const [name, [tab]] of Object.entries(TABS)) {
-  $(tab).addEventListener('click', () => selectTab(name));
-}
 
 /* --------------------------------------------------- grafo de ejecución */
 
@@ -1332,18 +1078,14 @@ let NODE_OUT = {}, NODE_STATE = {}, selectedNode = null;
 
 const esFase = id => String(id || '').startsWith('phase:');
 
-/**
- * Estado de un nodo. Las fases lo leen de la vía —una sola fuente— porque
- * mantener dos acumuladores en paralelo terminaba mostrando la misma fase en
- * curso de un lado y terminada del otro.
- */
-function nodeState(id) {
-  if (esFase(id)) {
-    const n = id.slice('phase:'.length);
-    return $('phases').querySelector(`.phase[data-phase="${n}"]`)?.dataset.state || 'idle';
-  }
-  return NODE_STATE[id] || 'idle';
-}
+// Estado de las fases: UNA variable. Antes vivía duplicado entre la vía lateral
+// y el grafo, y esa duplicación es la que hacía que la misma fase se viera en
+// curso de un lado y terminada del otro.
+let PHASE_STATE = {}, PHASE_NOTE = {};
+
+const nodeState = id => (esFase(id)
+  ? (PHASE_STATE[id.slice('phase:'.length)] || 'idle')
+  : (NODE_STATE[id] || 'idle'));
 
 const pushOut = (node, entry) => {
   if (!node) return;
@@ -1365,7 +1107,7 @@ function layout() {
     nodes.push({
       id: `phase:${p.id}`, kind: 'phase', gate: p.gate,
       label: `${String(p.id).padStart(2, '0')} · ${p.label}`,
-      sub: p.gate ? 'puede abortar el run' : '',
+      sub: PHASE_NOTE[p.id] || (p.gate ? 'puede abortar el run' : ''),
       x: PX, y: TOP + i * ROW, w: PW, h: 48,
     });
     if (i) edges.push({ a: `phase:${PHASES[i - 1].id}`, b: `phase:${p.id}`, kind: 'spine' });
@@ -1479,7 +1221,8 @@ function nodeFile(id) {
   if (kind === 'script') return PLUGIN.scripts.find(s => s.name === name)?.path;
   if (kind === 'mcp') return '.mcp.json';
   if (kind === 'hook') return 'hooks/hooks.json';
-  if (kind === 'phase') return PLUGIN.skills[0]?.path;
+  // La sesión principal no es un archivo, pero lo que la instruye sí: el skill.
+  if (kind === 'phase' || kind === 'main') return PLUGIN.skills[0]?.path;
   return null;
 }
 
@@ -1516,12 +1259,14 @@ function renderNodeDetail() {
       <h3 class="nd-title">${esc(title)}</h3>
       ${file ? `<button class="btn" id="ndOpen">Abrir archivo</button>` : ''}
     </div>
+    ${kind === 'phase' && PHASE_HELP[name] ? `<p class="what">${esc(PHASE_HELP[name])}</p>` : ''}
     <p class="what">${kind === 'main'
       ? 'La sesión que corre el skill, no un subagente. Acá se escribe el código y se aplican las correcciones que reportan @qa y @seguridad: ningún subagente puede escribir (todos tienen Write y Edit prohibidos).'
       : esc(KINDS[NODE_KIND[kind] || 'skill']?.what || '')}</p>
     ${cuerpo}`;
 
   if (file) $('ndOpen').addEventListener('click', () => open(file));
+  showPanel('paneDetail');
 }
 
 /* --------------------------------------------------- repositorio y VCS */
@@ -1707,7 +1452,8 @@ function banner(kind, text) {
   const b = document.createElement('div');
   b.className = `banner ${kind}`;
   b.textContent = text;
-  document.querySelector('.tabs').after(b);
+  // Debajo de los controles: sin pestañas, es el borde superior del área útil.
+  document.querySelector('.console').after(b);
   if (kind === 'ok') setTimeout(() => b.remove(), 6000);
 }
 
@@ -1725,9 +1471,60 @@ $('btnValidate').addEventListener('click', async () => {
   }
 });
 
+/* ------------------------------------------ recuperar el estado al recargar */
+
+// Un F5 no debería perder el run en curso. El servidor ya guarda todos los
+// eventos y los repite al reconectar, así que alcanza con recordar el id y
+// volver a engancharse: el replay reconstruye fases, grafo, log y sesión.
+const LS = 'globant-sdlc-studio';
+const CAMPOS = ['source', 'story', 'repoUrl', 'repoDir', 'baseBranch',
+                'permMode', 'allowedTools', 'extraFlags'];
+
+function guardar() {
+  const datos = { run };
+  for (const c of CAMPOS) datos[c] = $(c).value;
+  try { localStorage.setItem(LS, JSON.stringify(datos)); } catch { /* sin storage */ }
+}
+
+for (const c of CAMPOS) $(c).addEventListener('change', guardar);
+
+async function restaurar() {
+  let datos;
+  try { datos = JSON.parse(localStorage.getItem(LS) || '{}'); } catch { return; }
+
+  for (const c of CAMPOS) {
+    if (!datos[c]) continue;
+    // El desplegable de branches se llena recién al preparar el repo.
+    if (c === 'baseBranch' && !$(c).querySelector(`option[value="${CSS.escape(datos[c])}"]`)) {
+      $(c).insertAdjacentHTML('beforeend', `<option value="${esc(datos[c])}" selected>${esc(datos[c])}</option>`);
+      $(c).disabled = false;
+    }
+    $(c).value = datos[c];
+  }
+  syncSource();
+  if (!datos.run) return;
+
+  // Si el run ya no existe —el servidor se reinició— no se reengancha.
+  let info;
+  try { info = await api(`/api/run/${datos.run}`); } catch { return guardar(run = null); }
+
+  run = datos.run;
+  runHasStory = !!info.storyId;
+  runBlocked = !!info.blocked;
+  NODE_OUT = {}; NODE_STATE = {}; PHASE_STATE = {}; PHASE_NOTE = {};
+  $('log').innerHTML = '';
+  setSession(info.vivo ? 'running' : 'none', 'Recuperando el run…');
+
+  es?.close();
+  es = new EventSource(`/api/run/${run}/stream`);
+  es.onmessage = e => onEvent(JSON.parse(e.data));
+  es.onerror = () => { es.close(); finish(); };
+  banner('ok', `Run recuperado${info.storyId ? `: ${info.storyId}` : ''}`);
+}
+
 setSession('none', 'Sin sesión abierta');
 syncSource();
-load().catch(e => banner('err', e.message));
+load().then(restaurar).catch(e => banner('err', e.message));
 refreshAuth();
 </script>
 </body>
