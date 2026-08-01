@@ -19,10 +19,13 @@ claude plugin install globant-sdlc@globant --scope project
 /us #245           # GitHub Issues
 ```
 
+Sin tracker también se puede: la historia se escribe a mano en el studio y el
+ciclo no cambia.
+
 ## Studio
 
-Panel local para ver el plugin como sistema, editar cualquier componente y
-seguir un run fase por fase.
+Panel local para ver el plugin como sistema, editar cualquier componente,
+escribir una historia sin tracker y seguir un run fase por fase.
 
 ```bash
 ./scripts/studio.sh --repo ~/repos/mi-proyecto

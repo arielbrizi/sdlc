@@ -9,6 +9,9 @@ punta, desde el ID del ticket hasta un Pull Request en draft.
 /us #245           # GitHub Issues
 ```
 
+¿Sin tracker? La historia se escribe a mano en el studio y el ciclo es el mismo
+(ver [Historias sin tracker](#historias-sin-tracker)).
+
 ## Qué hace
 
 ```
@@ -56,6 +59,27 @@ chmod +x scripts/*.sh
 | `ADO_ORG` | Organización de Azure DevOps |
 | `GITHUB_TOKEN` | Auth del MCP de GitHub |
 | `GLOBANT_PROTECTED_BRANCHES` | Regex de branches protegidas (default: `main\|master\|develop\|release/.*`) |
+
+## Historias sin tracker
+
+Integrar con Jira o ADO no es requisito para usar el plugin. Con
+`--tracker manual` la historia se escribe a mano:
+
+```bash
+./scripts/studio.sh --repo ~/repos/mi-proyecto
+# Fuente: escrita acá → pestaña Historia → Ejecutar
+```
+
+El studio la guarda en `.claude/run/<ID>/story.json` con el esquema canónico
+antes de arrancar el run, y el resolver la encuentra ahí sin consultar ningún
+MCP. También podés escribir ese archivo a mano y correr
+`/us <ID> --tracker manual` directo desde la terminal.
+
+De la fase 1 en adelante nada distingue una historia escrita a mano de una que
+vino de un tracker — incluido `@refinamiento`, que la bloquea igual si los
+criterios de aceptación faltan o no son verificables. Lo que cambia es que no hay
+a dónde escribir de vuelta: las preguntas bloqueantes quedan en
+`.claude/run/<ID>/blocked.md` y el PR es el único registro de la historia.
 
 ## Las tres decisiones de diseño que importan
 

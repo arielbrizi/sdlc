@@ -10,7 +10,7 @@
     "tracker_default": {
       "type": "string",
       "title": "Tracker por defecto",
-      "description": "Se usa cuando el ID no permite inferir el tracker. Valores: jira | ado | github",
+      "description": "Se usa cuando el ID no permite inferir el tracker. Valores: jira | ado | github | manual (historia escrita a mano, sin integracion)",
       "default": "jira"
     },
     "base_branch": {

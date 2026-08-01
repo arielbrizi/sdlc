@@ -51,6 +51,28 @@ script no pierde su bit de ejecución al editarlo desde acá.
 `SKILL.md` sí; `agents/`, `hooks/`, `.mcp.json` y `plugin.json` requieren
 `/reload-plugins` o reiniciar.
 
+## Escribir la historia acá, sin tracker
+
+El selector **Fuente** de la consola tiene dos modos. En `tracker`, pasás un ID y
+la historia la lee el agente por MCP. En `escrita acá`, la tipeás en la pestaña
+**Historia**: título, descripción y criterios de aceptación, uno por línea.
+
+Al ejecutar, el studio la guarda en `.claude/run/<ID>/story.json` con el esquema
+canónico —el mismo que produce Jira— y recién ahí lanza el run. El resolver la
+encuentra en disco en la fase 0 y no consulta ningún MCP. De la fase 1 en
+adelante nada distingue una historia escrita a mano de una que vino de un
+tracker, así que no hubo que tocar ningún agente para soportarlo.
+
+El ID es opcional: si no lo ponés se deriva del título (`LOCAL-exportar-csv`).
+
+**No saltea el refinamiento.** `@refinamiento` la evalúa igual que a cualquier
+otra y bloquea si los criterios faltan o no son verificables. Cuando eso pasa,
+las preguntas quedan en `.claude/run/<ID>/blocked.md`; el botón **Cargar** trae
+la historia de vuelta al formulario para corregirla y volver a tirar el run.
+
+Como no hay ticket al que escribirle, el PR es el único registro: en este modo la
+descripción lleva los criterios completos en vez de un link.
+
 ## Ejecutar
 
 El botón Ejecutar corre:
@@ -60,7 +82,8 @@ claude -p "/us <ID>" --output-format stream-json --verbose
 ```
 
 en el repo objetivo, y consume el NDJSON que sale por stdout. `stream-json`
-requiere `--verbose`.
+requiere `--verbose`. Con historia escrita a mano el prompt lleva además
+`--tracker manual`.
 
 ### Cómo se sabe en qué paso está
 
@@ -98,6 +121,9 @@ guardas puestas:
 - Las rutas de lectura y escritura se resuelven y se verifica que caigan dentro
   del directorio del plugin. `../../etc/passwd` devuelve 403.
 - Solo se escriben `.md`, `.json`, `.sh`, `.yml`, `.yaml`.
+- La historia escrita a mano es la única escritura fuera del plugin, y va
+  siempre a `.claude/run/<ID>/story.json` del repo objetivo: el ID pasa por la
+  misma validación y la ruta resuelta se verifica contra ese directorio.
 
 El campo "Flags extra" pasa lo que escribas directo al CLI. Es una puerta
 abierta a propósito, para poder probar flags sin tocar el código — pero es tu
@@ -108,5 +134,8 @@ responsabilidad lo que pongas ahí.
 - El parser de frontmatter cubre `clave: valor` y listas inline `[a, b]`. Si un
   archivo usa YAML anidado, la UI cae al editor de texto plano.
 - No hay historial de runs entre reinicios del servidor: viven en memoria.
+- La historia escrita a mano vive en `.claude/run/<ID>/`, que suele estar
+  ignorado por git: es estado del run, no documentación del backlog. Si querés
+  conservarla, versioná el directorio o copiala a otro lado.
 - El editor es un textarea. Para este trabajo — prompts y JSON corto — alcanza;
   si en algún momento no alcanza, el archivo está en disco y tenés tu editor.

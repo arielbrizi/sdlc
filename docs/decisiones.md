@@ -51,6 +51,8 @@ canónico. Los agentes solo conocen ese esquema.
 **Por qué.** Si los agentes conocieran a Jira, sumar un tracker obligaría a tocar
 los cinco. Con la adaptación en el borde, sumar uno es agregar un mapeo.
 
+**Evidencia.** El modo `manual` (D8) se sumó sin tocar un solo agente.
+
 ## D5 — Política en hooks, criterio en agentes
 
 **Decisión.** Secretos, git destructivo, formateo y auditoría son hooks. Todo lo
@@ -92,3 +94,34 @@ revisión de supply chain antes de que el equipo lo use.
 
 **Costo.** El studio duplica el modelo de fases del skill `us` (ver CLAUDE.md).
 Si aparece un segundo skill orquestador, ese mapeo se mueve al SKILL.md.
+
+## D8 — La historia se puede escribir a mano
+
+**Contexto.** El framework asumía que toda historia vive en un tracker. Eso deja
+afuera a los equipos que no integran con ninguno, y también al caso de probar el
+ciclo antes de tener las credenciales del MCP resueltas — que en la práctica es
+el primer contacto de casi todo el mundo con el plugin.
+
+**Decisión.** Un cuarto tracker, `manual`. La historia se escribe en el studio,
+que la guarda en `.claude/run/<ID>/story.json` con el **esquema canónico
+completo** antes de arrancar el run. `resolve-story.sh` la detecta en disco y
+devuelve `tracker: manual` con la instrucción de no consultar ningún MCP.
+
+**Por qué así.** La alternativa era un flag que le pasara título y criterios al
+skill por prompt. Se descartó: obligaría a cada agente downstream a contemplar
+"y si la historia no vino de un tracker". Escribiendo el mismo `story.json` que
+produciría Jira, la fase 0 absorbe toda la diferencia y de la 1 en adelante no
+hay ningún caso especial. Es la misma lógica de D4, aplicada al borde de que no
+haya borde.
+
+**Lo que no cambia.** `@refinamiento` evalúa la historia manual igual que a
+cualquier otra. La tentación era saltear el gate —la escribió un humano hace
+treinta segundos, ¿qué va a preguntar?— pero es al revés: una historia tipeada al
+vuelo para arrancar un run tiene más chance de tener criterios flojos que una que
+pasó por un refinement. Saltear el circuit breaker acá lo volvería opcional en
+todos lados, que es exactamente lo que D2 evita.
+
+**Costo.** No hay tracker al que escribirle de vuelta. Las dos escrituras que el
+flujo hacía sobre el ticket se vuelven archivos del run: las preguntas
+bloqueantes a `blocked.md`, y el PR pasa a ser el único registro de la historia
+—por eso en este modo lleva los criterios completos en vez de un link.

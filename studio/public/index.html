@@ -197,6 +197,20 @@ button,input,select,textarea{font:inherit;color:inherit}
 .dirty{font-family:var(--mono);font-size:11px;color:var(--caution);margin-right:auto}
 .dirty:empty{margin-right:auto}
 
+/* historia escrita a mano */
+.story{padding:16px 20px 24px;overflow-y:auto;flex:1;min-height:0}
+.story-lead{margin:0 0 16px;font-size:12.5px;color:var(--dim);max-width:74ch}
+.story-grid{display:grid;grid-template-columns:150px 1fr;gap:10px 14px;align-items:start}
+.story-key{font-family:var(--mono);font-size:11px;color:var(--dim);
+  text-align:right;padding-top:9px}
+.story-key .req{color:var(--caution)}
+.story-grid .field{width:100%}
+.story-grid textarea.field{resize:vertical;line-height:1.65;min-height:70px}
+.story-note{grid-column:2;font-family:var(--mono);font-size:10.5px;color:var(--dim);
+  margin:-4px 0 2px}
+.story-foot{display:flex;align-items:center;gap:10px;padding-top:20px}
+.story-foot .grow{flex:1}
+
 /* log */
 .log{flex:1;overflow-y:auto;padding:14px 20px;font-family:var(--mono);font-size:12px}
 .ev{display:flex;gap:10px;padding:3px 0;border-bottom:1px solid rgba(39,45,54,.5)}
@@ -246,6 +260,10 @@ button,input,select,textarea{font:inherit;color:inherit}
   <main class="inspector">
     <div class="console">
       <div class="console-row">
+        <select class="field" id="source" style="flex:0 0 165px">
+          <option value="tracker">Fuente: tracker</option>
+          <option value="manual">Fuente: escrita acá</option>
+        </select>
         <input class="field" id="story" placeholder="ID de historia — GLOB-1234, 8891, #245" autocomplete="off">
         <button class="btn lit" id="btnRun">Ejecutar</button>
         <button class="btn stop" id="btnStop" disabled>Detener</button>
@@ -263,6 +281,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 
     <div class="tabs">
       <button class="tab" id="tabEditor" aria-selected="true">Componente</button>
+      <button class="tab" id="tabStory" aria-selected="false">Historia</button>
       <button class="tab" id="tabLog" aria-selected="false">Ejecución<span class="tab-badge" id="logBadge" hidden></span></button>
     </div>
 
@@ -282,6 +301,49 @@ button,input,select,textarea{font:inherit;color:inherit}
           <span class="dirty" id="edDirty"></span>
           <button class="btn" id="btnRevert">Descartar</button>
           <button class="btn lit" id="btnSave">Guardar</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="pane" id="paneStory">
+      <div class="story">
+        <p class="story-lead">
+          Para equipos que no integran con ningún tracker. Lo que escribas acá se
+          guarda como <code>.claude/run/&lt;ID&gt;/story.json</code>, el mismo formato
+          normalizado que produce Jira o ADO — de la fase 1 en adelante el ciclo no
+          distingue de dónde vino.
+        </p>
+        <div class="story-grid">
+          <label class="story-key" for="stTitle">Título <span class="req">*</span></label>
+          <input class="field" id="stTitle" autocomplete="off"
+                 placeholder="Permitir exportar el reporte de consumo a CSV">
+
+          <label class="story-key" for="stId">ID</label>
+          <input class="field" id="stId" autocomplete="off" placeholder="opcional — se deriva del título">
+
+          <label class="story-key" for="stDesc">Descripción</label>
+          <textarea class="field" id="stDesc" rows="5" spellcheck="false"
+                    placeholder="Contexto, qué problema resuelve, para quién."></textarea>
+
+          <label class="story-key" for="stAc">Criterios<br>de aceptación</label>
+          <textarea class="field" id="stAc" rows="6" spellcheck="false"
+                    placeholder="Uno por línea.&#10;El botón Exportar aparece solo para usuarios con rol Analyst&#10;El CSV incluye las columnas fecha, usuario, consumo"></textarea>
+          <p class="story-note">
+            Es el campo que decide el run: <code>@refinamiento</code> bloquea si faltan o
+            no son verificables. Escribir la historia acá no saltea ese gate.
+          </p>
+
+          <label class="story-key" for="stPoints">Puntos</label>
+          <input class="field" id="stPoints" type="number" min="1" max="100"
+                 style="max-width:110px" placeholder="opcional">
+
+          <label class="story-key" for="stLabels">Labels</label>
+          <input class="field" id="stLabels" autocomplete="off" placeholder="separados por coma">
+        </div>
+        <div class="story-foot">
+          <span class="dirty grow" id="stStatus"></span>
+          <button class="btn" id="btnLoadStory">Cargar</button>
+          <button class="btn" id="btnSaveStory">Guardar historia</button>
         </div>
       </div>
     </section>
@@ -388,15 +450,30 @@ function renderInterlock() {
 }
 
 function renderMcp() {
-  $('mcp').innerHTML = PLUGIN.mcp.map(m => `
+  const rows = PLUGIN.mcp.map(m => `
     <div class="interlock-row" data-path=".mcp.json">
       <span class="dot"></span>
       <span class="ev">${esc(m.transport)}</span>
       <span class="desc">${esc(m.name)} — ${esc(m.target)}</span>
-    </div>`).join('') || '<div class="interlock-row"><span class="desc">Sin MCP configurado</span></div>';
+    </div>`);
+
+  // Escribir la historia a mano es una fuente más, no un caso degradado: si el
+  // equipo no integra con ningún tracker, esta es la única fila que importa.
+  rows.push(`
+    <div class="interlock-row" data-story="1">
+      <span class="dot"></span>
+      <span class="ev">manual</span>
+      <span class="desc">escribir la historia en el studio</span>
+    </div>`);
+
+  $('mcp').innerHTML = rows.join('');
 
   $('mcp').querySelectorAll('[data-path]').forEach(r =>
     r.addEventListener('click', () => open(r.dataset.path)));
+  $('mcp').querySelector('[data-story]').addEventListener('click', () => {
+    $('source').value = 'manual';
+    syncSource();
+  });
 }
 
 /* ------------------------------------------------------------- editor */
@@ -486,6 +563,84 @@ async function save() {
   }
 }
 
+/* ------------------------------------------------ historia escrita a mano */
+
+// El studio la persiste como story.json antes de arrancar; el resolver la
+// encuentra en la fase 0 y no consulta ningún tracker.
+const storyPayload = () => ({
+  id: $('stId').value.trim(),
+  title: $('stTitle').value.trim(),
+  description: $('stDesc').value,
+  acceptanceCriteria: $('stAc').value,
+  storyPoints: $('stPoints').value,
+  labels: $('stLabels').value,
+});
+
+function fillStory(s) {
+  $('stId').value = s.id || '';
+  $('stTitle').value = s.title || '';
+  $('stDesc').value = s.description || '';
+  $('stAc').value = (s.acceptance_criteria || []).join('\n');
+  $('stPoints').value = s.story_points ?? '';
+  $('stLabels').value = (s.labels || []).join(', ');
+}
+
+/** Sin título no hay historia: es el único campo que el studio exige. */
+function requireTitle() {
+  if ($('stTitle').value.trim()) return true;
+  selectTab('story');
+  banner('err', 'La historia necesita un título');
+  $('stTitle').focus();
+  return false;
+}
+
+const manualMode = () => $('source').value === 'manual';
+
+function syncSource() {
+  const manual = manualMode();
+  $('story').placeholder = manual
+    ? 'ID — opcional, se deriva del título'
+    : 'ID de historia — GLOB-1234, 8891, #245';
+  if (manual) selectTab('story');
+}
+$('source').addEventListener('change', syncSource);
+
+$('btnSaveStory').addEventListener('click', async () => {
+  if (!requireTitle()) return;
+  try {
+    const r = await api('/api/story', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...storyPayload(), repoDir: $('repoDir').value.trim() }),
+    });
+    $('stId').value = r.id;
+    $('story').value = r.id;
+    $('source').value = 'manual';
+    syncSource();
+    $('stStatus').textContent = `guardada como ${r.id}`;
+    banner('ok', `Historia guardada en ${r.path}`);
+  } catch (e) {
+    banner('err', `No se pudo guardar: ${e.message}`);
+  }
+});
+
+// Releer una historia ya escrita: el caso real es corregir los criterios
+// después de que refinamiento bloqueó el run y volver a tirarlo.
+$('btnLoadStory').addEventListener('click', async () => {
+  const id = ($('stId').value.trim() || $('story').value.trim());
+  if (!id) { banner('err', 'Poné el ID de la historia que querés cargar'); return $('stId').focus(); }
+  try {
+    const q = new URLSearchParams({ storyId: id, repoDir: $('repoDir').value.trim() });
+    const r = await api('/api/story?' + q);
+    fillStory(r.story);
+    $('source').value = 'manual';
+    syncSource();
+    $('stStatus').textContent = `cargada de ${r.path}`;
+  } catch (e) {
+    banner('err', e.message);
+  }
+});
+
 /* --------------------------------------------------------------- run */
 
 $('btnRun').addEventListener('click', start);
@@ -495,8 +650,11 @@ $('btnStop').addEventListener('click', async () => {
 });
 
 async function start() {
+  const manual = manualMode();
   const storyId = $('story').value.trim();
-  if (!storyId) return $('story').focus();
+
+  if (manual && !requireTitle()) return;
+  if (!manual && !storyId) return $('story').focus();
 
   resetPhases();
   $('log').innerHTML = '';
@@ -508,12 +666,16 @@ async function start() {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         storyId,
+        story: manual ? storyPayload() : null,
         repoDir: $('repoDir').value.trim(),
         permissionMode: $('permMode').value,
         extraFlags: $('extraFlags').value.trim(),
       }),
     });
     run = r.runId;
+    // Con ID derivado del título, es la primera vez que el dev lo ve.
+    $('story').value = r.storyId;
+    if (manual) $('stId').value = r.storyId;
     $('cmdHint').textContent = `${r.cmd}   ·   cwd ${r.cwd}`;
     $('btnRun').disabled = true; $('btnStop').disabled = false;
 
@@ -596,16 +758,23 @@ function resetPhases() {
 
 /* --------------------------------------------------------- misceláneo */
 
+const TABS = {
+  editor: ['tabEditor', 'paneEditor'],
+  story: ['tabStory', 'paneStory'],
+  log: ['tabLog', 'paneLog'],
+};
+
 function selectTab(which) {
-  const isEd = which === 'editor';
-  $('tabEditor').setAttribute('aria-selected', String(isEd));
-  $('tabLog').setAttribute('aria-selected', String(!isEd));
-  $('paneEditor').dataset.active = isEd ? '1' : '0';
-  $('paneLog').dataset.active = isEd ? '0' : '1';
-  if (!isEd) $('logBadge').hidden = true;
+  for (const [name, [tab, pane]] of Object.entries(TABS)) {
+    const on = name === which;
+    $(tab).setAttribute('aria-selected', String(on));
+    $(pane).dataset.active = on ? '1' : '0';
+  }
+  if (which === 'log') $('logBadge').hidden = true;
 }
-$('tabEditor').addEventListener('click', () => selectTab('editor'));
-$('tabLog').addEventListener('click', () => selectTab('log'));
+for (const [name, [tab]] of Object.entries(TABS)) {
+  $(tab).addEventListener('click', () => selectTab(name));
+}
 
 function banner(kind, text) {
   document.querySelectorAll('.banner').forEach(b => b.remove());

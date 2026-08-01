@@ -14,7 +14,8 @@ evidencia auditable y el flujo se aborta ante señales de riesgo en vez de impro
 ```
 /us GLOB-1234
 /us 8891 --tracker ado
-/us #245 --no-pr        # corre todo pero no abre el PR
+/us #245 --no-pr                        # corre todo pero no abre el PR
+/us LOCAL-exportar-csv --tracker manual # historia escrita a mano, sin tracker
 ```
 
 ## Fase 0 — Resolver la historia
@@ -29,6 +30,17 @@ Devuelve la ruta a `.claude/run/<ID>/story.json` con el esquema canónico
 (ver `references/trackers.md`). Si el script falla, **detenete y reportá** — no
 inventes el contenido de la historia ni sigas con supuestos.
 
+El campo `tracker` de la salida decide de dónde sale el contenido:
+
+- **`jira` | `ado` | `github`** — leé la historia con el MCP que indica
+  `mcp_hint` y escribí vos el `story.json` normalizado.
+- **`manual`** — la historia ya está escrita en `story.json`: la tipeó el dev en
+  el studio porque el equipo no integra con ningún tracker. **No consultes
+  ningún MCP y no la reescribas**, leela y seguí.
+
+Que una historia esté escrita a mano no la hace más confiable que una de Jira.
+Pasa por refinamiento igual que las demás.
+
 ## Fase 1 — Refinamiento (circuit breaker)
 
 Delegá en el subagente `refinamiento` pasándole `story.json`.
@@ -37,7 +49,10 @@ Este es el corte de seguridad más importante del flujo automático. Si el agent
 devuelve `verdict: "BLOCKED"`:
 
 1. Parás. No escribís una sola línea de código.
-2. Comentás en el ticket las preguntas concretas que bloquean.
+2. Comentás en el ticket las preguntas concretas que bloquean. Si el tracker es
+   `manual` no hay ticket donde comentar: escribilas en
+   `.claude/run/<ID>/blocked.md`, que es lo que el dev va a leer para corregir
+   la historia en el studio y volver a tirar el run.
 3. Reportás al dev qué falta.
 
 Un ciclo de 40 minutos sobre una historia ambigua produce código que hay que tirar.
@@ -88,7 +103,7 @@ Abrí el PR **en draft**, con esta descripción:
 
 ```markdown
 ## <ID>: <título de la historia>
-<link al ticket>
+<link al ticket — omitilo si el tracker es `manual`, no hay a dónde apuntar>
 
 ### Qué hace
 <resumen en 2-3 líneas>
@@ -116,6 +131,10 @@ este PR requiere revisión humana antes del merge.
 
 Comentá en el ticket con el link al PR y movelo a "Code Review".
 
+Con tracker `manual` no hay ticket: salteá ese paso. El PR queda como único
+registro de la historia, así que la descripción tiene que sostenerse sola —
+copiá los criterios de aceptación completos en vez de referenciarlos.
+
 ## Reglas transversales
 
 - **Nunca** commitees a la branch base ni hagas force push
@@ -123,6 +142,8 @@ Comentá en el ticket con el link al PR y movelo a "Code Review".
 - Si el alcance real supera lo que describe la historia, paralo y reportalo:
   es señal de que la historia estaba mal dimensionada
 - Todo el estado del run vive en `.claude/run/<ID>/` para que sea auditable
+- Con tracker `manual` no hay dónde escribir de vuelta: todo lo que iría a un
+  comentario del ticket queda en `.claude/run/<ID>/`
 
 ## Referencias
 

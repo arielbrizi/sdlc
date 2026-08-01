@@ -248,6 +248,92 @@ async function scanPlugin() {
   return out;
 }
 
+// ------------------------------------------------------- historia manual
+
+// Mismo patrón que valida el endpoint de run: sin puntos ni barras, así que no
+// hay traversal posible por el ID. La verificación de contención igual está.
+const STORY_ID_RE = /^#?[A-Za-z0-9-]{1,40}$/;
+
+/** Resuelve `.claude/run/<ID>` dentro del repo objetivo y verifica que no se escape. */
+function runDirFor(repoDir, storyId) {
+  if (!STORY_ID_RE.test(storyId)) {
+    throw Object.assign(new Error('ID de historia inválido'), { code: 400 });
+  }
+  const root = path.resolve(repoDir);
+  const base = path.join(root, '.claude', 'run');
+  const abs = path.resolve(base, storyId.replace(/^#/, ''));
+  if (!abs.startsWith(base + path.sep)) {
+    throw Object.assign(new Error('ruta de run fuera del repo'), { code: 403 });
+  }
+  return abs;
+}
+
+/** `Título de la historia` → `titulo-de-la-historia`, para derivar un ID legible. */
+function slugify(s, max = 30) {
+  const clean = String(s || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  if (clean.length <= max) return clean;
+  // Corta en el \u00faltimo guion: un ID partido a mitad de palabra se lee como error.
+  const cut = clean.slice(0, max);
+  return cut.slice(0, cut.lastIndexOf('-')).replace(/-+$/, '') || cut;
+}
+
+/** Acepta un array o un texto con un ítem por línea, tolerando viñetas. */
+const toList = (v, sep) => (Array.isArray(v) ? v : String(v || '').split(sep))
+  .map(s => String(s).replace(/^\s*[-*]\s*/, '').trim())
+  .filter(Boolean);
+
+/**
+ * Escribe una historia tipeada a mano con el esquema canónico de `story.json`.
+ *
+ * Es el camino para equipos que no integran con ningún tracker: la historia la
+ * escribe el dev en el studio y de ahí en adelante el ciclo es idéntico. Nada
+ * downstream sabe que no vino de Jira — por eso se escribe el esquema completo,
+ * con los campos que no aplican en null, y no una versión recortada.
+ *
+ * No valida los criterios de aceptación: eso lo decide `refinamiento`, que es el
+ * circuit breaker del flujo. Escribir la historia acá no saltea ese gate.
+ */
+async function writeManualStory(repoDir, input) {
+  const title = String(input.title || '').trim();
+  if (!title) {
+    throw Object.assign(new Error('La historia necesita un título'), { code: 400 });
+  }
+
+  let id = String(input.id || '').trim().replace(/^#/, '');
+  if (!id) id = `LOCAL-${slugify(title) || Math.random().toString(36).slice(2, 8)}`;
+  if (!STORY_ID_RE.test(id)) {
+    throw Object.assign(new Error(`ID de historia inválido: ${id}`), { code: 400 });
+  }
+
+  const points = Number(input.storyPoints);
+  const story = {
+    id,
+    tracker: 'manual',
+    url: null,
+    type: 'story',
+    title,
+    description: String(input.description || '').trim(),
+    acceptance_criteria: toList(input.acceptanceCriteria, '\n'),
+    story_points: Number.isFinite(points) && points > 0 ? points : null,
+    epic: null,
+    labels: toList(input.labels, ','),
+    attachments: [],
+    linked_issues: [],
+    repo_hint: null,
+    raw: { source: 'studio', authored_at: new Date().toISOString() },
+  };
+
+  const dir = runDirFor(repoDir, id);
+  await fsp.mkdir(dir, { recursive: true });
+  const file = path.join(dir, 'story.json');
+  await fsp.writeFile(file, JSON.stringify(story, null, 2) + '\n', 'utf8');
+  return { id, file, story };
+}
+
 // ------------------------------------------------------------------- runs
 
 /** Fases del skill `us`. El orden es el del SKILL.md. */
@@ -345,9 +431,11 @@ async function pollArtifacts(run) {
   }
 }
 
-function startRun({ storyId, repoDir, permissionMode, extraFlags }) {
+function startRun({ storyId, repoDir, manual, permissionMode, extraFlags }) {
   const id = randomUUID();
-  const prompt = `/us ${storyId}`;
+  // El tracker va explícito: story.json ya dice `manual`, pero decirlo también en
+  // la invocación evita que el resolver tenga que adivinar por la forma del ID.
+  const prompt = manual ? `/us ${storyId} --tracker manual` : `/us ${storyId}`;
   const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose'];
   if (permissionMode) args.push('--permission-mode', permissionMode);
   if (extraFlags) args.push(...extraFlags.split(/\s+/).filter(Boolean));
@@ -495,23 +583,58 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, out);
     }
 
-    if (p === '/api/run' && req.method === 'POST') {
+    if (p === '/api/story' && req.method === 'POST') {
       const body = JSON.parse(await readBody(req));
-      const storyId = String(body.storyId || '').trim();
-      if (!/^#?[A-Za-z0-9-]{1,40}$/.test(storyId)) {
-        return json(res, 400, { error: 'ID de historia inválido' });
-      }
       const repoDir = path.resolve(body.repoDir || TARGET_REPO);
       if (!fs.existsSync(repoDir)) {
         return json(res, 400, { error: `El directorio no existe: ${repoDir}` });
       }
+      const { id, file, story } = await writeManualStory(repoDir, body);
+      return json(res, 200, { id, path: file, story });
+    }
+
+    if (p === '/api/story' && req.method === 'GET') {
+      const repoDir = path.resolve(url.searchParams.get('repoDir') || TARGET_REPO);
+      const file = path.join(
+        runDirFor(repoDir, String(url.searchParams.get('storyId') || '').trim()),
+        'story.json',
+      );
+      try {
+        return json(res, 200, { path: file, story: JSON.parse(await fsp.readFile(file, 'utf8')) });
+      } catch {
+        return json(res, 404, { error: 'No hay historia escrita para ese ID' });
+      }
+    }
+
+    if (p === '/api/run' && req.method === 'POST') {
+      const body = JSON.parse(await readBody(req));
+      const repoDir = path.resolve(body.repoDir || TARGET_REPO);
+      if (!fs.existsSync(repoDir)) {
+        return json(res, 400, { error: `El directorio no existe: ${repoDir}` });
+      }
+
+      // Con historia escrita a mano, se persiste antes de arrancar: el resolver
+      // la encuentra en disco en la fase 0 y no consulta ningún tracker.
+      let storyId = String(body.storyId || '').trim();
+      const manual = !!(body.story && typeof body.story === 'object');
+      if (manual) {
+        const story = { ...body.story, id: body.story.id || storyId };
+        storyId = (await writeManualStory(repoDir, story)).id;
+      }
+      if (!STORY_ID_RE.test(storyId)) {
+        return json(res, 400, { error: 'ID de historia inválido' });
+      }
+
       const run = startRun({
         storyId,
         repoDir,
+        manual,
         permissionMode: body.permissionMode || null,
         extraFlags: body.extraFlags || '',
       });
-      return json(res, 200, { runId: run.id, cmd: `claude ${run.args.join(' ')}`, cwd: repoDir });
+      return json(res, 200, {
+        runId: run.id, storyId, cmd: `claude ${run.args.join(' ')}`, cwd: repoDir,
+      });
     }
 
     let m = p.match(/^\/api\/run\/([\w-]+)\/stream$/);
