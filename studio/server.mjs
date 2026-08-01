@@ -657,7 +657,7 @@ function sendToRun(run, text) {
   emit(run, { t: 'ask', text: text.slice(0, 2000), at: Date.now() });
 }
 
-function startRun({ storyId, repoDir, manual, permissionMode, extraFlags }) {
+function startRun({ storyId, repoDir, manual, permissionMode, allowedTools, extraFlags }) {
   const id = randomUUID();
   // El tracker va explícito: story.json ya dice `manual`, pero decirlo también en
   // la invocación evita que el resolver tenga que adivinar por la forma del ID.
@@ -678,6 +678,9 @@ function startRun({ storyId, repoDir, manual, permissionMode, extraFlags }) {
     '--plugin-dir', PLUGIN_DIR,
   ];
   if (permissionMode) args.push('--permission-mode', permissionMode);
+  // Autorización quirúrgica: con `-p` no hay dónde aceptar un permiso, así que
+  // lo que el run vaya a necesitar tiene que estar habilitado de antemano.
+  if (allowedTools) args.push('--allowedTools', allowedTools);
   if (extraFlags) args.push(...extraFlags.split(/\s+/).filter(Boolean));
 
   const run = {
@@ -927,6 +930,7 @@ const server = http.createServer(async (req, res) => {
         repoDir,
         manual,
         permissionMode: body.permissionMode || null,
+        allowedTools: String(body.allowedTools || '').trim(),
         extraFlags: body.extraFlags || '',
       });
       return json(res, 200, {

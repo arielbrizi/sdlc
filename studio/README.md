@@ -170,6 +170,47 @@ El prompt va por stdin y no en la línea de comandos porque así la sesión qued
 abierta: cuando el ciclo termina, el proceso sigue vivo esperando el próximo
 mensaje. Eso es lo que convierte el panel de ejecución en una consola.
 
+## Permisos
+
+**Desde el studio no se puede aceptar un permiso.** El run corre con `claude -p`,
+que no es interactivo: no hay dónde clickear "sí", así que todo lo que no esté
+autorizado de antemano se deniega y el ciclo se queda a mitad de camino. Los
+permisos se resuelven **antes** de ejecutar, de tres formas.
+
+**1. El desplegable de permisos.** Es lo más rápido:
+
+| Modo | Qué habilita |
+|---|---|
+| por defecto | Nada. Con `-p` equivale a denegar todo lo que requiera permiso. |
+| `acceptEdits` | Escribir y editar archivos. **No** habilita `Bash`. |
+| `bypassPermissions` | Todo, sin preguntar. |
+| `plan` | Nada: analiza y propone, no ejecuta. |
+
+El ciclo `/us` necesita `Bash` desde la fase 0 —`resolve-story.sh` es un script—,
+así que `acceptEdits` **no alcanza**: es la causa más común de un run que se
+frena diciendo "escritura denegada".
+
+**2. El campo "Herramientas permitidas".** Se pasa a `--allowedTools` y es la
+opción quirúrgica: `Bash,Write,Edit` habilita lo que el ciclo necesita sin
+abrir todo. Acepta patrones: `Bash(git *)` permite solo git.
+
+**3. `.claude/settings.json` en el repo objetivo.** Es la única que persiste y
+se versiona, así que es la que conviene para un equipo:
+
+```json
+{
+  "permissions": {
+    "allow": ["Bash", "Write", "Edit"]
+  }
+}
+```
+
+Un apunte que importa acá: `bypassPermissions` **no desactiva los hooks del
+plugin**. `guard-secrets.sh` y `guard-git.sh` son `PreToolUse` y siguen
+corriendo, así que la política de compañía se mantiene aunque saltees los
+permisos interactivos. Es exactamente la razón por la que esas reglas son hooks
+y no prompts (ver `docs/decisiones.md`, D5).
+
 ## La consola
 
 El panel Ejecución muestra el stream y abajo tiene un campo para escribirle a

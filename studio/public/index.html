@@ -469,11 +469,17 @@ dialog::backdrop{background:rgba(0,0,0,.62)}
       </div>
       <div class="console-adv">
         <input class="field" id="repoDir" placeholder="Repo objetivo (ruta absoluta)">
-        <select class="field" id="permMode" style="flex:0 0 190px">
-          <option value="">Permisos: por defecto</option>
-          <option value="acceptEdits">Permisos: acceptEdits</option>
+        <select class="field" id="permMode" style="flex:0 0 260px"
+                title="Con -p no hay dónde aceptar un permiso: lo que no esté autorizado de antemano se deniega.">
+          <option value="">Permisos: por defecto (deniega)</option>
+          <option value="acceptEdits">acceptEdits — acepta editar archivos</option>
+          <option value="bypassPermissions">bypassPermissions — sin preguntar</option>
+          <option value="plan">plan — no ejecuta nada</option>
         </select>
-        <input class="field" id="extraFlags" placeholder="Flags extra" style="flex:0 0 160px">
+        <input class="field" id="allowedTools" style="flex:0 0 210px"
+               placeholder="Herramientas permitidas"
+               title='Se pasa a --allowedTools. Ej: Bash,Write,Edit o Bash(git *)'>
+        <input class="field" id="extraFlags" placeholder="Flags extra" style="flex:0 0 130px">
       </div>
       <div class="hint" id="cmdHint"></div>
     </div>
@@ -1086,6 +1092,7 @@ async function start() {
         story: manual ? storyPayload() : null,
         repoDir: $('repoDir').value.trim(),
         permissionMode: $('permMode').value,
+        allowedTools: $('allowedTools').value.trim(),
         extraFlags: $('extraFlags').value.trim(),
       }),
     });
