@@ -72,6 +72,16 @@ button,input,select,textarea{font:inherit;color:inherit}
 .console-adv{display:flex;gap:8px;margin-top:8px}
 .console-adv .field{flex:1}
 .hint{font-size:11px;color:var(--dim);margin-top:8px;font-family:var(--mono)}
+.repo-state{
+  margin-top:8px;padding:9px 12px;border-radius:2px;border:1px solid var(--edge);
+  background:var(--raised);font-size:12px;display:flex;gap:10px;align-items:center;
+  flex-wrap:wrap;
+}
+.repo-state .dot{width:8px;height:8px;border-radius:50%;background:var(--track);flex-shrink:0}
+.repo-state[data-ok="1"] .dot{background:var(--clear)}
+.repo-state[data-ok="0"] .dot{background:var(--danger)}
+.repo-state code{font-family:var(--mono);font-size:11px;color:var(--dim)}
+.repo-state .grow{flex:1}
 
 /* ---------- spine ---------- */
 .section-label{
@@ -469,8 +479,20 @@ dialog::backdrop{background:rgba(0,0,0,.62)}
         <button class="btn lit" id="btnRun">Ejecutar</button>
         <button class="btn stop" id="btnStop" disabled>Detener</button>
       </div>
+      <!-- Repositorio: se acepta la URL o una carpeta local. Pegar la URL es lo
+           que hace cualquiera que no trabaja en la terminal. -->
       <div class="console-adv">
-        <input class="field" id="repoDir" placeholder="Repo objetivo (ruta absoluta)">
+        <input class="field" id="repoUrl" style="flex:2"
+               placeholder="Pegá la URL del repositorio — https://github.com/org/repo">
+        <button class="btn" id="btnPrepare">Preparar</button>
+        <select class="field" id="baseBranch" style="flex:0 0 200px" disabled>
+          <option value="">Branch base…</option>
+        </select>
+      </div>
+      <div class="repo-state" id="repoState" hidden></div>
+
+      <div class="console-adv">
+        <input class="field" id="repoDir" placeholder="Carpeta local (la completa Preparar)">
         <select class="field" id="permMode" style="flex:0 0 260px"
                 title="Con -p no hay dónde aceptar un permiso: lo que no esté autorizado de antemano se deniega.">
           <option value="">Permisos: por defecto (deniega)</option>
@@ -1107,6 +1129,7 @@ async function start() {
         story: manual ? storyPayload() : null,
         repoDir: $('repoDir').value.trim(),
         permissionMode: $('permMode').value,
+        baseBranch: $('baseBranch').value,
         allowedTools: $('allowedTools').value.trim(),
         extraFlags: $('extraFlags').value.trim(),
       }),
@@ -1206,26 +1229,20 @@ function onEvent(ev) {
   if (ev.t === 'tool') {
     // Un nodo bloqueado no vuelve a "en curso": el corte manda sobre lo que
     // pase después, igual que en la vía lateral.
-    if (NODE_STATE[ev.node] !== 'blocked') NODE_STATE[ev.node] = 'active';
+    if (!esFase(ev.node) && NODE_STATE[ev.node] !== 'blocked') NODE_STATE[ev.node] = 'active';
     pushOut(ev.node, { kind: 'call', title: `llamada · ${ev.name}`, text: ev.summary || '' });
     renderGraph();
   }
   if (ev.t === 'output') {
-    if (NODE_STATE[ev.node] !== 'blocked') NODE_STATE[ev.node] = 'done';
+    // Que termine UNA herramienta no termina la fase que la contiene: eso lo
+    // decide el avance de fase, y es lo que hacía que el grafo mostrara en
+    // verde una fase que la vía mostraba en curso.
+    if (!esFase(ev.node) && NODE_STATE[ev.node] !== 'blocked') NODE_STATE[ev.node] = 'done';
     pushOut(ev.node, { kind: 'result', title: 'resultado', text: ev.text || '' });
     renderGraph();
   }
   if (ev.t === 'say') pushOut(ev.node, { kind: 'say', title: 'claude', text: ev.text || '' });
-  if (ev.t === 'phase' || ev.t === 'agent') {
-    if (!runBlocked) {
-      for (const p of PHASES) {
-        if (p.id < ev.phase) NODE_STATE[`phase:${p.id}`] ||= 'done';
-      }
-      NODE_STATE[`phase:${ev.phase}`] = 'active';
-      renderGraph();
-    }
-  }
-  if (ev.t === 'blocked') { NODE_STATE[`phase:${ev.phase}`] = 'blocked'; renderGraph(); }
+  if (ev.t === 'phase' || ev.t === 'agent' || ev.t === 'blocked') renderGraph();
 
   if (ev.t === 'ready') setSession('idle', 'Sesión abierta — escribile abajo');
   if (ev.t === 'result') {
@@ -1312,6 +1329,21 @@ for (const [name, [tab]] of Object.entries(TABS)) {
 // Lo que dijo el modelo, agrupado por el componente que lo produjo. Es lo que
 // se ve al clickear un nodo: el output de ESE componente, no el log entero.
 let NODE_OUT = {}, NODE_STATE = {}, selectedNode = null;
+
+const esFase = id => String(id || '').startsWith('phase:');
+
+/**
+ * Estado de un nodo. Las fases lo leen de la vía —una sola fuente— porque
+ * mantener dos acumuladores en paralelo terminaba mostrando la misma fase en
+ * curso de un lado y terminada del otro.
+ */
+function nodeState(id) {
+  if (esFase(id)) {
+    const n = id.slice('phase:'.length);
+    return $('phases').querySelector(`.phase[data-phase="${n}"]`)?.dataset.state || 'idle';
+  }
+  return NODE_STATE[id] || 'idle';
+}
 
 const pushOut = (node, entry) => {
   if (!node) return;
@@ -1404,7 +1436,7 @@ function renderGraph() {
          + ` L${a.x + a.w + 16} ${y} L${b.x} ${y}`;
   };
 
-  const done = id => NODE_STATE[id] === 'done';
+  const done = id => nodeState(id) === 'done';
   const svg = [
     `<text class="glabel" x="16" y="18">ciclo · ${esc(PLUGIN.skills[0]?.command || 'us')}</text>`,
     `<text class="glabel" x="${g.hx}" y="18">enclavamiento · sobre cualquier fase</text>`,
@@ -1415,7 +1447,7 @@ function renderGraph() {
     `<path class="gedge dashed" d="M${g.hx - 24} 34 L${g.hx - 24} ${g.height - 40}"/>`,
     ...g.nodes.map(n => `
       <g class="gnode" data-node="${esc(n.id)}" data-kind="${esc(n.kind)}"
-         data-state="${esc(NODE_STATE[n.id] || 'idle')}"
+         data-state="${esc(nodeState(n.id))}"
          data-sel="${n.id === selectedNode ? 1 : 0}" tabindex="0">
         <rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}"/>
         <text x="${n.x + 12}" y="${n.y + (n.sub ? 20 : 26)}">${esc(n.label || n.name)}</text>
@@ -1490,6 +1522,96 @@ function renderNodeDetail() {
     ${cuerpo}`;
 
   if (file) $('ndOpen').addEventListener('click', () => open(file));
+}
+
+/* --------------------------------------------------- repositorio y VCS */
+
+// Pegar la URL y que el studio haga el resto: clonar, listar branches y avisar
+// si falta iniciar sesión en GitHub o Azure. Sin esto habia que clonar a mano
+// desde una terminal, que es justo lo que alguien no tecnico no va a hacer.
+function repoState(ok, html) {
+  const el = $('repoState');
+  el.hidden = false;
+  el.dataset.ok = ok === null ? '' : (ok ? '1' : '0');
+  el.innerHTML = `<span class="dot"></span>${html}`;
+}
+
+$('btnPrepare').addEventListener('click', prepararRepo);
+$('repoUrl').addEventListener('keydown', e => e.key === 'Enter' && prepararRepo());
+
+async function prepararRepo() {
+  const url = $('repoUrl').value.trim();
+  if (!url) return $('repoUrl').focus();
+  repoState(null, 'Preparando el repositorio…');
+
+  // Primero: ¿hace falta iniciar sesión en el proveedor?
+  let vcs = null;
+  try {
+    const r = await api('/api/repo?url=' + encodeURIComponent(url));
+    vcs = r.vcs;
+    if (vcs && vcs.soportado && !vcs.loggedIn) {
+      const falta = vcs.instalado
+        ? `No hay sesión iniciada en ${esc(vcs.nombre)}.`
+        : `Falta instalar <code>${esc(vcs.cli)}</code> para usar ${esc(vcs.nombre)}: <code>${esc(vcs.instalar)}</code>`;
+      repoState(false, `${falta}<span class="grow"></span>` +
+        (vcs.instalado ? `<button class="btn lit" id="btnVcsLogin">Iniciar sesión en ${esc(vcs.nombre)}</button>` : ''));
+      if (vcs.instalado) $('btnVcsLogin').addEventListener('click', () => vcsLogin(vcs.provider));
+      return;
+    }
+  } catch (e) { /* si falla el chequeo se intenta clonar igual */ }
+
+  try {
+    const r = await api('/api/repo/prepare', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+    $('repoDir').value = r.dir;
+
+    const sel = $('baseBranch');
+    sel.innerHTML = r.branches.map(b =>
+      `<option value="${esc(b)}"${b === r.porDefecto ? ' selected' : ''}>${esc(b)}</option>`,
+    ).join('') || '<option value="">(sin branches)</option>';
+    sel.disabled = !r.branches.length;
+
+    repoState(true,
+      `${r.clonado ? 'Clonado' : 'Actualizado'} en <code>${esc(r.dir)}</code>` +
+      `<span class="grow"></span><code>${r.branches.length} branches · base: ${esc(r.porDefecto || '—')}</code>`);
+  } catch (e) {
+    repoState(false, esc(e.message));
+  }
+}
+
+async function vcsLogin(provider) {
+  repoState(null, `Abriendo el login… seguí las instrucciones de abajo.`);
+  try {
+    await api('/api/vcs/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ provider }),
+    });
+  } catch (e) { return repoState(false, esc(e.message)); }
+
+  const es2 = new EventSource('/api/vcs/stream');
+  let url = null, code = null;
+  es2.onmessage = async (e) => {
+    const ev = JSON.parse(e.data);
+    if (ev.t === 'url') url = ev.url;
+    if (ev.t === 'code') code = ev.code;
+    if (ev.t === 'url' || ev.t === 'code') {
+      repoState(null,
+        (code ? `Copiá este código: <code style="color:var(--caution);font-size:14px">${esc(code)}</code> · ` : '') +
+        (url ? `<a href="${esc(url)}" target="_blank" rel="noreferrer">abrir la página de login</a>` : ''));
+    }
+    if (ev.t === 'error') repoState(false, esc(ev.message));
+    if (ev.t === 'end') {
+      es2.close();
+      // Se vuelve solo: apenas el login termina, se reintenta la preparación.
+      if (ev.vcs?.loggedIn) { repoState(true, `Sesión iniciada en ${esc(ev.vcs.nombre)}.`); prepararRepo(); }
+      else repoState(false, 'El login no se completó.');
+    }
+  };
+  es2.onerror = () => es2.close();
 }
 
 /* ------------------------------------------- sesión de Claude Code (login) */

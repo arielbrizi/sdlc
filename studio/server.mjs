@@ -18,6 +18,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
+import os from 'node:os';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..');
@@ -33,6 +34,11 @@ const PLUGIN_DIR = path.resolve(arg('plugin', path.join(REPO_ROOT, 'plugins/glob
 const TARGET_REPO = path.resolve(arg('repo', process.env.GLOBANT_TARGET_REPO || process.cwd()));
 const PORT = Number(arg('port', 4477));
 const PUBLIC_DIR = path.join(HERE, 'public');
+// Dónde se clonan los repos que se piden por URL. Fuera del repo del plugin a
+// propósito: son repos de trabajo, no parte de este proyecto.
+const WORKSPACE = path.resolve(
+  arg('workspace', process.env.GLOBANT_WORKSPACE || path.join(os.homedir(), 'globant-sdlc-repos')),
+);
 
 // Extensiones editables. Todo lo demás es de solo lectura desde el studio.
 const EDITABLE = new Set(['.md', '.json', '.sh', '.yml', '.yaml']);
@@ -128,20 +134,7 @@ function parseFrontmatter(text) {
 }
 
 /** Corre un subcomando de `claude` y junta su salida. Para comandos cortos. */
-function runClaude(args, { cwd = REPO_ROOT } = {}) {
-  return new Promise((resolve) => {
-    let stdout = '', stderr = '';
-    const c = spawn('claude', args, { cwd });
-    c.stdout.on('data', d => stdout += d);
-    c.stderr.on('data', d => stderr += d);
-    c.on('error', e => resolve({
-      code: -1,
-      stdout: '',
-      stderr: e.code === 'ENOENT' ? 'No se encontró el binario `claude` en el PATH.' : e.message,
-    }));
-    c.on('close', code => resolve({ code, stdout, stderr }));
-  });
-}
+const runClaude = (args, opts = {}) => runClaudeLike('claude', args, opts);
 
 const listDir = async (dir, filter = () => true) => {
   try {
@@ -376,6 +369,203 @@ async function writeManualStory(repoDir, input) {
   const file = path.join(dir, 'story.json');
   await fsp.writeFile(file, JSON.stringify(story, null, 2) + '\n', 'utf8');
   return { id, file, story };
+}
+
+// ------------------------------------------------------- repositorio y VCS
+
+/**
+ * De dónde sale el repositorio. Se acepta una URL o una carpeta local, y el
+ * studio decide qué hacer: pegar una URL es lo que hace cualquiera que no
+ * trabaja en la terminal, y obligar a clonar antes a mano era el escalón que
+ * dejaba afuera a quien no es técnico.
+ */
+function parseRepoUrl(raw) {
+  const url = String(raw || '').trim().replace(/\.git$/, '').replace(/\/+$/, '');
+  if (!url) return { ok: false, error: 'falta la URL' };
+
+  // Azure DevOps: https://dev.azure.com/<org>/<proyecto>/_git/<repo>
+  let m = url.match(/^https?:\/\/dev\.azure\.com\/([^/]+)\/([^/]+)\/_git\/([^/]+)$/i);
+  if (m) return { ok: true, provider: 'azure', org: m[1], project: m[2], repo: m[3], url };
+
+  // Azure DevOps viejo: https://<org>.visualstudio.com/<proyecto>/_git/<repo>
+  m = url.match(/^https?:\/\/([^.]+)\.visualstudio\.com\/([^/]+)\/_git\/([^/]+)$/i);
+  if (m) return { ok: true, provider: 'azure', org: m[1], project: m[2], repo: m[3], url };
+
+  // GitHub, https o ssh
+  m = url.match(/^https?:\/\/(?:[^@]+@)?github\.com\/([^/]+)\/([^/]+)$/i)
+   || url.match(/^git@github\.com:([^/]+)\/([^/]+)$/i);
+  if (m) return { ok: true, provider: 'github', org: m[1], repo: m[2], url };
+
+  // Cualquier otro remoto que git sepa clonar: GitLab, Bitbucket, un mirror
+  // interno o un file:// local. No hay proveedor de credenciales conocido.
+  if (/^(https?|ssh|git|file):\/\//i.test(url) || /^git@/.test(url)) {
+    return { ok: true, provider: 'otro', org: null, repo: url.split('/').pop(), url };
+  }
+  return { ok: false, error: 'no parece una URL de repositorio ni una carpeta existente' };
+}
+
+/** Comando de login y de verificación por proveedor. */
+const VCS = {
+  github: {
+    cli: 'gh',
+    nombre: 'GitHub',
+    status: ['auth', 'status'],
+    login: ['auth', 'login', '--web', '--git-protocol', 'https'],
+    instalar: 'brew install gh   (o https://cli.github.com)',
+  },
+  azure: {
+    cli: 'az',
+    nombre: 'Azure DevOps',
+    status: ['account', 'show'],
+    login: ['login'],
+    instalar: 'brew install azure-cli   (o https://aka.ms/azure-cli)',
+  },
+};
+
+/** ¿Hay credenciales para este proveedor? Lo contesta su propio CLI. */
+async function vcsStatus(provider) {
+  const cfg = VCS[provider];
+  if (!cfg) return { provider, soportado: false, nombre: 'otro', loggedIn: null };
+
+  const { code, stdout, stderr } = await runClaudeLike(cfg.cli, cfg.status);
+  const salida = `${stdout}${stderr}`.trim();
+  if (code === -1) {
+    return {
+      provider, soportado: true, nombre: cfg.nombre, cli: cfg.cli,
+      instalado: false, loggedIn: false, instalar: cfg.instalar,
+      detail: `${cfg.cli} no está instalado.`,
+    };
+  }
+  return {
+    provider, soportado: true, nombre: cfg.nombre, cli: cfg.cli,
+    instalado: true, loggedIn: code === 0,
+    detail: salida.slice(0, 400),
+  };
+}
+
+/** Igual que runClaude pero con binario arbitrario. */
+function runClaudeLike(bin, args, opts = {}) {
+  return new Promise((resolve) => {
+    let stdout = '', stderr = '';
+    const c = spawn(bin, args, { cwd: REPO_ROOT, ...opts });
+    c.stdout.on('data', d => stdout += d);
+    c.stderr.on('data', d => stderr += d);
+    c.on('error', () => resolve({ code: -1, stdout: '', stderr: `no se encontró ${bin}` }));
+    c.on('close', code => resolve({ code, stdout, stderr }));
+  });
+}
+
+// Login de VCS: mismo patrón que el de Claude — el flujo lo corre el CLI
+// oficial y el studio muestra la URL y el código, y detecta cuándo terminó.
+const vcsLogin = { child: null, status: 'idle', events: [], clients: new Set(), provider: null };
+
+function startVcsLogin(provider) {
+  const cfg = VCS[provider];
+  if (!cfg) return { error: `proveedor no soportado: ${provider}` };
+  if (vcsLogin.child) return { error: 'ya hay un login en curso' };
+
+  vcsLogin.events = []; vcsLogin.status = 'running'; vcsLogin.provider = provider;
+  push(vcsLogin, { t: 'start', cmd: `${cfg.cli} ${cfg.login.join(' ')}`, at: Date.now() });
+
+  let child;
+  try {
+    child = spawn(cfg.cli, cfg.login, { cwd: REPO_ROOT, stdio: ['pipe', 'pipe', 'pipe'] });
+  } catch {
+    vcsLogin.status = 'error';
+    push(vcsLogin, { t: 'error', message: `${cfg.cli} no está instalado. ${cfg.instalar}`, at: Date.now() });
+    return {};
+  }
+  vcsLogin.child = child;
+
+  const scan = (text) => {
+    push(vcsLogin, { t: 'out', text: text.slice(0, 2000), at: Date.now() });
+    for (const url of text.match(/https?:\/\/[^\s'"]+/g) || []) {
+      push(vcsLogin, { t: 'url', url, at: Date.now() });
+    }
+    // gh imprime un código de un solo uso que hay que pegar en el navegador.
+    const codigo = text.match(/one-time code:\s*([A-Z0-9-]{6,})/i);
+    if (codigo) push(vcsLogin, { t: 'code', code: codigo[1], at: Date.now() });
+  };
+  child.stdout.on('data', d => scan(d.toString('utf8')));
+  child.stderr.on('data', d => scan(d.toString('utf8')));
+  child.on('error', (e) => {
+    vcsLogin.status = 'error';
+    push(vcsLogin, { t: 'error', message: `${cfg.cli}: ${e.message}. ${cfg.instalar}`, at: Date.now() });
+  });
+  child.on('close', async (code) => {
+    vcsLogin.child = null;
+    vcsLogin.status = code === 0 ? 'done' : 'error';
+    // Se vuelve a consultar el estado solo: el dev no tiene que confirmar nada.
+    push(vcsLogin, { t: 'end', code, vcs: await vcsStatus(provider), at: Date.now() });
+    for (const res of vcsLogin.clients) res.end();
+    vcsLogin.clients.clear();
+  });
+  return {};
+}
+
+/**
+ * Deja el repo listo en disco y devuelve sus branches. Clona la primera vez y
+ * hace fetch después: reclonar en cada run sería lento y perdería el trabajo.
+ */
+async function prepararRepo(raw) {
+  // Una carpeta local que ya existe se usa tal cual.
+  const comoPath = path.resolve(String(raw || '').trim());
+  if (fs.existsSync(path.join(comoPath, '.git'))) {
+    return { dir: comoPath, clonado: false, ...(await ramas(comoPath)) };
+  }
+
+  const info = parseRepoUrl(raw);
+  if (!info.ok) throw Object.assign(new Error(info.error), { code: 400 });
+
+  const slug = [info.org, info.project, info.repo].filter(Boolean).join('__')
+    .replace(/[^A-Za-z0-9._-]/g, '-');
+  const dir = path.join(WORKSPACE, slug);
+
+  if (fs.existsSync(path.join(dir, '.git'))) {
+    const r = await runClaudeLike('git', ['fetch', '--all', '--prune'], { cwd: dir });
+    if (r.code !== 0) throw Object.assign(new Error(`git fetch falló: ${r.stderr.slice(0, 300)}`), { code: 502 });
+    return { dir, clonado: false, provider: info.provider, ...(await ramas(dir)) };
+  }
+
+  await fsp.mkdir(WORKSPACE, { recursive: true });
+  const r = await runClaudeLike('git', ['clone', info.url, dir], { cwd: WORKSPACE });
+  if (r.code !== 0) {
+    throw Object.assign(
+      new Error(`git clone falló. ${r.stderr.slice(0, 400)}`),
+      { code: 502 },
+    );
+  }
+  return { dir, clonado: true, provider: info.provider, ...(await ramas(dir)) };
+}
+
+/** Branches remotas y la branch por defecto del repo. */
+async function ramas(dir) {
+  const limpiar = (salida, quitarRemoto) => salida.split('\n')
+    .map(s => s.trim())
+    // `origin/HEAD` se abrevia a `origin` a secas y no es una branch; los
+    // punteros `a -> b` tampoco.
+    .filter(s => s && !s.includes('->') && (!quitarRemoto || s.includes('/')))
+    .map(s => (quitarRemoto ? s.replace(/^[^/]+\//, '') : s))
+    .filter(s => s && s !== 'HEAD')
+    .filter((v, i, a) => a.indexOf(v) === i)
+    .sort();
+
+  const remotas = await runClaudeLike('git', ['branch', '-r', '--format=%(refname:short)'], { cwd: dir });
+  let branches = limpiar(remotas.stdout, true);
+
+  // Un repo local sin remote configurado igual tiene branches locales, y son
+  // las únicas contra las que se puede trabajar.
+  if (!branches.length) {
+    const locales = await runClaudeLike('git', ['branch', '--format=%(refname:short)'], { cwd: dir });
+    branches = limpiar(locales.stdout, false);
+  }
+
+  const head = await runClaudeLike('git', ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], { cwd: dir });
+  const porDefecto = head.code === 0
+    ? head.stdout.trim().replace(/^origin\//, '')
+    : ['main', 'master', 'develop'].find(b => branches.includes(b)) || branches[0] || null;
+
+  return { branches, porDefecto };
 }
 
 // ------------------------------------------------------------------- auth
@@ -657,7 +847,7 @@ function sendToRun(run, text) {
   emit(run, { t: 'ask', text: text.slice(0, 2000), at: Date.now() });
 }
 
-function startRun({ storyId, repoDir, manual, permissionMode, allowedTools, extraFlags }) {
+function startRun({ storyId, repoDir, manual, baseBranch, permissionMode, allowedTools, extraFlags }) {
   const id = randomUUID();
   // El tracker va explícito: story.json ya dice `manual`, pero decirlo también en
   // la invocación evita que el resolver tenga que adivinar por la forma del ID.
@@ -694,7 +884,11 @@ function startRun({ storyId, repoDir, manual, permissionMode, allowedTools, extr
 
   let child;
   try {
-    child = spawn('claude', args, { cwd: repoDir, stdio: ['pipe', 'pipe', 'pipe'] });
+    // `resolve-story.sh` ya lee esta variable para dejarla en run.json, así que
+    // elegir la branch base en el panel alcanza para que el ciclo la respete.
+    const env = { ...process.env };
+    if (baseBranch) env.CLAUDE_PLUGIN_OPTION_BASE_BRANCH = baseBranch;
+    child = spawn('claude', args, { cwd: repoDir, env, stdio: ['pipe', 'pipe', 'pipe'] });
   } catch (e) {
     run.status = 'error';
     emit(run, { t: 'error', message: `No se pudo ejecutar \`claude\`: ${e.message}`, at: Date.now() });
@@ -832,6 +1026,41 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, await runClaude(['plugin', 'validate', PLUGIN_DIR, '--strict']));
     }
 
+    // --- repositorio y credenciales de VCS ---
+    if (p === '/api/repo' && req.method === 'GET') {
+      const info = parseRepoUrl(url.searchParams.get('url') || '');
+      const vcs = info.ok ? await vcsStatus(info.provider) : null;
+      return json(res, 200, { info, vcs, workspace: WORKSPACE });
+    }
+
+    if (p === '/api/repo/prepare' && req.method === 'POST') {
+      const { url: repoUrl } = JSON.parse(await readBody(req));
+      const out = await prepararRepo(repoUrl);
+      return json(res, 200, out);
+    }
+
+    if (p === '/api/vcs/login' && req.method === 'POST') {
+      const { provider } = JSON.parse(await readBody(req));
+      const { error } = startVcsLogin(provider);
+      return json(res, error ? 409 : 200, error ? { error } : { ok: true });
+    }
+
+    if (p === '/api/vcs/stream' && req.method === 'GET') {
+      res.writeHead(200, {
+        'content-type': 'text/event-stream; charset=utf-8',
+        'cache-control': 'no-cache',
+        connection: 'keep-alive',
+      });
+      for (const ev of vcsLogin.events) res.write(`data: ${JSON.stringify(ev)}\n\n`);
+      if (vcsLogin.child) {
+        vcsLogin.clients.add(res);
+        req.on('close', () => vcsLogin.clients.delete(res));
+      } else {
+        res.end();
+      }
+      return;
+    }
+
     // --- autenticación ---
     if (p === '/api/auth' && req.method === 'GET') {
       return json(res, 200, { ...await authStatus(), login: login.status });
@@ -929,6 +1158,7 @@ const server = http.createServer(async (req, res) => {
         storyId,
         repoDir,
         manual,
+        baseBranch: String(body.baseBranch || '').trim(),
         permissionMode: body.permissionMode || null,
         allowedTools: String(body.allowedTools || '').trim(),
         extraFlags: body.extraFlags || '',
