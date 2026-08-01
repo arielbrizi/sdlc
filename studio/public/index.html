@@ -189,11 +189,35 @@ button,input,select,textarea{font:inherit;color:inherit}
 .ed-path{font-family:var(--mono);font-size:12px;color:var(--dim)}
 .ed-title{font-family:var(--display);font-size:22px;font-weight:600;
   letter-spacing:.06em;text-transform:uppercase;margin:2px 0 0}
-.fm{padding:14px 20px;border-bottom:1px solid var(--edge);
-  display:grid;grid-template-columns:120px 1fr;gap:8px 14px;align-items:center;flex-shrink:0}
-.fm-key{font-family:var(--mono);font-size:11px;color:var(--dim);text-align:right}
-.fm .field{width:100%}
-.ed-body{flex:1;display:flex;flex-direction:column;padding:14px 20px 0;min-height:0}
+/* Configuración del componente. Dos columnas y plegable: antes ocupaba media
+   pantalla y empujaba el texto —que es lo que se viene a editar— fuera de vista. */
+.fm{border-bottom:1px solid var(--edge);flex-shrink:0}
+.fm summary{
+  cursor:pointer;padding:10px 20px;list-style:none;
+  font-family:var(--display);font-size:12px;font-weight:600;
+  letter-spacing:.16em;text-transform:uppercase;color:var(--dim);
+}
+.fm summary::-webkit-details-marker{display:none}
+.fm summary::before{content:"▸ ";color:var(--track)}
+.fm[open] summary::before{content:"▾ "}
+.fm summary:hover{color:var(--bone)}
+.fm-grid{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));
+  gap:12px 20px;padding:4px 20px 16px;
+}
+.fm-field{display:flex;flex-direction:column;gap:3px;min-width:0}
+.fm-field.wide{grid-column:1/-1}
+.fm-label{font-family:var(--display);font-size:12px;font-weight:600;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--bone)}
+.fm-label code{font-family:var(--mono);font-size:10px;color:var(--dim);
+  text-transform:none;letter-spacing:0;margin-left:6px}
+.fm-help{font-size:11px;color:var(--dim);line-height:1.45}
+.fm-field .field{width:100%}
+.fm-field textarea.field{resize:vertical;min-height:56px;line-height:1.55}
+
+.ed-body{flex:1 1 auto;display:flex;flex-direction:column;padding:12px 20px 0;min-height:180px}
+.ed-body>label{font-family:var(--display);font-size:12px;font-weight:600;
+  letter-spacing:.16em;text-transform:uppercase;color:var(--dim);margin-bottom:6px}
 .ed-body textarea{
   flex:1;width:100%;resize:none;background:var(--sunk);
   border:1px solid var(--edge);border-radius:2px;padding:14px;
@@ -274,6 +298,49 @@ dialog::backdrop{background:rgba(0,0,0,.62)}
 .session[data-s="idle"] .dot{background:var(--clear)}
 .session[data-s="done"] .dot,.session[data-s="stopped"] .dot{background:var(--track)}
 .session[data-s="error"] .dot{background:var(--danger)}
+
+/* ---------- grafo de ejecución ---------- */
+.graph-wrap{flex:1;min-height:0;overflow:auto;padding:16px 20px;background:var(--sunk)}
+#graph{display:block}
+.gnode rect{fill:var(--raised);stroke:var(--edge);stroke-width:1.5;rx:3}
+.gnode text{font-family:var(--mono);font-size:11px;fill:var(--bone)}
+.gnode .gsub{font-size:9px;fill:var(--dim)}
+.gnode{cursor:pointer}
+.gnode:hover rect{stroke:var(--track)}
+.gnode[data-sel="1"] rect{stroke:var(--bone);stroke-width:2.5}
+.gnode[data-state="active"] rect{stroke:var(--caution)}
+.gnode[data-state="done"] rect{stroke:var(--clear)}
+.gnode[data-state="blocked"] rect{stroke:var(--danger)}
+.gnode[data-kind="agent"] rect{fill:#1e1a26}
+.gnode[data-kind="hook"] rect{fill:#241f14}
+.gnode[data-kind="script"] rect{fill:#16211f}
+.gnode[data-kind="mcp"] rect{fill:#241a1f}
+.gedge{stroke:var(--edge);stroke-width:1.5;fill:none}
+.gedge.spine{stroke:var(--track)}
+.gedge.done{stroke:var(--clear)}
+.gedge.dashed{stroke-dasharray:3 3}
+.glabel{font-family:var(--display);font-size:11px;letter-spacing:.16em;
+  text-transform:uppercase;fill:var(--dim)}
+
+.node-detail{
+  border-top:1px solid var(--edge);padding:14px 20px;max-height:46%;
+  overflow-y:auto;flex-shrink:0;background:var(--panel);
+}
+.nd-head{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+.nd-title{font-family:var(--display);font-size:17px;font-weight:600;
+  letter-spacing:.08em;text-transform:uppercase;margin:0}
+.nd-out{
+  background:var(--sunk);border:1px solid var(--edge);border-radius:2px;
+  padding:10px 12px;margin-top:10px;font-family:var(--mono);font-size:11.5px;
+  white-space:pre-wrap;word-break:break-word;line-height:1.6;
+}
+.nd-out header{
+  font-family:var(--display);font-size:10px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--dim);margin-bottom:6px;
+}
+.nd-out.call{border-left:2px solid #8fd0c0}
+.nd-out.say{border-left:2px solid #7fb2f0}
+.nd-out.result{border-left:2px solid var(--clear)}
 
 /* historia escrita a mano */
 .story{padding:16px 20px 24px;overflow-y:auto;flex:1;min-height:0}
@@ -414,6 +481,7 @@ dialog::backdrop{background:rgba(0,0,0,.62)}
     <div class="tabs">
       <button class="tab" id="tabEditor" aria-selected="true">Componente</button>
       <button class="tab" id="tabStory" aria-selected="false">Historia</button>
+      <button class="tab" id="tabGrafo" aria-selected="false">Grafo de ejecución</button>
       <button class="tab" id="tabLog" aria-selected="false">Ejecución<span class="tab-badge" id="logBadge" hidden></span></button>
     </div>
 
@@ -429,8 +497,11 @@ dialog::backdrop{background:rgba(0,0,0,.62)}
           <div id="edKind"></div>
           <p class="what" id="edWhat"></p>
         </div>
-        <div class="fm" id="edFm"></div>
-        <div class="ed-body"><textarea id="edText" spellcheck="false"></textarea></div>
+        <details class="fm" id="edFm" open></details>
+        <div class="ed-body">
+          <label for="edText" id="edBodyLabel">Instrucciones</label>
+          <textarea id="edText" spellcheck="false"></textarea>
+        </div>
         <div class="ed-foot">
           <span class="dirty" id="edDirty"></span>
           <button class="btn" id="btnRevert">Descartar</button>
@@ -479,6 +550,13 @@ dialog::backdrop{background:rgba(0,0,0,.62)}
           <button class="btn" id="btnLoadStory">Cargar</button>
           <button class="btn" id="btnSaveStory">Guardar historia</button>
         </div>
+      </div>
+    </section>
+
+    <section class="pane" id="paneGrafo">
+      <div class="graph-wrap"><svg id="graph" role="img" aria-label="Grafo de ejecución"></svg></div>
+      <div class="node-detail" id="nodeDetail">
+        <p class="what">Clickeá cualquier componente del grafo para ver qué dijo el modelo ahí durante el run.</p>
       </div>
     </section>
 
@@ -602,6 +680,7 @@ async function load() {
   renderPhases();
   renderInterlock();
   renderMcp();
+  renderGraph();
 
   if (plugin.problems.length) {
     banner('err', plugin.problems.join(' · '));
@@ -719,6 +798,83 @@ function renderMcp() {
 
 /* ------------------------------------------------------------- editor */
 
+// Qué significa cada campo del frontmatter y con qué control se edita. Los
+// nombres de las claves son los de Claude Code y se muestran tal cual; lo que
+// se traduce es para qué sirve cada una.
+const FIELD_HELP = {
+  name: {
+    label: 'Nombre',
+    help: 'Con el que se lo invoca. Dentro de un plugin va calificado: globant-sdlc:<nombre>.',
+  },
+  description: {
+    label: 'Cuándo usarlo',
+    type: 'textarea',
+    wide: true,
+    help: 'Lo lee Claude para decidir si invocarlo. Escribí el disparador, no la biografía: "Usar cuando…". Si es vago, el componente no se invoca nunca o se invoca de más.',
+  },
+  model: {
+    label: 'Modelo',
+    type: 'select',
+    options: ['', 'opus', 'sonnet', 'haiku'],
+    help: 'opus razona mejor y cuesta más; sonnet alcanza para tareas acotadas. Vacío hereda el de la sesión.',
+  },
+  effort: {
+    label: 'Esfuerzo',
+    type: 'select',
+    options: ['', 'low', 'medium', 'high'],
+    help: 'Cuánto piensa antes de responder. high para diseño y revisión; low para tareas mecánicas.',
+  },
+  maxTurns: {
+    label: 'Turnos máximos',
+    type: 'number',
+    help: 'Tope de idas y vueltas antes de cortar. Es la red contra un agente que se queda en loop.',
+  },
+  disallowedTools: {
+    label: 'Herramientas prohibidas',
+    wide: true,
+    help: 'Separadas por coma. "Write, Edit" deja al agente en modo solo lectura: puede auditar pero no tocar código. Es la separación entre quien escribe y quien evalúa.',
+  },
+};
+
+/** Etiqueta del cuerpo según el tipo de componente: no todos son instrucciones. */
+const BODY_LABEL = {
+  agent: 'Instrucciones del subagente',
+  skill: 'Instrucciones del skill',
+  script: 'Contenido del script',
+  hook: 'Definición de los hooks',
+  mcp: 'Definición de los MCP servers',
+  manifest: 'Manifiesto',
+  reference: 'Contenido',
+};
+
+/** Un campo del frontmatter, con su control y su explicación. */
+function fmField(key, value) {
+  const meta = FIELD_HELP[key] || { label: key };
+  const v = Array.isArray(value) ? value.join(', ') : (value ?? '');
+  const attrs = `class="field" id="fm-${esc(key)}" data-fm="${esc(key)}"`;
+
+  let control;
+  if (meta.type === 'select') {
+    control = `<select ${attrs}>${meta.options.map(o =>
+      `<option value="${esc(o)}"${o === v ? ' selected' : ''}>${esc(o || '(heredado)')}</option>`,
+    ).join('')}</select>`;
+    // Un valor fuera de la lista no se puede perder por editarlo en el studio.
+    if (!meta.options.includes(String(v))) {
+      control = `<input ${attrs} value="${esc(v)}">`;
+    }
+  } else if (meta.type === 'textarea') {
+    control = `<textarea ${attrs} rows="3">${esc(v)}</textarea>`;
+  } else {
+    control = `<input ${attrs} type="${meta.type === 'number' ? 'number' : 'text'}" value="${esc(v)}">`;
+  }
+
+  return `<div class="fm-field${meta.wide ? ' wide' : ''}">
+    <label class="fm-label" for="fm-${esc(key)}">${esc(meta.label)}<code>${esc(key)}</code></label>
+    ${control}
+    ${meta.help ? `<span class="fm-help">${esc(meta.help)}</span>` : ''}
+  </div>`;
+}
+
 async function open(path) {
   // Comparar contra `compose()`, no contra el textarea: con frontmatter el
   // textarea tiene solo el cuerpo y `original` el archivo entero, así que
@@ -745,26 +901,28 @@ async function open(path) {
   // así que van como campos, no perdidos dentro del texto.
   const fm = f.frontmatter;
   $('edFm').innerHTML = fm
-    ? Object.entries(fm).map(([k, v]) => `
-        <label class="fm-key" for="fm-${k}">${esc(k)}</label>
-        <input class="field" id="fm-${k}" data-fm="${esc(k)}"
-               value="${esc(Array.isArray(v) ? v.join(', ') : v)}">`).join('')
+    ? `<summary>Configuración · ${Object.keys(fm).length} campos</summary>
+       <div class="fm-grid">${Object.entries(fm).map(([k, v]) => fmField(k, v)).join('')}</div>`
     : '';
-  $('edFm').style.display = fm ? 'grid' : 'none';
+  $('edFm').hidden = !fm;
+  $('edBodyLabel').textContent = BODY_LABEL[kind] || 'Contenido';
 
   $('edText').value = fm ? f.body : f.content;
   $('edText').readOnly = !f.editable;
   $('btnSave').disabled = !f.editable;
   markDirty();
 
-  $('edFm').querySelectorAll('input').forEach(i => i.addEventListener('input', markDirty));
+  $('edFm').querySelectorAll('[data-fm]').forEach(i => {
+    i.addEventListener('input', markDirty);
+    i.addEventListener('change', markDirty);
+  });
   selectTab('editor');
 }
 
 function compose() {
   if (!current) return '';
   if (!current.frontmatter) return $('edText').value;
-  const lines = [...$('edFm').querySelectorAll('input')].map(i => {
+  const lines = [...$('edFm').querySelectorAll('[data-fm]')].map(i => {
     const k = i.dataset.fm, v = i.value.trim();
     const wasArray = Array.isArray(current.frontmatter[k]);
     return `${k}: ${wasArray ? `[${v}]` : v}`;
@@ -916,6 +1074,7 @@ async function start() {
   selectTab('log');
   runHasStory = !consola;
   runBlocked = false;
+  NODE_OUT = {}; NODE_STATE = {}; renderGraph();
 
   try {
     const r = await api('/api/run', {
@@ -1020,6 +1179,32 @@ function onEvent(ev) {
     const p = el(ev.phase);
     if (p && p.dataset.state === 'idle') p.dataset.state = 'done';
   }
+  // El grafo se alimenta del mismo stream: cada salida queda pegada al nodo
+  // que la produjo, que es lo que se ve al clickearlo.
+  if (ev.t === 'tool') {
+    // Un nodo bloqueado no vuelve a "en curso": el corte manda sobre lo que
+    // pase después, igual que en la vía lateral.
+    if (NODE_STATE[ev.node] !== 'blocked') NODE_STATE[ev.node] = 'active';
+    pushOut(ev.node, { kind: 'call', title: `llamada · ${ev.name}`, text: ev.summary || '' });
+    renderGraph();
+  }
+  if (ev.t === 'output') {
+    if (NODE_STATE[ev.node] !== 'blocked') NODE_STATE[ev.node] = 'done';
+    pushOut(ev.node, { kind: 'result', title: 'resultado', text: ev.text || '' });
+    renderGraph();
+  }
+  if (ev.t === 'say') pushOut(ev.node, { kind: 'say', title: 'claude', text: ev.text || '' });
+  if (ev.t === 'phase' || ev.t === 'agent') {
+    if (!runBlocked) {
+      for (const p of PHASES) {
+        if (p.id < ev.phase) NODE_STATE[`phase:${p.id}`] ||= 'done';
+      }
+      NODE_STATE[`phase:${ev.phase}`] = 'active';
+      renderGraph();
+    }
+  }
+  if (ev.t === 'blocked') { NODE_STATE[`phase:${ev.phase}`] = 'blocked'; renderGraph(); }
+
   if (ev.t === 'ready') setSession('idle', 'Sesión abierta — escribile abajo');
   if (ev.t === 'result') {
     // El ciclo completo termina en un `result` sin bloqueo: recién ahí se
@@ -1084,6 +1269,7 @@ function resetPhases() {
 const TABS = {
   editor: ['tabEditor', 'paneEditor'],
   story: ['tabStory', 'paneStory'],
+  grafo: ['tabGrafo', 'paneGrafo'],
   log: ['tabLog', 'paneLog'],
 };
 
@@ -1097,6 +1283,171 @@ function selectTab(which) {
 }
 for (const [name, [tab]] of Object.entries(TABS)) {
   $(tab).addEventListener('click', () => selectTab(name));
+}
+
+/* --------------------------------------------------- grafo de ejecución */
+
+// Lo que dijo el modelo, agrupado por el componente que lo produjo. Es lo que
+// se ve al clickear un nodo: el output de ESE componente, no el log entero.
+let NODE_OUT = {}, NODE_STATE = {}, selectedNode = null;
+
+const pushOut = (node, entry) => {
+  if (!node) return;
+  (NODE_OUT[node] ||= []).push(entry);
+  if (node === selectedNode) renderNodeDetail();
+};
+
+/**
+ * Posiciona el grafo. La columna izquierda es la vía de fases —el orden del
+ * SKILL.md— y a la derecha cuelga cada componente de la fase donde interviene.
+ * Los hooks van en una banda aparte porque no son secuenciales: corren sobre
+ * cualquier fase.
+ */
+function layout() {
+  const ROW = 92, TOP = 34, PX = 16, PW = 186, CX = 250, CW = 168, GAP = 16;
+  const nodes = [], edges = [];
+
+  PHASES.forEach((p, i) => {
+    nodes.push({
+      id: `phase:${p.id}`, kind: 'phase', gate: p.gate,
+      label: `${String(p.id).padStart(2, '0')} · ${p.label}`,
+      sub: p.gate ? 'puede abortar el run' : '',
+      x: PX, y: TOP + i * ROW, w: PW, h: 48,
+    });
+    if (i) edges.push({ a: `phase:${PHASES[i - 1].id}`, b: `phase:${p.id}`, kind: 'spine' });
+  });
+
+  // Componentes por fase: los mismos que la vía lateral, más los MCP en la 0.
+  const partsOf = id => {
+    const p = PHASE_PARTS[id] || {};
+    const out = [];
+    for (const n of p.scripts || []) out.push({ kind: 'script', name: n, id: `script:${n}` });
+    for (const n of p.agents || []) out.push({ kind: 'agent', name: `@${n}`, id: `agent:${n}` });
+    if (id === 0) for (const m of PLUGIN.mcp) out.push({ kind: 'mcp', name: m.name, id: `mcp:${m.name}` });
+    return out;
+  };
+
+  let maxX = CX + CW;
+  PHASES.forEach((p, i) => {
+    partsOf(p.id).forEach((c, k) => {
+      const x = CX + k * (CW + GAP);
+      maxX = Math.max(maxX, x + CW);
+      nodes.push({
+        ...c, x, y: TOP + i * ROW + 2, w: CW, h: 42,
+        sub: c.kind === 'agent' ? 'subagente' : c.kind,
+      });
+      edges.push({ a: `phase:${p.id}`, b: c.id, kind: 'branch' });
+    });
+  });
+
+  // Banda de hooks: enganchan en cualquier fase, se dibujan al costado.
+  const hx = maxX + 46;
+  PLUGIN.hooks.forEach((h, i) => {
+    nodes.push({
+      id: `hook:${h.event}:${i}`, kind: 'hook', hook: h,
+      label: h.event, sub: h.script || 'hook',
+      x: hx, y: TOP + i * 62, w: 190, h: 46,
+    });
+  });
+
+  const height = TOP + PHASES.length * ROW + 20;
+  return { nodes, edges, width: hx + 190 + 20, height, hx };
+}
+
+function renderGraph() {
+  if (!PLUGIN || !PHASES.length) return;
+  const g = layout();
+  const byId = Object.fromEntries(g.nodes.map(n => [n.id, n]));
+
+  const edgePath = e => {
+    const a = byId[e.a], b = byId[e.b];
+    if (!a || !b) return '';
+    if (e.kind === 'spine') {
+      return `M${a.x + 22} ${a.y + a.h} L${a.x + 22} ${b.y}`;
+    }
+    const y = b.y + b.h / 2;
+    return `M${a.x + a.w} ${a.y + a.h / 2} L${a.x + a.w + 16} ${a.y + a.h / 2}`
+         + ` L${a.x + a.w + 16} ${y} L${b.x} ${y}`;
+  };
+
+  const done = id => NODE_STATE[id] === 'done';
+  const svg = [
+    `<text class="glabel" x="16" y="18">ciclo · ${esc(PLUGIN.skills[0]?.command || 'us')}</text>`,
+    `<text class="glabel" x="${g.hx}" y="18">enclavamiento · sobre cualquier fase</text>`,
+    ...g.edges.map(e => `<path class="gedge ${e.kind}${done(e.b) ? ' done' : ''}" d="${edgePath(e)}"/>`),
+    // Los hooks no se conectan a una fase: se marca con una línea punteada.
+    `<path class="gedge dashed" d="M${g.hx - 24} 34 L${g.hx - 24} ${g.height - 40}"/>`,
+    ...g.nodes.map(n => `
+      <g class="gnode" data-node="${esc(n.id)}" data-kind="${esc(n.kind)}"
+         data-state="${esc(NODE_STATE[n.id] || 'idle')}"
+         data-sel="${n.id === selectedNode ? 1 : 0}" tabindex="0">
+        <rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}"/>
+        <text x="${n.x + 12}" y="${n.y + (n.sub ? 20 : 26)}">${esc(n.label || n.name)}</text>
+        ${n.sub ? `<text class="gsub" x="${n.x + 12}" y="${n.y + 34}">${esc(n.sub)}</text>` : ''}
+      </g>`),
+  ].join('');
+
+  const el = $('graph');
+  el.setAttribute('viewBox', `0 0 ${g.width} ${g.height}`);
+  el.setAttribute('width', g.width);
+  el.setAttribute('height', g.height);
+  el.innerHTML = svg;
+  el.querySelectorAll('.gnode').forEach(n => {
+    n.addEventListener('click', () => selectNode(n.dataset.node));
+    n.addEventListener('keydown', e => e.key === 'Enter' && selectNode(n.dataset.node));
+  });
+}
+
+function selectNode(id) {
+  selectedNode = id;
+  renderGraph();
+  renderNodeDetail();
+}
+
+/** Qué archivo abre cada nodo, para poder saltar del grafo al componente. */
+function nodeFile(id) {
+  const [kind, name] = id.split(':');
+  if (kind === 'agent') return PLUGIN.agents.find(a => a.name === name)?.path;
+  if (kind === 'script') return PLUGIN.scripts.find(s => s.name === name)?.path;
+  if (kind === 'mcp') return '.mcp.json';
+  if (kind === 'hook') return 'hooks/hooks.json';
+  if (kind === 'phase') return PLUGIN.skills[0]?.path;
+  return null;
+}
+
+const NODE_KIND = { agent: 'agent', script: 'script', mcp: 'mcp', hook: 'hook', phase: 'skill' };
+
+function renderNodeDetail() {
+  const id = selectedNode;
+  if (!id) return;
+  const [kind, name] = id.split(':');
+  const entries = NODE_OUT[id] || [];
+  const file = nodeFile(id);
+
+  const title = kind === 'phase'
+    ? (PHASES.find(p => String(p.id) === name)?.label || id)
+    : name;
+
+  const cuerpo = entries.length
+    ? entries.map(e => `
+        <div class="nd-out ${e.kind}">
+          <header>${esc(e.title)}</header>${esc(e.text)}
+        </div>`).join('')
+    : `<p class="what">Todavía no hay salida de este componente en el run actual.${
+        kind === 'hook'
+          ? ' Los hooks no reportan al stream: su rastro queda en <code>.claude/run/&lt;ID&gt;/timeline.log</code>.'
+          : ''}</p>`;
+
+  $('nodeDetail').innerHTML = `
+    <div class="nd-head">
+      ${kindBadge(NODE_KIND[kind] || 'skill')}
+      <h3 class="nd-title">${esc(title)}</h3>
+      ${file ? `<button class="btn" id="ndOpen">Abrir archivo</button>` : ''}
+    </div>
+    <p class="what">${esc(KINDS[NODE_KIND[kind] || 'skill']?.what || '')}</p>
+    ${cuerpo}`;
+
+  if (file) $('ndOpen').addEventListener('click', () => open(file));
 }
 
 /* ------------------------------------------- sesión de Claude Code (login) */

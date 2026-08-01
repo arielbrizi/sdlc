@@ -501,6 +501,32 @@ function toolSummary(name, input = {}) {
   return first ? `${first}: ${String(input[first])}` : '';
 }
 
+/**
+ * A qué nodo del grafo pertenece una llamada a herramienta.
+ *
+ * Es lo que permite que al hacer clic en `@qa` se vea lo que dijo `@qa`, y no
+ * el log entero. Un subagente es su propio nodo; un script el suyo; el resto
+ * cuelga de la fase en la que ocurrió.
+ */
+function nodeFor(run, name, input = {}) {
+  if (name === 'Task') {
+    return `agent:${unqualify(String(input.subagent_type || input.agent || '').toLowerCase())}`;
+  }
+  if (name === 'Bash') {
+    const script = (String(input.command || '').match(/([A-Za-z0-9._-]+\.sh)/) || [])[1];
+    if (script) return `script:${script}`;
+  }
+  return `phase:${run.phase ?? 0}`;
+}
+
+/** Texto plano de un bloque de contenido, venga como venga. */
+function blockText(b) {
+  if (typeof b.text === 'string') return b.text;
+  if (typeof b.content === 'string') return b.content;
+  if (Array.isArray(b.content)) return b.content.map(c => c.text || '').join('\n');
+  return '';
+}
+
 /** Deriva la fase actual a partir de un evento del stream. Es inferencia. */
 function inferPhase(run, msg) {
   const blocks = msg?.message?.content;
@@ -511,8 +537,12 @@ function inferPhase(run, msg) {
       const name = b.name;
       const input = b.input || {};
 
+      // El nodo se recuerda por id para poder colgarle el resultado cuando llegue.
+      const node = nodeFor(run, name, input);
+      if (b.id) run.pending.set(b.id, node);
       emit(run, {
-        t: 'tool', name, summary: toolSummary(name, input).slice(0, 400), at: Date.now(),
+        t: 'tool', name, node, id: b.id || null,
+        summary: toolSummary(name, input).slice(0, 400), at: Date.now(),
       });
 
       if (name === 'Task') {
@@ -547,9 +577,21 @@ function inferPhase(run, msg) {
 
     // Los agentes devuelven JSON con `verdict`. Un bloqueo detiene el run.
     if (b.type === 'tool_result' || b.type === 'text') {
-      const text = typeof b.content === 'string' ? b.content
-        : typeof b.text === 'string' ? b.text
-        : Array.isArray(b.content) ? b.content.map(c => c.text || '').join('\n') : '';
+      const text = blockText(b);
+
+      // El resultado se le cuelga al nodo que hizo la llamada: es lo que se ve
+      // al clickear ese componente en el grafo.
+      if (b.type === 'tool_result' && b.tool_use_id) {
+        const node = run.pending.get(b.tool_use_id);
+        if (node) {
+          run.pending.delete(b.tool_use_id);
+          emit(run, {
+            t: 'output', node, id: b.tool_use_id,
+            text: text.slice(0, 6000), at: Date.now(),
+          });
+        }
+      }
+
       if (/"verdict"\s*:\s*"BLOCKED"/.test(text)) {
         run.blocked = { phase: 1, reason: 'La historia no pasó refinamiento' };
         emit(run, { t: 'blocked', ...run.blocked, at: Date.now() });
@@ -643,6 +685,7 @@ function startRun({ storyId, repoDir, manual, permissionMode, extraFlags }) {
     startedAt: Date.now(), status: 'running',
     phase: null, phaseHistory: [], blocked: null,
     artifacts: {}, events: [], clients: new Set(), child: null, stdinClosed: false,
+    pending: new Map(), // tool_use_id -> nodo del grafo, para atribuir resultados
   };
   runs.set(id, run);
 
@@ -693,7 +736,12 @@ function startRun({ storyId, repoDir, manual, permissionMode, extraFlags }) {
         inferPhase(run, msg);
         const text = (msg.message?.content || [])
           .filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
-        if (text) emit(run, { t: 'say', text: text.slice(0, 1200), at: Date.now() });
+        if (text) {
+          emit(run, {
+            t: 'say', node: `phase:${run.phase ?? 0}`,
+            text: text.slice(0, 4000), at: Date.now(),
+          });
+        }
       } else if (msg.type === 'user') {
         inferPhase(run, msg);
       } else if (msg.type === 'result') {

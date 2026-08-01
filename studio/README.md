@@ -64,9 +64,39 @@ Las explicaciones sí están escritas para alguien que recién arranca, y viven 
 `KINDS`, dentro de `public/index.html`. Si agregás un tipo de componente,
 agregalo ahí o va a aparecer sin etiqueta.
 
+## El grafo de ejecución
+
+La pestaña **Grafo de ejecución** dibuja el sistema completo como diagrama: la
+vía de fases a la izquierda, y colgando de cada una los componentes que
+intervienen ahí —el script en la 0, `@refinamiento` en la 1, `@qa` y
+`@seguridad` en paralelo en la 4—. Los hooks van en una banda aparte, unida con
+línea punteada, porque no cuelgan de ninguna fase: corren sobre cualquiera.
+
+**Un clic en un nodo muestra lo que dijo el modelo ahí**, no el log entero. Para
+un subagente eso es la llamada que lo invocó y el JSON que devolvió; para una
+fase, el texto que Claude escribió mientras estaba en ella. Es la diferencia
+entre "el run se detuvo" y "esto contestó refinamiento, palabra por palabra".
+
+Funciona porque el servidor recuerda el `tool_use_id` de cada llamada y le
+cuelga el resultado cuando llega. Los hooks son la excepción honesta: no
+reportan al stream, así que su nodo lo dice y apunta a `timeline.log`.
+
+Los nodos se pintan con el estado del run —en curso, hecho, bloqueado— con la
+misma regla que la vía: un nodo bloqueado no vuelve a "en curso" por más que
+sigan pasando cosas después.
+
 ## Editar
 
-Un clic en cualquier chip abre el archivo real. El frontmatter se muestra como
+Un clic en cualquier chip abre el archivo real.
+
+La configuración del componente —el frontmatter— se muestra como campos con
+nombre en criollo, la clave real al lado y una línea de qué significa. `model` y
+`effort` son desplegables con los valores válidos, `maxTurns` es numérico y
+`description` una caja de texto, porque es larga y es lo que Claude lee para
+decidir si invoca ese componente.
+
+El bloque es plegable a propósito: ocupaba media pantalla y empujaba fuera de
+vista las instrucciones, que son lo que uno viene a editar. El frontmatter se muestra como
 campos separados del cuerpo — `model`, `effort`, `maxTurns`, `disallowedTools`
 son exactamente lo que se toca al calibrar un agente, y no tiene sentido que
 haya que buscarlos dentro del texto.
