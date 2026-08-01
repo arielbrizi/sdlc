@@ -315,6 +315,8 @@ dialog::backdrop{background:rgba(0,0,0,.62)}
 .gnode[data-kind="hook"] rect{fill:#241f14}
 .gnode[data-kind="script"] rect{fill:#16211f}
 .gnode[data-kind="mcp"] rect{fill:#241a1f}
+.gnode[data-kind="main"] rect{fill:#1a2028;stroke-dasharray:4 3}
+.gedge.loop{stroke:var(--caution)}
 .gedge{stroke:var(--edge);stroke-width:1.5;fill:none}
 .gedge.spine{stroke:var(--track)}
 .gedge.done{stroke:var(--clear)}
@@ -598,11 +600,16 @@ const PHASE_PARTS = {
   0: { scripts: ['resolve-story.sh'], skills: ['us'] },
   1: { agents: ['refinamiento'] },
   2: { agents: ['arquitectura'] },
-  3: { agents: [] },
+  3: { main: true },
   4: { agents: ['qa', 'seguridad'] },
   5: { agents: ['reviewer'] },
-  6: { agents: [] },
+  6: { main: true },
 };
+
+// Las fases sin subagente no estan vacias: las hace la sesion principal, la
+// misma que corre el skill. Que no figurara nada se leia como un componente
+// faltante, cuando es una decision de diseno: ningun subagente puede escribir.
+const MAIN_TAG = { 3: 'escribe el código', 6: 'abre el PR' };
 
 // Los nombres son los de Claude Code, no etiquetas inventadas para el studio:
 // quien use el panel tiene que poder buscar estos términos en la documentación
@@ -651,8 +658,8 @@ const PHASE_HELP = {
   0: 'Busca la historia y la deja siempre en el mismo formato.',
   1: 'Decide si la historia se puede implementar. Si es ambigua, el ciclo corta acá.',
   2: 'Diseña el cambio antes de tocar una línea de código.',
-  3: 'Escribe el código y los tests, en una branch nueva.',
-  4: 'Dos subagentes revisan en paralelo: uno calidad, otro seguridad.',
+  3: 'Escribe el código y los tests, en una branch nueva. Lo hace la sesión principal: ningún subagente puede escribir.',
+  4: 'Dos subagentes revisan en paralelo: uno calidad, otro seguridad. Solo reportan; las correcciones vuelven a la fase 3, hasta 3 ciclos.',
   5: 'Una última lectura del diff, buscando razones para rechazarlo.',
   6: 'Abre el Pull Request en draft para que lo revise una persona.',
 };
@@ -713,6 +720,14 @@ function renderPhases() {
         path: a.path, label: `@${a.name}`, kind: 'agent',
         full: `@${a.qualifiedName || a.name}`, // el nombre completo, en el tooltip
         tag: a.readOnly ? 'solo audita' : 'escribe',
+      }));
+    }
+    if (parts.main) {
+      const sk = PLUGIN.skills[0];
+      if (sk) chips.push(chip({
+        path: sk.path, label: 'sesión principal', kind: 'skill',
+        full: `/${sk.command || sk.name} — la sesión que corre el skill`,
+        tag: MAIN_TAG[p.id] || '',
       }));
     }
     for (const n of parts.scripts || []) {
@@ -1330,6 +1345,7 @@ function layout() {
     const out = [];
     for (const n of p.scripts || []) out.push({ kind: 'script', name: n, id: `script:${n}` });
     for (const n of p.agents || []) out.push({ kind: 'agent', name: `@${n}`, id: `agent:${n}` });
+    if (p.main) out.push({ kind: 'main', name: 'sesión principal', id: `main:${id}` });
     if (id === 0) for (const m of PLUGIN.mcp) out.push({ kind: 'mcp', name: m.name, id: `mcp:${m.name}` });
     return out;
   };
@@ -1341,11 +1357,17 @@ function layout() {
       maxX = Math.max(maxX, x + CW);
       nodes.push({
         ...c, x, y: TOP + i * ROW + 2, w: CW, h: 42,
-        sub: c.kind === 'agent' ? 'subagente' : c.kind,
+        sub: c.kind === 'agent' ? 'subagente'
+           : c.kind === 'main' ? (MAIN_TAG[p.id] || 'corre el skill')
+           : c.kind,
       });
       edges.push({ a: `phase:${p.id}`, b: c.id, kind: 'branch' });
     });
   });
+
+  // qa y seguridad no corrigen: reportan, y la correccion vuelve a la fase 3.
+  // Sin este lazo el diagrama sugiere un flujo lineal que no es el real.
+  edges.push({ a: 'phase:4', b: 'phase:3', kind: 'loop' });
 
   // Banda de hooks: enganchan en cualquier fase, se dibujan al costado.
   const hx = maxX + 46;
@@ -1372,6 +1394,11 @@ function renderGraph() {
     if (e.kind === 'spine') {
       return `M${a.x + 22} ${a.y + a.h} L${a.x + 22} ${b.y}`;
     }
+    if (e.kind === 'loop') {
+      const lx = a.x - 10;
+      return `M${a.x + 6} ${a.y + a.h / 2} L${lx} ${a.y + a.h / 2}`
+           + ` L${lx} ${b.y + b.h / 2} L${b.x + 6} ${b.y + b.h / 2}`;
+    }
     const y = b.y + b.h / 2;
     return `M${a.x + a.w} ${a.y + a.h / 2} L${a.x + a.w + 16} ${a.y + a.h / 2}`
          + ` L${a.x + a.w + 16} ${y} L${b.x} ${y}`;
@@ -1381,7 +1408,9 @@ function renderGraph() {
   const svg = [
     `<text class="glabel" x="16" y="18">ciclo · ${esc(PLUGIN.skills[0]?.command || 'us')}</text>`,
     `<text class="glabel" x="${g.hx}" y="18">enclavamiento · sobre cualquier fase</text>`,
-    ...g.edges.map(e => `<path class="gedge ${e.kind}${done(e.b) ? ' done' : ''}" d="${edgePath(e)}"/>`),
+    ...g.edges.map(e => `<path class="gedge ${e.kind}${e.kind === 'loop' ? ' dashed' : ''}${
+      done(e.b) && e.kind !== 'loop' ? ' done' : ''}" d="${edgePath(e)}"/>`),
+    `<text class="glabel" x="2" y="${34 + 3 * 92 + 62}">corrige · hasta 3 ciclos</text>`,
     // Los hooks no se conectan a una fase: se marca con una línea punteada.
     `<path class="gedge dashed" d="M${g.hx - 24} 34 L${g.hx - 24} ${g.height - 40}"/>`,
     ...g.nodes.map(n => `
@@ -1422,7 +1451,10 @@ function nodeFile(id) {
   return null;
 }
 
-const NODE_KIND = { agent: 'agent', script: 'script', mcp: 'mcp', hook: 'hook', phase: 'skill' };
+const NODE_KIND = {
+  agent: 'agent', script: 'script', mcp: 'mcp', hook: 'hook',
+  phase: 'skill', main: 'skill',
+};
 
 function renderNodeDetail() {
   const id = selectedNode;
@@ -1431,8 +1463,9 @@ function renderNodeDetail() {
   const entries = NODE_OUT[id] || [];
   const file = nodeFile(id);
 
-  const title = kind === 'phase'
-    ? (PHASES.find(p => String(p.id) === name)?.label || id)
+  const faseDe = n => PHASES.find(p => String(p.id) === n)?.label || n;
+  const title = kind === 'phase' ? faseDe(name)
+    : kind === 'main' ? `Sesión principal · ${faseDe(name)}`
     : name;
 
   const cuerpo = entries.length
@@ -1451,7 +1484,9 @@ function renderNodeDetail() {
       <h3 class="nd-title">${esc(title)}</h3>
       ${file ? `<button class="btn" id="ndOpen">Abrir archivo</button>` : ''}
     </div>
-    <p class="what">${esc(KINDS[NODE_KIND[kind] || 'skill']?.what || '')}</p>
+    <p class="what">${kind === 'main'
+      ? 'La sesión que corre el skill, no un subagente. Acá se escribe el código y se aplican las correcciones que reportan @qa y @seguridad: ningún subagente puede escribir (todos tienen Write y Edit prohibidos).'
+      : esc(KINDS[NODE_KIND[kind] || 'skill']?.what || '')}</p>
     ${cuerpo}`;
 
   if (file) $('ndOpen').addEventListener('click', () => open(file));
