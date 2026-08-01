@@ -180,8 +180,25 @@ Por dos vías, porque ninguna sola alcanza:
 mira `.claude/run/<ID>/` y marca la fase cuando aparecen `story.json`, `plan.md`,
 `qa.json`, `security.json`, `review.json`.
 
+Dos correcciones sobre esa inferencia, que valen porque el modo de falla es
+mostrar progreso que no ocurrió:
+
+- **Un run bloqueado no avanza más.** El corte es terminal (D2), así que después
+  de un `BLOCKED` la vía se congela. Si no, el `blocked.md` que escribe el
+  propio corte disparaba la regla de `Write` y la vía saltaba a
+  "implementando" — justo lo contrario de lo que acababa de pasar.
+- **Escribir en `.claude/run/<ID>/` no es implementar.** Ahí van `story.json`,
+  `plan.md` y `blocked.md`: es la evidencia del run, no el código de la
+  historia.
+
+Los artefactos en disco además se cuentan solo si los escribió **este** run: el
+directorio sobrevive entre corridas y un `qa.json` viejo encendería una fase que
+todavía no ocurrió.
+
 Esto es inferencia, no telemetría: si cambiás el flujo del skill, actualizá el
-mapeo en `AGENT_PHASE` y `PHASES` dentro de `server.mjs`. Para tracking exacto,
+mapeo en `AGENT_PHASE` y `PHASES` dentro de `server.mjs`. Ojo que los subagentes
+de un plugin llegan calificados (`globant-sdlc:qa`), así que el nombre se
+desprefija antes de mapear. Para tracking exacto,
 la opción limpia es que el skill escriba un `phase.json` en el directorio del
 run y que el studio lo lea.
 

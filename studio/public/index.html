@@ -588,7 +588,7 @@ function kindOf(path) {
 const kindBadge = k => (KINDS[k] ? `<span class="kind" data-k="${k}">${esc(KINDS[k].label)}</span>` : '');
 
 let PLUGIN = null, PHASES = [], current = null, original = '', run = null, es = null;
-let runHasStory = false, authES = null;
+let runHasStory = false, runBlocked = false, authES = null;
 
 /* ------------------------------------------------------ carga del plugin */
 
@@ -915,6 +915,7 @@ async function start() {
   $('log').innerHTML = '';
   selectTab('log');
   runHasStory = !consola;
+  runBlocked = false;
 
   try {
     const r = await api('/api/run', {
@@ -995,7 +996,9 @@ function onEvent(ev) {
   logEvent(ev);
   const el = i => $('phases').querySelector(`.phase[data-phase="${i}"]`);
 
+  // Después de un bloqueo la vía no avanza más, pase lo que pase en el stream.
   if (ev.t === 'phase' || ev.t === 'agent') {
+    if (runBlocked) return;
     const i = ev.phase;
     for (let k = 0; k < i; k++) {
       const p = el(k);
@@ -1008,11 +1011,12 @@ function onEvent(ev) {
     }
   }
   if (ev.t === 'blocked') {
+    runBlocked = true;
     const p = el(ev.phase);
     if (p) { p.dataset.state = 'blocked'; p.querySelector('[data-note]').textContent = 'detenido'; }
     banner('err', `Run detenido en fase ${ev.phase}: ${ev.reason}`);
   }
-  if (ev.t === 'artifact') {
+  if (ev.t === 'artifact' && !runBlocked) {
     const p = el(ev.phase);
     if (p && p.dataset.state === 'idle') p.dataset.state = 'done';
   }
@@ -1020,7 +1024,8 @@ function onEvent(ev) {
   if (ev.t === 'result') {
     // El ciclo completo termina en un `result` sin bloqueo: recién ahí se
     // encienden todas las estaciones de la vía.
-    if (ev.ok && runHasStory && !$('phases').querySelector('[data-state="blocked"]')) {
+    if (ev.ok && runHasStory && !runBlocked
+        && !$('phases').querySelector('[data-state="blocked"]')) {
       $('phases').querySelectorAll('.phase').forEach(p => p.dataset.state = 'done');
     }
     const bits = [ev.turns != null ? `${ev.turns} turnos` : null,

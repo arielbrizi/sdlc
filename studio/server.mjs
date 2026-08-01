@@ -532,7 +532,16 @@ function inferPhase(run, msg) {
         continue;
       }
       if (['Write', 'Edit', 'MultiEdit', 'NotebookEdit'].includes(name)) {
-        if (run.phase !== null && run.phase < 3) setPhase(run, 3, 'implementando');
+        // Escribir dentro de `.claude/run/<ID>/` es dejar evidencia del run
+        // —story.json, plan.md, blocked.md—, no implementar la historia. Sin
+        // esta excepción, el `blocked.md` que escribe el corte de refinamiento
+        // hacía avanzar la vía a "implementando", que es lo contrario de lo
+        // que acababa de pasar.
+        const target = String(input.file_path || input.notebook_path || '');
+        const esEvidencia = /[\\/]\.claude[\\/]run[\\/]/.test(target);
+        if (!esEvidencia && run.phase !== null && run.phase < 3) {
+          setPhase(run, 3, 'implementando');
+        }
       }
     }
 
@@ -554,6 +563,10 @@ function inferPhase(run, msg) {
 
 function setPhase(run, phase, detail) {
   if (run.phase === phase) return;
+  // Un run bloqueado no avanza más. El corte es terminal por diseño (D2), y
+  // mostrar la vía progresando después de un bloqueo comunica exactamente lo
+  // contrario de lo que hizo el circuit breaker.
+  if (run.blocked) return;
   run.phase = phase;
   run.phaseHistory.push({ phase, detail, at: Date.now() });
   emit(run, { t: 'phase', phase, detail, at: Date.now() });
@@ -570,7 +583,12 @@ async function pollArtifacts(run) {
   for (const [file, phase] of map) {
     if (run.artifacts[file]) continue;
     try {
-      await fsp.access(path.join(dir, file));
+      const st = await fsp.stat(path.join(dir, file));
+      // El directorio del run sobrevive entre corridas: un `qa.json` de ayer
+      // encendería una fase que hoy todavía no ocurrió. Solo cuentan los
+      // archivos que escribió ESTE run. La tolerancia cubre el `story.json`
+      // que el studio deja en disco justo antes de arrancar el proceso.
+      if (st.mtimeMs < run.startedAt - 5000) continue;
       run.artifacts[file] = true;
       emit(run, { t: 'artifact', file, phase, at: Date.now() });
     } catch { /* todavía no existe */ }
