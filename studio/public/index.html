@@ -54,105 +54,68 @@ button,input,select,textarea{font:inherit;color:inherit}
 .btn.stop{border-color:var(--danger);color:var(--danger)}
 
 /* ---------- una sola pantalla ----------
-   Arriba los controles, en el medio el grafo con su panel contextual, abajo la
-   consola siempre visible. Sin pestañas: lo que se muestra depende de lo que
-   clickeaste, no de un menú que hay que recorrer antes de saber qué hay. */
-.stage{
-  display:grid;grid-template-columns:1fr minmax(340px,32%);
-  flex:1;min-height:0;border-bottom:1px solid var(--edge);
-}
-.canvas{overflow:auto;background:var(--sunk);padding:16px 20px}
+   El grafo es la vista principal y se queda con todo el alto disponible. La
+   consola se pliega a una línea cuando no hay nada que mirar: vacía se estaba
+   comiendo un tercio de la pantalla. */
+.stage{display:grid;grid-template-columns:1fr minmax(320px,26%);flex:1;min-height:0}
+.canvas{overflow:auto;background:var(--sunk);padding:20px}
 .panel{border-left:1px solid var(--edge);overflow:hidden;
-  display:flex;flex-direction:column;min-width:0}
-.dock{display:flex;flex-direction:column;min-height:0;height:32vh;background:var(--panel)}
-@media (max-width:980px){
-  .stage{grid-template-columns:1fr;grid-template-rows:1fr auto}
-  .panel{border-left:none;border-top:1px solid var(--edge);max-height:45vh}
-}
+  display:flex;flex-direction:column;min-width:0;background:var(--panel)}
 
-/* ---------- consola de run ---------- */
-.console{padding:16px 20px;border-bottom:1px solid var(--edge);background:var(--sunk)}
-.console-row{display:flex;gap:8px;align-items:center}
-.field{
-  background:var(--panel);border:1px solid var(--edge);color:var(--bone);
-  padding:7px 10px;border-radius:2px;font-family:var(--mono);font-size:12px;min-width:0;
+.dock{display:flex;flex-direction:column;flex-shrink:0;
+  border-top:1px solid var(--edge);background:var(--panel)}
+.dock[data-open="1"]{height:34vh}
+.dock-head{
+  display:flex;align-items:center;gap:9px;width:100%;
+  padding:9px 20px;background:none;border:none;cursor:pointer;
+  font-family:var(--mono);font-size:11.5px;color:var(--dim);text-align:left;
 }
-.field:focus{border-color:var(--track);outline:none}
-#story{flex:1;font-size:14px;letter-spacing:.04em}
-.console-adv{display:flex;gap:8px;margin-top:8px}
-.console-adv .field{flex:1}
-.hint{font-size:11px;color:var(--dim);margin-top:8px;font-family:var(--mono)}
-.repo-state{
-  margin-top:8px;padding:9px 12px;border-radius:2px;border:1px solid var(--edge);
-  background:var(--raised);font-size:12px;display:flex;gap:10px;align-items:center;
-  flex-wrap:wrap;
-}
-.repo-state .dot{width:8px;height:8px;border-radius:50%;background:var(--track);flex-shrink:0}
-.repo-state[data-ok="1"] .dot{background:var(--clear)}
-.repo-state[data-ok="0"] .dot{background:var(--danger)}
-.repo-state code{font-family:var(--mono);font-size:11px;color:var(--dim)}
-.repo-state .grow{flex:1}
+.dock-head:hover{background:var(--raised);color:var(--bone)}
+.dock-head .dot{width:8px;height:8px;border-radius:50%;background:var(--track);flex-shrink:0}
+.dock[data-s="running"] .dock-head .dot{background:var(--caution);animation:pulse 1.4s ease-in-out infinite}
+.dock[data-s="idle"] .dock-head .dot{background:var(--clear)}
+.dock[data-s="error"] .dock-head .dot{background:var(--danger)}
+.dock-chevron{transition:transform .15s}
+.dock[data-open="1"] .dock-chevron{transform:rotate(180deg)}
+.dock[data-open="0"] .log,.dock[data-open="0"] .send{display:none}
 
-/* la lámpara del grafo y la barra de sesión comparten el pulso */
-@keyframes pulse{
-  0%,100%{box-shadow:0 0 0 0 rgba(232,163,61,.55)}
-  50%{box-shadow:0 0 0 7px rgba(232,163,61,0)}
-}
-
-/* ---------- inspector ---------- */
-.pane{flex:1;overflow:hidden;display:none;min-height:0}
-.pane[data-active="1"]{display:flex;flex-direction:column}
-
-.empty{
-  margin:auto;padding:40px;text-align:center;color:var(--dim);max-width:380px;
-}
-.empty h2{font-family:var(--display);font-size:20px;font-weight:600;
-  letter-spacing:.12em;text-transform:uppercase;color:var(--bone);margin:0 0 8px}
-.empty p{margin:0;font-size:13px}
-
-/* editor */
+/* ---------- editor ---------- */
 .ed-head{padding:16px 20px 12px;border-bottom:1px solid var(--edge);flex-shrink:0}
 .ed-path{font-family:var(--mono);font-size:12px;color:var(--dim)}
 .ed-title{font-family:var(--display);font-size:22px;font-weight:600;
-  letter-spacing:.06em;text-transform:uppercase;margin:2px 0 0}
-/* Configuración del componente. Dos columnas y plegable: antes ocupaba media
-   pantalla y empujaba el texto —que es lo que se viene a editar— fuera de vista. */
-.fm{border-bottom:1px solid var(--edge);flex-shrink:0}
-.fm summary{
-  cursor:pointer;padding:10px 20px;list-style:none;
-  font-family:var(--display);font-size:12px;font-weight:600;
-  letter-spacing:.16em;text-transform:uppercase;color:var(--dim);
-}
-.fm summary::-webkit-details-marker{display:none}
-.fm summary::before{content:"▸ ";color:var(--track)}
-.fm[open] summary::before{content:"▾ "}
-.fm summary:hover{color:var(--bone)}
-.fm-grid{
-  display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));
-  gap:12px 20px;padding:4px 20px 16px;
-}
-.fm-field{display:flex;flex-direction:column;gap:3px;min-width:0}
-.fm-field.wide{grid-column:1/-1}
-.fm-label{font-family:var(--display);font-size:12px;font-weight:600;
-  letter-spacing:.1em;text-transform:uppercase;color:var(--bone)}
-.fm-label code{font-family:var(--mono);font-size:10px;color:var(--dim);
-  text-transform:none;letter-spacing:0;margin-left:6px}
-.fm-help{font-size:11px;color:var(--dim);line-height:1.45}
-.fm-field .field{width:100%}
-.fm-field textarea.field{resize:vertical;min-height:56px;line-height:1.55}
-
-.ed-body{flex:1 1 auto;display:flex;flex-direction:column;padding:12px 20px 0;min-height:180px}
+  letter-spacing:.06em;text-transform:uppercase;margin:2px 0 6px}
+.ed-body{flex:1 1 auto;display:flex;flex-direction:column;padding:14px 20px;min-height:0}
 .ed-body>label{font-family:var(--display);font-size:12px;font-weight:600;
-  letter-spacing:.16em;text-transform:uppercase;color:var(--dim);margin-bottom:6px}
+  letter-spacing:.16em;text-transform:uppercase;color:var(--dim);margin-bottom:8px}
 .ed-body textarea{
   flex:1;width:100%;resize:none;background:var(--sunk);
-  border:1px solid var(--edge);border-radius:2px;padding:14px;
-  font-family:var(--mono);font-size:12.5px;line-height:1.65;tab-size:2;
+  border:1px solid var(--edge);border-radius:3px;padding:14px;
+  font-family:var(--mono);font-size:12.5px;line-height:1.65;tab-size:2;min-height:0;
 }
 .ed-body textarea:focus{border-color:var(--track);outline:none}
-.ed-foot{display:flex;align-items:center;gap:12px;padding:12px 20px;flex-shrink:0}
+.ed-foot{display:flex;align-items:center;gap:10px;padding:12px 20px;
+  border-top:1px solid var(--edge);flex-shrink:0}
 .dirty{font-family:var(--mono);font-size:11px;color:var(--caution);margin-right:auto}
-.dirty:empty{margin-right:auto}
+
+/* ---------- editar a pantalla completa ---------- */
+.editor-modal{
+  width:min(1180px,94vw);height:min(88vh,940px);max-width:none;max-height:none;
+  padding:0;border:1px solid var(--edge);border-radius:4px;background:var(--panel);
+}
+.editor-modal::backdrop{background:rgba(0,0,0,.72)}
+.editor-modal .pane{display:flex!important;flex-direction:column;height:100%;overflow:hidden}
+.editor-modal .empty{display:none}
+.editor-modal #edView{display:flex;flex-direction:column;height:100%;min-height:0}
+/* Dos columnas: la configuración a un lado y las instrucciones al otro, para
+   que el texto —que es lo que se viene a editar— arranque con altura real. */
+.ed-main{flex:1;min-height:0;display:grid;grid-template-columns:minmax(300px,34%) 1fr}
+.ed-main .fm{border-right:1px solid var(--edge);border-bottom:none;overflow-y:auto}
+.ed-main .fm summary{display:none}
+.ed-main .fm-grid{grid-template-columns:1fr}
+@media (max-width:860px){
+  .ed-main{grid-template-columns:1fr;overflow-y:auto}
+  .ed-main .fm{border-right:none;border-bottom:1px solid var(--edge)}
+}
 
 /* ---------- identidad de cada componente ---------- */
 /* Cada cosa que el panel muestra dice qué es. Los nombres son los de Claude
@@ -217,13 +180,6 @@ dialog::backdrop{background:rgba(0,0,0,.62)}
 }
 .send textarea:focus{border-color:var(--track);outline:none}
 .send textarea:disabled{opacity:.45}
-.session{padding:8px 20px;font-family:var(--mono);font-size:11px;color:var(--dim);
-  border-top:1px solid var(--edge);display:flex;gap:8px;align-items:center;flex-shrink:0}
-.session .dot{width:7px;height:7px;border-radius:50%;background:var(--track)}
-.session[data-s="running"] .dot{background:var(--caution);animation:pulse 1.4s ease-in-out infinite}
-.session[data-s="idle"] .dot{background:var(--clear)}
-.session[data-s="done"] .dot,.session[data-s="stopped"] .dot{background:var(--track)}
-.session[data-s="error"] .dot{background:var(--danger)}
 
 /* ---------- grafo de ejecución ---------- */
 #graph{display:block}
@@ -332,7 +288,7 @@ dialog::backdrop{background:rgba(0,0,0,.62)}
       navegador; si el proceso pide un código, pegalo abajo.
     </p>
     <div class="auth-out" id="authOut" hidden></div>
-    <div class="console-adv" id="authInputRow" hidden>
+    <div id="authInputRow" hidden style="margin-top:10px">
       <input class="field" id="authInput" placeholder="Pegá acá el código y Enter" autocomplete="off">
     </div>
   </div>
@@ -366,45 +322,96 @@ dialog::backdrop{background:rgba(0,0,0,.62)}
 <!-- Una sola pantalla: el grafo es el mapa y el tablero a la vez. La via
      lateral se elimino porque era el mismo diagrama dibujado dos veces, y esa
      duplicacion es la que permitio que mostraran estados distintos. -->
-    <div class="console">
-      <div class="console-row">
-        <select class="field" id="source" style="flex:0 0 185px">
-          <option value="tracker">Historia: desde tracker</option>
-          <option value="manual">Historia: escrita acá</option>
-          <option value="console">Solo consola, sin historia</option>
-        </select>
-        <input class="field" id="story" placeholder="ID de historia — GLOB-1234, 8891, #245" autocomplete="off">
-        <button class="btn lit" id="btnRun">Ejecutar</button>
-        <button class="btn stop" id="btnStop" disabled>Detener</button>
-      </div>
-      <!-- Repositorio: se acepta la URL o una carpeta local. Pegar la URL es lo
-           que hace cualquiera que no trabaja en la terminal. -->
-      <div class="console-adv">
-        <input class="field" id="repoUrl" style="flex:2"
-               placeholder="Pegá la URL del repositorio — https://github.com/org/repo">
-        <button class="btn" id="btnPrepare">Preparar</button>
-        <select class="field" id="baseBranch" style="flex:0 0 200px" disabled>
-          <option value="">Branch base…</option>
-        </select>
-      </div>
-      <div class="repo-state" id="repoState" hidden></div>
+<!-- Una accion primaria a la vista; el resto de la configuracion se pliega.
+     Se configura una vez y se ejecuta muchas: tenerlo todo desplegado siempre
+     robaba la mitad de la pantalla al grafo, que es lo que se mira. -->
+<div class="runbar">
+  <select class="field" id="source">
+    <option value="tracker">Historia: desde tracker</option>
+    <option value="manual">Historia: escrita acá</option>
+    <option value="console">Solo consola, sin historia</option>
+  </select>
+  <input class="field" id="story" placeholder="ID de historia — GLOB-1234, 8891, #245" autocomplete="off">
+  <button class="btn lit" id="btnRun">Ejecutar</button>
+  <button class="btn stop" id="btnStop" disabled>Detener</button>
+  <span class="rb-sep"></span>
+  <button class="btn ghost" id="btnSettings" aria-expanded="false">Configuración</button>
+</div>
 
-      <div class="console-adv">
-        <input class="field" id="repoDir" placeholder="Carpeta local (la completa Preparar)">
-        <select class="field" id="permMode" style="flex:0 0 260px"
-                title="Con -p no hay dónde aceptar un permiso: lo que no esté autorizado de antemano se deniega.">
-          <option value="">Permisos: por defecto (deniega)</option>
-          <option value="acceptEdits">acceptEdits — acepta editar archivos</option>
-          <option value="bypassPermissions">bypassPermissions — sin preguntar</option>
-          <option value="plan">plan — no ejecuta nada</option>
-        </select>
-        <input class="field" id="allowedTools" style="flex:0 0 210px"
-               placeholder="Herramientas permitidas"
-               title='Se pasa a --allowedTools. Ej: Bash,Write,Edit o Bash(git *)'>
-        <input class="field" id="extraFlags" placeholder="Flags extra" style="flex:0 0 130px">
+<details class="settings" id="settings">
+  <summary hidden></summary>
+  <div class="set-grid">
+    <label class="set-field span2">
+      <span>Repositorio</span>
+      <div class="set-row">
+        <input class="field" id="repoUrl"
+               placeholder="Pegá la URL — https://github.com/org/repo, o una carpeta local">
+        <button class="btn" id="btnPrepare">Preparar</button>
       </div>
-      <div class="hint" id="cmdHint"></div>
-    </div>
+    </label>
+    <label class="set-field">
+      <span>Branch base</span>
+      <select class="field" id="baseBranch" disabled><option value="">—</option></select>
+    </label>
+    <label class="set-field">
+      <span>Carpeta local</span>
+      <input class="field" id="repoDir" placeholder="la completa Preparar">
+    </label>
+    <label class="set-field span2">
+      <span>Permisos</span>
+      <select class="field" id="permMode"
+              title="Con -p no hay dónde aceptar un permiso: lo que no esté autorizado de antemano se deniega.">
+        <option value="">Por defecto — deniega lo que no esté autorizado</option>
+        <option value="acceptEdits">acceptEdits — acepta editar archivos (no Bash)</option>
+        <option value="bypassPermissions">bypassPermissions — sin preguntar</option>
+        <option value="plan">plan — analiza, no ejecuta</option>
+      </select>
+    </label>
+    <label class="set-field">
+      <span>Herramientas permitidas</span>
+      <input class="field" id="allowedTools" placeholder="Bash,Write,Edit"
+             title='Se pasa a --allowedTools. Acepta patrones: Bash(git *)'>
+    </label>
+    <label class="set-field">
+      <span>Flags extra</span>
+      <input class="field" id="extraFlags" placeholder="--max-turns 20">
+    </label>
+    <div class="repo-state span4" id="repoState" hidden></div>
+    <div class="hint span4" id="cmdHint"></div>
+  </div>
+</details>
+
+
+<!-- Editar es una tarea enfocada: ocupa toda la pantalla y se cierra al
+     terminar, en vez de pelear por el ancho de un panel lateral. -->
+<dialog id="dlgEditor" class="editor-modal">
+
+      <div class="empty" id="edEmpty">
+        <h2>Elegí un componente</h2>
+        <p>Cada chip del ciclo es un archivo real del plugin. Al abrirlo se edita en disco: lo que guardes acá es lo que va a correr.</p>
+      </div>
+      <div id="edView" hidden>
+        <div class="ed-head">
+          <div class="ed-path" id="edPath"></div>
+          <h2 class="ed-title" id="edTitle"></h2>
+          <div id="edKind"></div>
+          <p class="what" id="edWhat"></p>
+        </div>
+        <div class="ed-main">
+          <details class="fm" id="edFm" open></details>
+          <div class="ed-body">
+            <label for="edText" id="edBodyLabel">Instrucciones</label>
+            <textarea id="edText" spellcheck="false"></textarea>
+          </div>
+        </div>
+        <div class="ed-foot">
+          <span class="dirty" id="edDirty"></span>
+          <button class="btn" id="btnRevert">Descartar</button>
+          <button class="btn lit" id="btnSave">Guardar</button>
+          <button class="btn" id="btnCerrarEditor">Cerrar</button>
+        </div>
+      </div>
+    </dialog>
 
 <div class="stage">
   <div class="canvas"><svg id="graph" role="img" aria-label="Grafo de ejecución"></svg></div>
@@ -418,30 +425,7 @@ dialog::backdrop{background:rgba(0,0,0,.62)}
       </div>
     </section>
 
-    <section class="pane" id="paneEditor" data-active="1">
-      <div class="empty" id="edEmpty">
-        <h2>Elegí un componente</h2>
-        <p>Cada chip del ciclo es un archivo real del plugin. Al abrirlo se edita en disco: lo que guardes acá es lo que va a correr.</p>
-      </div>
-      <div id="edView" hidden style="display:flex;flex-direction:column;flex:1;min-height:0">
-        <div class="ed-head">
-          <div class="ed-path" id="edPath"></div>
-          <h2 class="ed-title" id="edTitle"></h2>
-          <div id="edKind"></div>
-          <p class="what" id="edWhat"></p>
-        </div>
-        <details class="fm" id="edFm" open></details>
-        <div class="ed-body">
-          <label for="edText" id="edBodyLabel">Instrucciones</label>
-          <textarea id="edText" spellcheck="false"></textarea>
-        </div>
-        <div class="ed-foot">
-          <span class="dirty" id="edDirty"></span>
-          <button class="btn" id="btnRevert">Descartar</button>
-          <button class="btn lit" id="btnSave">Guardar</button>
-        </div>
-      </div>
-    </section>
+
 
     <section class="pane" id="paneStory">
       <div class="story">
@@ -488,12 +472,15 @@ dialog::backdrop{background:rgba(0,0,0,.62)}
   </aside>
 </div>
 
-<div class="dock">
+<div class="dock" id="dock" data-open="0" data-s="none">
+  <button class="dock-head" id="dockHead" aria-expanded="false">
+    <span class="dot"></span>
+    <span id="sessionText">Sin sesión abierta</span>
+    <span class="grow"></span>
+    <span class="dock-chevron">▾</span>
+  </button>
   <div class="log" id="log"></div>
 
-      <div class="session" id="sessionBar" data-s="none">
-        <span class="dot"></span><span id="sessionText">Sin sesión abierta</span>
-      </div>
       <div class="send">
         <textarea id="sendText" spellcheck="false" disabled
           placeholder="Abrí una sesión para escribirle a Claude. Enter envía, Shift+Enter hace salto de línea."></textarea>
@@ -514,7 +501,7 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;
 const hhmm = ts => new Date(ts).toTimeString().slice(0, 8);
 
 // El panel muestra lo que corresponda a lo último que clickeaste.
-const PANELS = ['paneDetail', 'paneEditor', 'paneStory'];
+const PANELS = ['paneDetail', 'paneStory'];
 const showPanel = id => PANELS.forEach(p => { $(p).dataset.active = p === id ? '1' : '0'; });
 
 // Cada fase declara qué componentes le pertenecen. Es lo que une el plugin
@@ -620,6 +607,20 @@ async function load() {
   }
 }
 
+/* --------------------------------------------------- plegables del panel */
+
+function abrirDock(abrir) {
+  $('dock').dataset.open = abrir ? '1' : '0';
+  $('dockHead').setAttribute('aria-expanded', String(!!abrir));
+}
+$('dockHead').addEventListener('click', () => abrirDock($('dock').dataset.open !== '1'));
+
+$('btnSettings').addEventListener('click', () => {
+  const abierto = !$('settings').open;
+  $('settings').open = abierto;
+  $('btnSettings').setAttribute('aria-expanded', String(abierto));
+});
+
 /* ------------------------------------------------------------- editor */
 
 // Qué significa cada campo del frontmatter y con qué control se edita. Los
@@ -713,6 +714,7 @@ async function open(path) {
     c.setAttribute('aria-pressed', String(c.dataset.path === path)));
 
   $('edEmpty').hidden = true; $('edView').hidden = false;
+  if (!$('dlgEditor').open) $('dlgEditor').showModal();
   $('edPath').textContent = path;
   $('edTitle').textContent = (f.frontmatter?.name) || path.split('/').pop();
 
@@ -740,7 +742,6 @@ async function open(path) {
     i.addEventListener('input', markDirty);
     i.addEventListener('change', markDirty);
   });
-  showPanel('paneEditor');
 }
 
 function compose() {
@@ -772,6 +773,14 @@ $('edText').addEventListener('keydown', e => {
 });
 
 $('btnSave').addEventListener('click', save);
+$('btnCerrarEditor').addEventListener('click', () => $('dlgEditor').close());
+// Esc cierra el dialogo: si hay cambios sin guardar, se avisa antes.
+$('dlgEditor').addEventListener('cancel', (e) => {
+  if (current && compose() !== original && !confirm('Hay cambios sin guardar. ¿Cerrar igual?')) {
+    e.preventDefault();
+  }
+});
+$('dlgEditor').addEventListener('close', () => { current = null; });
 $('btnRevert').addEventListener('click', () => current && open(current.path));
 document.addEventListener('keydown', e => {
   if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); save(); }
@@ -938,8 +947,10 @@ async function start() {
 // La sesión de Claude no termina cuando responde: queda esperando. Eso es lo
 // que permite seguir la conversación donde la dejó el ciclo automático.
 function setSession(status, text) {
-  $('sessionBar').dataset.s = status;
+  $('dock').dataset.s = status;
   $('sessionText').textContent = text;
+  // La consola se abre sola cuando hay algo que mirar.
+  if (status === 'running' || status === 'idle') abrirDock(true);
 
   const alive = status === 'running' || status === 'idle';
   const canType = status === 'idle';
@@ -1120,7 +1131,7 @@ function layout() {
     for (const n of p.scripts || []) out.push({ kind: 'script', name: n, id: `script:${n}` });
     for (const n of p.agents || []) out.push({ kind: 'agent', name: `@${n}`, id: `agent:${n}` });
     if (p.main) out.push({ kind: 'main', name: 'sesión principal', id: `main:${id}` });
-    if (id === 0) for (const m of PLUGIN.mcp) out.push({ kind: 'mcp', name: m.name, id: `mcp:${m.name}` });
+
     return out;
   };
 
@@ -1143,17 +1154,32 @@ function layout() {
   // Sin este lazo el diagrama sugiere un flujo lineal que no es el real.
   edges.push({ a: 'phase:4', b: 'phase:3', kind: 'loop' });
 
-  // Banda de hooks: enganchan en cualquier fase, se dibujan al costado.
-  const hx = maxX + 46;
-  PLUGIN.hooks.forEach((h, i) => {
-    nodes.push({
-      id: `hook:${h.event}:${i}`, kind: 'hook', hook: h,
-      label: h.event, sub: h.script || 'hook',
-      x: hx, y: TOP + i * 62, w: 190, h: 46,
-    });
-  });
+  // Banda lateral. Ni los hooks ni los MCP cuelgan de una fase: los hooks
+  // corren sobre cualquiera y los MCP son de dónde sale la historia. Ponerlos
+  // en la columna de componentes estiraba el diagrama a lo ancho y obligaba a
+  // scrollear en horizontal para ver el ciclo.
+  const hx = maxX + 52;
+  let by = TOP;
+  const banda = (titulo, items) => {
+    if (!items.length) return;
+    nodes.push({ id: `titulo:${titulo}`, kind: 'titulo', label: titulo, x: hx, y: by, w: 190, h: 0 });
+    by += 22;
+    for (const it of items) {
+      nodes.push({ ...it, x: hx, y: by, w: 190, h: 44 });
+      by += 52;
+    }
+    by += 18;
+  };
 
-  const height = TOP + PHASES.length * ROW + 20;
+  banda('fuentes de historia', PLUGIN.mcp.map(m => ({
+    id: `mcp:${m.name}`, kind: 'mcp', label: m.name, sub: 'MCP server',
+  })));
+  banda('enclavamiento · sobre cualquier fase', PLUGIN.hooks.map((h, i) => ({
+    id: `hook:${h.event}:${i}`, kind: 'hook', hook: h,
+    label: h.event, sub: h.script || 'hook',
+  })));
+
+  const height = Math.max(TOP + PHASES.length * ROW, by) + 20;
   return { nodes, edges, width: hx + 190 + 20, height, hx };
 }
 
@@ -1181,13 +1207,14 @@ function renderGraph() {
   const done = id => nodeState(id) === 'done';
   const svg = [
     `<text class="glabel" x="16" y="18">ciclo · ${esc(PLUGIN.skills[0]?.command || 'us')}</text>`,
-    `<text class="glabel" x="${g.hx}" y="18">enclavamiento · sobre cualquier fase</text>`,
     ...g.edges.map(e => `<path class="gedge ${e.kind}${e.kind === 'loop' ? ' dashed' : ''}${
       done(e.b) && e.kind !== 'loop' ? ' done' : ''}" d="${edgePath(e)}"/>`),
     `<text class="glabel" x="2" y="${34 + 3 * 92 + 62}">corrige · hasta 3 ciclos</text>`,
     // Los hooks no se conectan a una fase: se marca con una línea punteada.
-    `<path class="gedge dashed" d="M${g.hx - 24} 34 L${g.hx - 24} ${g.height - 40}"/>`,
-    ...g.nodes.map(n => `
+    `<path class="gedge dashed" d="M${g.hx - 26} 30 L${g.hx - 26} ${g.height - 30}"/>`,
+    ...g.nodes.filter(n => n.kind === 'titulo').map(n =>
+      `<text class="glabel" x="${n.x}" y="${n.y + 12}">${esc(n.label)}</text>`),
+    ...g.nodes.filter(n => n.kind !== 'titulo').map(n => `
       <g class="gnode" data-node="${esc(n.id)}" data-kind="${esc(n.kind)}"
          data-state="${esc(nodeState(n.id))}"
          data-sel="${n.id === selectedNode ? 1 : 0}" tabindex="0">
@@ -1284,6 +1311,8 @@ function renderNodeDetail() {
 function repoState(ok, html) {
   const el = $('repoState');
   el.hidden = false;
+  // Un problema con el repo no puede quedar escondido tras un plegable.
+  if (ok === false && !$('settings').open) $('btnSettings').click();
   el.dataset.ok = ok === null ? '' : (ok ? '1' : '0');
   el.innerHTML = `<span class="dot"></span>${html}`;
 }
@@ -1460,7 +1489,7 @@ function banner(kind, text) {
   b.className = `banner ${kind}`;
   b.textContent = text;
   // Debajo de los controles: sin pestañas, es el borde superior del área útil.
-  document.querySelector('.console').after(b);
+  document.querySelector('.runbar').after(b);
   if (kind === 'ok') setTimeout(() => b.remove(), 6000);
 }
 

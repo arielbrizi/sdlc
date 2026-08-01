@@ -27,10 +27,22 @@ significa que no hay supply chain que revisar antes de que el equipo lo use.
 
 ## Una sola pantalla
 
-Arriba los controles, en el medio el grafo con su panel contextual, abajo la
-consola siempre visible. No hay pestañas: lo que se muestra en el panel depende
-de lo que clickeaste, no de un menú que hay que recorrer antes de saber qué hay
-adentro.
+Arriba una barra con la acción primaria —elegir la historia y ejecutar—, en el
+medio el grafo con su panel contextual, abajo la consola. No hay pestañas: lo
+que se muestra en el panel depende de lo que clickeaste, no de un menú que hay
+que recorrer antes de saber qué hay adentro.
+
+**Todo lo que se configura una vez vive plegado** detrás de *Configuración*:
+repositorio, branch base, permisos, herramientas y flags. Se configura una vez y
+se ejecuta muchas, así que tenerlo desplegado siempre le robaba a la vista
+principal la mitad del alto. Si algo falla con el repositorio se abre solo: un
+problema no puede quedar escondido tras un plegable.
+
+**La consola se pliega a una línea** cuando no hay nada que mirar, y se abre
+sola al arrancar un run. Vacía se estaba comiendo un tercio de la pantalla.
+
+Con eso, en una pantalla de 820px de alto el grafo se queda con ~690, contra los
+~240 que tenía antes.
 
 El ciclo del skill `us` se dibuja como un grafo: la vía de fases a la izquierda
 y colgando de cada una los componentes que intervienen ahí. Los hooks van en una
@@ -42,8 +54,14 @@ diagrama dibujado dos veces, con su propio acumulador de estado, y esa
 duplicación terminó mostrando la misma fase en curso de un lado y terminada del
 otro. Hoy el estado de una fase vive en una sola variable y hay una sola vista.
 
-Un clic en un nodo llena el panel: si el componente tiene archivo se abre para
-editar, y si ya corrió se ve lo que dijo el modelo ahí.
+Un clic en un nodo llena el panel de la derecha con lo que dijo el modelo en ese
+componente, y ofrece abrir su archivo.
+
+**Editar abre una ventana a pantalla completa**, con la configuración en una
+columna y las instrucciones en la otra. Editar es una tarea enfocada y no tiene
+por qué pelear por el ancho de un panel lateral: en el modal el texto arranca con
+más de 400px de alto, contra los 48 que le quedaban embutido al costado. Se
+cierra con `Esc` o con Cerrar, y avisa si hay cambios sin guardar.
 
 ## Recargar no pierde el run
 
