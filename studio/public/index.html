@@ -2230,6 +2230,16 @@ function onEvent(ev) {
       ev.t === 'action_resolved' || ev.t === 'cycle_complete') renderGraph();
 
   if (ev.t === 'ready') setSession('idle', 'Sin acciones pendientes · chat opcional');
+  if (ev.t === 'activity') {
+    if (!RUN_MODEL.blocked && !RUN_MODEL.complete) {
+      if (RUN_MODEL.phase != null) {
+        PHASE_STATE[RUN_MODEL.phase] = 'active';
+        PHASE_NOTE[RUN_MODEL.phase] = 'Claude está trabajando';
+        renderGraph();
+      }
+      setSession('running', 'Claude está trabajando…');
+    }
+  }
   if (ev.t === 'ask') {
     if (RUN_MODEL.phase != null && PHASE_STATE[RUN_MODEL.phase] === 'paused') {
       PHASE_STATE[RUN_MODEL.phase] = 'active';
@@ -2263,6 +2273,7 @@ function onEvent(ev) {
 // El tipo crudo del evento no le dice nada a quien no escribió el servidor.
 const EV_LABEL = {
   start: 'inicio', init: 'sesión', ready: 'lista', phase: 'fase', agent: 'subagente',
+  activity: 'actividad',
   tool: 'herramienta', output: 'salida', say: 'claude', ask: 'vos', artifact: 'archivo',
   blocked: 'bloqueo', result: 'turno', end: 'fin', error: 'error', stderr: 'stderr',
   action: 'acción', action_resolved: 'resuelta', cycle_complete: 'ciclo',

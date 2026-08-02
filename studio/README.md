@@ -108,6 +108,11 @@ Claude deja la sesión esperando; solo llegar efectivamente a Pull Request marca
 el ciclo entero como completo. Un error o una detención deja la fase como
 interrumpida, no como lista.
 
+Si la sesión vuelve a emitir una respuesta o el resultado de una herramienta,
+esa actividad reactiva de inmediato el estado **En ejecución** y la fase actual
+en el mapa. Así el encabezado nunca puede decir “en pausa” mientras el chat sigue
+recibiendo contenido, incluso después de recuperar un run con F5.
+
 **Un bloqueo abre una acción, no solo un mensaje.** El studio identifica qué
 subagente bloqueó, marca su fase real y muestra sus `blocking_questions` en un
 diálogo que se abre solo. Si se cierra, queda una franja roja persistente arriba

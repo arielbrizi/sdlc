@@ -1027,6 +1027,18 @@ function sendToRun(run, text) {
   emit(run, { t: 'ask', text: text.slice(0, 2000), at: Date.now() });
 }
 
+/**
+ * Un `result` cierra un turno y deja la sesión esperando, pero el proceso puede
+ * volver a emitir mensajes (por ejemplo al continuar después de recuperar el
+ * run). La actividad del stream es la señal más confiable de que Claude está
+ * trabajando: cuando aparece, servidor y UI vuelven juntos a `running`.
+ */
+function markRunActive(run) {
+  if (run.status === 'running' || run.blocked || run.cycleComplete) return;
+  run.status = 'running';
+  emit(run, { t: 'activity', phase: run.phase, at: Date.now() });
+}
+
 function startRun({ storyId, repoDir, manual, baseBranch, permissionMode, allowedTools, extraFlags }) {
   const id = randomUUID();
   // El tracker va explícito: story.json ya dice `manual`, pero decirlo también en
@@ -1112,6 +1124,7 @@ function startRun({ storyId, repoDir, manual, baseBranch, permissionMode, allowe
         run.sessionId = msg.session_id || null;
         emit(run, { t: 'init', sessionId: run.sessionId, at: Date.now() });
       } else if (msg.type === 'assistant') {
+        markRunActive(run);
         inferPhase(run, msg);
         const text = (msg.message?.content || [])
           .filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
@@ -1122,6 +1135,9 @@ function startRun({ storyId, repoDir, manual, baseBranch, permissionMode, allowe
           });
         }
       } else if (msg.type === 'user') {
+        // En el stream de Claude, los resultados de herramientas llegan como
+        // mensajes `user`: también prueban que el turno sigue ejecutándose.
+        markRunActive(run);
         inferPhase(run, msg);
       } else if (msg.type === 'result') {
         // Claude informa el costo de cada turno terminado. El Studio mantiene
