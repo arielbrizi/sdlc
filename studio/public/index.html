@@ -177,6 +177,9 @@ input.mono,.field.mono{font-family:var(--mono);font-size:12.5px}
 /* Un campo es siempre lo mismo: etiqueta en criollo, clave real, control, ayuda.
    Es la pieza que faltaba en el CSS y por eso los formularios se leían pegados. */
 .form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px 20px}
+/* Un campo de texto de 1300px no se lee mejor que uno de 1000: la línea larga
+   cansa y el formulario pierde la columna que lo hace escaneable. */
+.page-body .form-grid{max-width:1080px}
 .form-grid.one{grid-template-columns:1fr}
 .f-wide{grid-column:1/-1}
 .f{display:flex;flex-direction:column;gap:6px;min-width:0}
@@ -244,14 +247,16 @@ input.mono,.field.mono{font-family:var(--mono);font-size:12.5px}
 .view{flex:1;min-height:0;overflow-y:auto;display:none;flex-direction:column}
 .view[data-active="1"]{display:flex}
 
-.page-head{padding:16px 24px 14px;border-bottom:1px solid var(--border);
+/* Encabezado en una línea: el título dice dónde estás y la explicación va al
+   lado, no debajo. Apilados con un breadcrumb arriba se comían 110px de alto en
+   la vista donde el alto es justamente lo que le falta al diagrama. */
+.page-head{display:flex;align-items:baseline;gap:16px;flex-wrap:wrap;
+  padding:11px 24px 12px;border-bottom:1px solid var(--border);
   background:var(--surface);flex-shrink:0}
-.crumbs{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--subtle);
-  margin-bottom:6px}
-.crumbs b{font-weight:500;color:var(--muted)}
-.page-head h1{font-size:21px;margin-bottom:5px}
-.page-head p{margin:0;color:var(--muted);font-size:13px;max-width:78ch}
-.page-body{padding:20px 24px 28px;display:flex;flex-direction:column;gap:18px}
+.page-head h1{font-size:17px;white-space:nowrap}
+.page-head p{margin:0;color:var(--muted);font-size:12.5px;flex:1 1 300px;min-width:0;
+  line-height:1.45}
+.page-body{padding:14px 20px 18px;display:flex;flex-direction:column;gap:14px}
 
 /* ---------------------------------------------------------------- tarjetas */
 .card{
@@ -341,9 +346,12 @@ table.cat tbody tr[data-open="1"]{background:color-mix(in srgb,var(--accent) 9%,
 }
 
 /* -------------------------------------------------------------- el ciclo */
-.ciclo-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,25%);gap:18px;
-  align-items:start}
-@media (max-width:1080px){.ciclo-grid{grid-template-columns:1fr}}
+/* El detalle aparece recién cuando elegís un componente. Vacío se quedaba con
+   un cuarto del ancho para no decir nada, y el mapa —que es lo que se mira—
+   quedaba apretado y con scroll horizontal. */
+.ciclo-grid{display:grid;grid-template-columns:1fr;gap:14px;align-items:start}
+.ciclo-grid.with-detail{grid-template-columns:minmax(0,1fr) minmax(280px,23%)}
+@media (max-width:1080px){.ciclo-grid.with-detail{grid-template-columns:1fr}}
 /* El mapa scrollea adentro de su tarjeta en vez de estirar la página: así la
    referencia de estados y el panel de detalle no se van abajo del pliegue. */
 .canvas{overflow:auto;padding:16px;background:var(--surface);
@@ -358,16 +366,16 @@ table.cat tbody tr[data-open="1"]{background:color-mix(in srgb,var(--accent) 9%,
   #viewCiclo .ciclo-grid{height:100%;min-height:0}
   #viewCiclo .ciclo-grid>.card{height:100%;min-height:0;display:flex;flex-direction:column}
   #viewCiclo .card-body.flush{flex:1;min-height:0;display:flex;flex-direction:column}
-  #viewCiclo .canvas{flex:1;max-height:none}
+  /* Sin esto el alto mínimo del mapa empujaba la consola fuera de la ventana
+     en pantallas bajas: el dock quedaba cortado contra el borde de abajo. */
+  #viewCiclo .canvas{flex:1;max-height:none;min-height:0}
   #viewCiclo #nodeDetail{flex:1;min-height:0;overflow-y:auto}
 }
 #graph{display:block}
 
-.legend{display:flex;gap:16px;flex-wrap:wrap;padding:11px 16px;
-  border-top:1px solid var(--border);background:var(--surface-2);
-  font-size:12px;color:var(--muted)}
-.legend span{display:inline-flex;align-items:center;gap:6px}
-.legend i{width:11px;height:11px;border-radius:3px;border:2px solid var(--border-strong);
+.legend{display:flex;gap:13px;flex-wrap:wrap;font-size:11.5px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.legend i{width:10px;height:10px;border-radius:3px;border:2px solid var(--border-strong);
   display:inline-block}
 .legend i.done{border-color:var(--ok)}
 .legend i.active{border-color:var(--warn)}
@@ -518,10 +526,14 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
 /* ------------------------------------------------------------------ avisos */
 /* Toasts en vez de una franja: avisar no tiene por qué mover el contenido de
    lugar justo cuando el ojo estaba en otra cosa. */
-/* Arriba a la derecha: abajo tapaban el campo para escribirle a Claude, que es
-   justo lo que uno quiere usar después de leer el aviso. */
-.toasts{position:fixed;right:16px;top:118px;z-index:50;display:flex;
-  flex-direction:column;gap:8px;max-width:min(460px,calc(100vw - 32px))}
+/* Justo arriba de la consola: abajo tapaban el campo para escribirle a Claude y
+   arriba caían sobre el encabezado de la sección. `--dock-h` la mide sola, así
+   que el aviso sube cuando la consola se despliega. El contenedor no intercepta
+   clicks; cada toast sí, para poder cerrarlo. */
+.toasts{position:fixed;right:16px;bottom:calc(var(--dock-h,48px) + 14px);z-index:50;
+  display:flex;flex-direction:column;gap:8px;pointer-events:none;
+  max-width:min(460px,calc(100vw - 32px))}
+.toasts>*{pointer-events:auto}
 .toast{
   display:flex;align-items:flex-start;gap:10px;padding:11px 13px;
   background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--subtle);
@@ -665,38 +677,39 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
     <!-- ================================================================ ciclo -->
     <section class="view" id="viewCiclo" data-active="1" aria-labelledby="tCiclo">
       <div class="page-head">
-        <div class="crumbs"><b>Studio</b> › Ciclo</div>
         <h1 id="tCiclo">Ciclo de la historia</h1>
         <p>El recorrido que hace una historia de punta a punta: a la izquierda el orden
-           de las fases, y colgando de cada una los componentes que intervienen ahí.</p>
+           de las fases, y colgando de cada una los componentes que intervienen ahí.
+           Clickeá cualquiera para ver su detalle.</p>
       </div>
       <div class="page-body">
-        <div class="ciclo-grid">
+        <div class="ciclo-grid" id="cicloGrid">
           <div class="card">
+            <!-- La referencia de estados va en la barra del título, que estaba
+                 vacía a la derecha, y no en una banda propia abajo del mapa. -->
             <div class="card-head">
               <h2 id="cicloCmd">Mapa del ciclo</h2>
               <span class="sub" id="cicloSub"></span>
               <span class="grow"></span>
+              <div class="legend">
+                <span><i></i> sin correr</span>
+                <span><i class="active"></i> en curso</span>
+                <span><i class="done"></i> listo</span>
+                <span><i class="blocked"></i> bloqueado</span>
+              </div>
             </div>
             <div class="card-body flush">
               <div class="canvas"><svg id="graph" role="img" aria-label="Mapa del ciclo"></svg></div>
             </div>
-            <div class="legend" aria-hidden="false">
-              <span><i></i> sin correr</span>
-              <span><i class="active"></i> en curso</span>
-              <span><i class="done"></i> listo</span>
-              <span><i class="blocked"></i> bloqueado</span>
-              <span>El estado también va escrito en cada caja.</span>
-            </div>
           </div>
 
-          <div class="card">
-            <div class="card-head"><h2>Detalle</h2></div>
-            <div id="nodeDetail">
-              <p class="placeholder">Elegí un componente del mapa.<br>
-                Si tiene archivo se puede abrir para editar, y si ya corrió vas a ver
-                acá lo que dijo el modelo en ese punto.</p>
+          <div class="card" id="detailCard" hidden>
+            <div class="card-head">
+              <h2>Detalle</h2>
+              <span class="grow"></span>
+              <button class="btn sm ghost" id="btnCloseDetail" aria-label="Cerrar el detalle">Cerrar</button>
             </div>
+            <div id="nodeDetail"></div>
           </div>
         </div>
       </div>
@@ -705,7 +718,6 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
     <!-- ============================================================= catálogo -->
     <section class="view" id="viewCatalogo" aria-labelledby="tCatalogo">
       <div class="page-head">
-        <div class="crumbs"><b>Studio</b> › Catálogo</div>
         <h1 id="tCatalogo">Catálogo de componentes</h1>
         <p>Todo lo que aporta el plugin, en un solo lugar. Cada fila es un archivo real
            en disco: al abrirlo se edita ahí, y lo que guardes es lo que va a correr.</p>
@@ -734,7 +746,6 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
     <!-- ============================================================= historia -->
     <section class="view" id="viewHistoria" aria-labelledby="tHistoria">
       <div class="page-head">
-        <div class="crumbs"><b>Studio</b> › Historia</div>
         <h1 id="tHistoria">Historia escrita acá</h1>
         <p>Para equipos que no integran con ningún tracker. Se guarda como
            <code>.claude/run/&lt;ID&gt;/story.json</code>, el mismo formato normalizado que
@@ -799,7 +810,6 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
     <!-- ======================================================== configuración -->
     <section class="view" id="viewConfig" aria-labelledby="tConfig">
       <div class="page-head">
-        <div class="crumbs"><b>Studio</b> › Configuración</div>
         <h1 id="tConfig">Configuración del run</h1>
         <p>Se configura una vez y se ejecuta muchas. Nada de esto cambia entre historias,
            por eso vive acá y no en la barra de ejecución.</p>
@@ -1266,7 +1276,14 @@ $('catSearch').addEventListener('input', renderCatalog);
 function abrirDock(abrir) {
   $('dock').dataset.open = abrir ? '1' : '0';
   $('dockHead').setAttribute('aria-expanded', String(!!abrir));
+  medirDock();
 }
+
+// Los avisos flotan arriba de la consola, así que necesitan saber cuánto mide.
+function medirDock() {
+  document.documentElement.style.setProperty('--dock-h', `${$('dock').offsetHeight}px`);
+}
+addEventListener('resize', medirDock);
 $('dockHead').addEventListener('click', () => abrirDock($('dock').dataset.open !== '1'));
 
 /* ------------------------------------------------------------- editor */
@@ -1775,7 +1792,7 @@ const pushOut = (node, entry) => {
 function layout() {
   // PX deja el margen izquierdo donde entra el lazo de corrección sin pisar
   // las cajas.
-  const ROW = 104, TOP = 44, PX = 58, PW = 206, CX = 316, CW = 194, GAP = 18;
+  const ROW = 92, TOP = 40, PX = 58, PW = 206, CX = 316, CW = 194, GAP = 18;
   const nodes = [], edges = [];
 
   PHASES.forEach((p, i) => {
@@ -1783,7 +1800,7 @@ function layout() {
       id: `phase:${p.id}`, kind: 'phase', gate: p.gate,
       label: `${String(p.id).padStart(2, '0')} · ${p.label}`,
       sub: PHASE_NOTE[p.id] || (p.gate ? 'puede abortar el run' : ''),
-      x: PX, y: TOP + i * ROW, w: PW, h: 54,
+      x: PX, y: TOP + i * ROW, w: PW, h: 52,
     });
     if (i) edges.push({ a: `phase:${PHASES[i - 1].id}`, b: `phase:${p.id}`, kind: 'spine' });
   });
@@ -1803,7 +1820,7 @@ function layout() {
       const x = CX + k * (CW + GAP);
       maxX = Math.max(maxX, x + CW);
       nodes.push({
-        ...c, x, y: TOP + i * ROW + 3, w: CW, h: 48,
+        ...c, x, y: TOP + i * ROW + 2, w: CW, h: 48,
         sub: c.kind === 'agent' ? 'subagente'
            : c.kind === 'main' ? (MAIN_TAG[p.id] || 'corre el skill')
            : c.kind,
@@ -1907,11 +1924,23 @@ function renderGraph() {
   });
 }
 
+// Elegir un componente abre el panel; cerrarlo devuelve el ancho al mapa. Es la
+// misma pieza de siempre, pero ocupando lugar solo cuando tiene algo que decir.
 function selectNode(id) {
   selectedNode = id;
+  $('detailCard').hidden = false;
+  $('cicloGrid').classList.add('with-detail');
   renderGraph();
   renderNodeDetail();
 }
+
+function deselectNode() {
+  selectedNode = null;
+  $('detailCard').hidden = true;
+  $('cicloGrid').classList.remove('with-detail');
+  renderGraph();
+}
+$('btnCloseDetail').addEventListener('click', deselectNode);
 
 /** Qué archivo abre cada nodo, para poder saltar del grafo al componente. */
 function nodeFile(id) {
@@ -2236,6 +2265,7 @@ async function restaurar() {
 }
 
 setSession('none', 'Sin sesión abierta');
+medirDock();
 syncSource();
 load().then(restaurar).catch(e => banner('err', e.message));
 refreshAuth();

@@ -55,8 +55,10 @@ se configura una vez y se ejecuta muchas. Si algo falla con el repositorio, el
 studio te lleva ahí y marca la sección: un problema no puede quedar escondido en
 una pantalla que no estás mirando.
 
-**Cada sección abre con su encabezado**: dónde estás, qué es esto y qué podés
-hacer acá. Es el reemplazo de tener que acordarse.
+**Cada sección abre con su encabezado en una línea**: el título dice dónde
+estás y al lado va qué es esto. Apilado —y con un breadcrumb arriba que repetía
+lo que ya marca la navegación— se comía 110px de alto en la vista donde el alto
+es justamente lo que le falta al diagrama.
 
 **Tema claro y oscuro**, con el del sistema como default y la elección
 recordada. Y sin fuentes remotas: en una red corporativa una request a un CDN de
@@ -72,11 +74,15 @@ diagrama dibujado dos veces, con su propio acumulador de estado, y esa
 duplicación terminó mostrando la misma fase en curso de un lado y terminada del
 otro. Hoy el estado de una fase vive en una sola variable y hay una sola vista.
 
-Un clic en un nodo llena el panel de la derecha con lo que dijo el modelo en ese
-componente, y ofrece abrir su archivo.
+Un clic en un nodo abre el panel de la derecha con lo que dijo el modelo en ese
+componente, y ofrece abrir su archivo. **El panel aparece recién ahí**: vacío se
+quedaba con un cuarto del ancho para no decir nada, y el mapa —que es lo que se
+mira— quedaba apretado y con scroll horizontal. Se cierra con su botón y el
+ancho vuelve al diagrama.
 
 **El estado de cada caja va escrito además de pintado** —"listo", "en curso",
-"bloqueado"— y hay una referencia abajo del mapa. Un diagrama donde el estado
+"bloqueado"— y la referencia va en la barra del título del mapa, que estaba
+vacía a la derecha. Un diagrama donde el estado
 vive solo en el color del borde deja afuera a quien no distingue esos colores, y
 el estado es justamente lo que se viene a mirar durante un run.
 
