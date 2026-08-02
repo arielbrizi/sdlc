@@ -423,6 +423,23 @@ table.cat tbody tr[data-open="1"]{background:color-mix(in srgb,var(--accent) 9%,
    plugin no la tiene. */
 .gnode[data-off="1"] rect{stroke-dasharray:4 3;fill:var(--surface)}
 .gnode[data-off="1"] text{fill:var(--subtle)}
+
+/* Interruptor dentro de la caja del agente. El área de click es más grande que
+   el dibujo: 30x16 es una figura, no un target. */
+.gtoggle{cursor:pointer}
+.gt-hit{fill:transparent}
+.gt-track{fill:var(--surface-3);stroke:var(--border-strong);stroke-width:1;
+  transition:fill .14s,stroke .14s}
+.gt-knob{fill:var(--muted);transition:fill .14s}
+.gtoggle[aria-checked="true"] .gt-track{fill:var(--accent);stroke:var(--accent)}
+.gtoggle[aria-checked="true"] .gt-knob{fill:#fff}
+.gtoggle:hover .gt-track{stroke:var(--accent)}
+.gtoggle:focus{outline:none}
+.gtoggle:focus-visible .gt-hit{fill:color-mix(in srgb,var(--accent) 18%,transparent);
+  stroke:var(--accent);stroke-width:2}
+
+.detail-toggle{display:flex;flex-direction:column;gap:4px;padding:10px 12px;
+  border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface-2)}
 .gedge{stroke:var(--border-strong);stroke-width:1.5;fill:none}
 .gedge.spine{stroke:var(--subtle)}
 .gedge.done{stroke:var(--ok)}
@@ -1365,8 +1382,29 @@ async function guardarConfig(cambios = {}) {
   pintarDesign();
   renderCatalog();
   renderGraph();
+  if (selectedNode) renderNodeDetail();
   return r;
 }
+
+/**
+ * Prende o apaga un agente. Es la misma operación desde el catálogo, desde el
+ * mapa y desde el panel de detalle: una sola función, para que las tres vistas
+ * no puedan quedar contando historias distintas sobre el mismo archivo.
+ */
+async function toggleAgente(nombre, nuevoEstado) {
+  try {
+    await guardarConfig({ agents: { [nombre]: nuevoEstado } });
+    banner('ok', `@${nombre} ${nuevoEstado ? 'habilitado' : 'deshabilitado'} en este repo`);
+    return true;
+  } catch (e) {
+    banner('err', `No se pudo cambiar @${nombre}: ${e.message}`);
+    return false;
+  }
+}
+
+// El grafo se redibuja entero al guardar, así que el foco del teclado se pierde
+// justo cuando alguien está navegando sin mouse. Se recuerda cuál era.
+let focoAgente = null;
 
 for (const [id, seccion] of [['swStorybook', 'storybook'], ['swFigma', 'figma']]) {
   $(id).addEventListener('click', () => {
@@ -1455,13 +1493,8 @@ function renderCatalog() {
     sw.addEventListener('click', async (e) => {
       e.stopPropagation();
       const nombre = sw.dataset.agent;
-      const nuevoEstado = sw.getAttribute('aria-pressed') !== 'true';
       sw.disabled = true;
-      try {
-        await guardarConfig({ agents: { [nombre]: nuevoEstado } });
-        banner('ok', `@${nombre} ${nuevoEstado ? 'habilitado' : 'deshabilitado'} en este repo`);
-      } catch (err) {
-        banner('err', `No se pudo cambiar @${nombre}: ${err.message}`);
+      if (!await toggleAgente(nombre, sw.getAttribute('aria-pressed') !== 'true')) {
         sw.disabled = false;
       }
     });
@@ -2102,6 +2135,22 @@ function renderGraph() {
       </g>`;
   };
 
+  // Los interruptores van fuera del grupo del nodo y después de él: así el
+  // click no burbujea a "seleccionar componente" y quedan por encima.
+  const toggleSvg = n => {
+    if (n.kind !== 'agent') return '';
+    const nombre = String(n.id).split(':')[1];
+    const on = agenteOn(nombre);
+    const x = n.x + n.w - 44, y = n.y + 8;
+    return `
+      <g class="gtoggle" data-agent="${esc(nombre)}" role="switch" aria-checked="${on}"
+         tabindex="0" aria-label="@${esc(nombre)}, ${on ? 'habilitado' : 'deshabilitado'} en este repo">
+        <rect class="gt-hit" x="${x - 5}" y="${y - 6}" width="40" height="28" rx="6"/>
+        <rect class="gt-track" x="${x}" y="${y}" width="30" height="16" rx="8"/>
+        <circle class="gt-knob" cx="${x + (on ? 22 : 8)}" cy="${y + 8}" r="5.5"/>
+      </g>`;
+  };
+
   const svg = [
     ...g.edges.map(e => `<path class="gedge ${e.kind}${e.kind === 'loop' ? ' dashed' : ''}${
       done(e.b) && e.kind !== 'loop' ? ' done' : ''}" d="${edgePath(e)}"/>`),
@@ -2112,6 +2161,7 @@ function renderGraph() {
     ...g.nodes.filter(n => n.kind === 'titulo').map(n =>
       `<text class="glabel" x="${n.x}" y="${n.y + 12}">${esc(n.label)}</text>`),
     ...g.nodes.filter(n => n.kind !== 'titulo').map(nodeSvg),
+    ...g.nodes.filter(n => n.kind === 'agent').map(toggleSvg),
   ].join('');
 
   const el = $('graph');
@@ -2125,6 +2175,26 @@ function renderGraph() {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectNode(n.dataset.node); }
     });
   });
+
+  el.querySelectorAll('.gtoggle').forEach(t => {
+    const nombre = t.dataset.agent;
+    const cambiar = async () => {
+      if (t.dataset.busy === '1') return;
+      t.dataset.busy = '1';
+      focoAgente = nombre;
+      await toggleAgente(nombre, t.getAttribute('aria-checked') !== 'true');
+    };
+    t.addEventListener('click', cambiar);
+    t.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); cambiar(); }
+    });
+  });
+
+  // Devolver el foco donde estaba: el redibujado se lleva puesto el elemento.
+  if (focoAgente) {
+    el.querySelector(`.gtoggle[data-agent="${CSS.escape(focoAgente)}"]`)?.focus();
+    focoAgente = null;
+  }
 }
 
 // Elegir un componente abre el panel; cerrarlo devuelve el ancho al mapa. Es la
@@ -2202,6 +2272,15 @@ function renderNodeDetail() {
       <p class="prose">${kind === 'main'
         ? 'La sesión que corre el skill, no un subagente. Orquesta el ciclo: pasa el contexto a cada agente, encadena las fases y abre el PR.'
         : esc(KINDS[NODE_KIND[kind] || 'skill']?.what || '')}</p>
+      ${kind === 'agent' ? `
+        <div class="detail-toggle">
+          <button class="switch" id="ndToggle" aria-pressed="${agenteOn(name)}"
+                  aria-label="Habilitar o deshabilitar el subagente ${esc(name)}">
+            <span class="track"></span>
+            <span class="lbl">${agenteOn(name) ? 'habilitado' : 'deshabilitado'}</span>
+          </button>
+          <span class="f-help">En este repo. Se guarda al tocarlo.</span>
+        </div>` : ''}
       <div class="detail-actions">
         ${file ? '<button class="btn sm" id="ndOpen">Abrir archivo</button>' : ''}
         ${hookScript ? '<button class="btn sm" id="ndScript">Abrir el script</button>' : ''}
@@ -2211,6 +2290,14 @@ function renderNodeDetail() {
 
   if (file) $('ndOpen').addEventListener('click', () => open(file));
   if (hookScript) $('ndScript').addEventListener('click', () => open(hookScript));
+  if (kind === 'agent') {
+    $('ndToggle').addEventListener('click', async () => {
+      $('ndToggle').disabled = true;
+      if (!await toggleAgente(name, $('ndToggle').getAttribute('aria-pressed') !== 'true')) {
+        $('ndToggle').disabled = false;
+      }
+    });
+  }
 }
 
 /* --------------------------------------------------- repositorio y VCS */

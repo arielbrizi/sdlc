@@ -147,9 +147,19 @@ silencio.
 **Cada subagente tiene un interruptor.** Apagarlo escribe
 `.claude/globant-sdlc.json` en el repo objetivo en el acto —no hay un "guardar"
 que se pueda olvidar— y es el mismo archivo que lee el hook que después impide
-invocarlo. En el mapa del ciclo, un agente apagado se sigue viendo, punteado y
-con la palabra "deshabilitado": sacarlo del diagrama haría creer que el plugin
-no tiene esa fase.
+invocarlo.
+
+Está en tres lugares y es la misma operación: en la fila del catálogo, en la
+caja del agente dentro del mapa, y en el panel de detalle al seleccionarlo. Las
+tres llaman a la misma función y redibujan las tres vistas, porque el modo de
+falla de tener el control repetido es que una vista muestre habilitado lo que
+otra apagó.
+
+El del mapa es el que más se usa: apagar un agente es una decisión que se toma
+mirando el ciclo, no leyendo una tabla. Vive dentro de la caja, con un área de
+click más grande que el dibujo, y no selecciona el nodo al tocarlo. Un agente
+apagado se sigue viendo, punteado y con la palabra "deshabilitado": sacarlo del
+diagrama haría creer que el plugin no tiene esa fase.
 
 Las fuentes de la fase de diseño —Storybook y Figma— se configuran en
 Configuración, porque además del interruptor llevan datos: el directorio del
