@@ -296,6 +296,22 @@ input.mono,.field.mono{font-family:var(--mono);font-size:12.5px}
 .kind[data-k="tool"]{--k:var(--k-tool)}
 .kind[data-k="plugin"]{--k:var(--k-plugin)}
 
+/* Interruptor. Un agente apagado no corre: el hook lo impide, así que el
+   control tiene que verse como lo que es —un estado del proyecto— y no como una
+   preferencia visual del panel. */
+.switch{display:inline-flex;align-items:center;gap:8px;cursor:pointer;
+  background:none;border:none;padding:2px;font-size:12.5px;color:var(--muted)}
+.switch .track{width:34px;height:19px;border-radius:999px;flex-shrink:0;position:relative;
+  background:var(--surface-3);border:1px solid var(--border-strong);
+  transition:background .14s,border-color .14s}
+.switch .track::after{content:"";position:absolute;top:2px;left:2px;width:13px;height:13px;
+  border-radius:50%;background:var(--muted);transition:transform .14s,background .14s}
+.switch[aria-pressed="true"]{color:var(--text)}
+.switch[aria-pressed="true"] .track{background:var(--accent);border-color:var(--accent)}
+.switch[aria-pressed="true"] .track::after{transform:translateX(15px);background:#fff}
+.switch:hover .track{border-color:var(--accent)}
+.switch:disabled{opacity:.5;cursor:progress}
+
 .tag{display:inline-flex;align-items:center;padding:2px 7px;border-radius:var(--r-sm);
   background:var(--surface-2);border:1px solid var(--border);
   font-family:var(--mono);font-size:11px;color:var(--muted)}
@@ -402,6 +418,11 @@ table.cat tbody tr[data-open="1"]{background:color-mix(in srgb,var(--accent) 9%,
 .gnode[data-kind="script"] rect{fill:color-mix(in srgb,var(--k-script) 11%,var(--surface))}
 .gnode[data-kind="mcp"] rect{fill:color-mix(in srgb,var(--k-mcp) 11%,var(--surface))}
 .gnode[data-kind="main"] rect{fill:var(--surface);stroke-dasharray:5 3}
+/* Deshabilitado en este repo: se ve que está y que no va a correr. Sacarlo del
+   diagrama sería peor — el ciclo tiene esa fase, y no verla se lee como que el
+   plugin no la tiene. */
+.gnode[data-off="1"] rect{stroke-dasharray:4 3;fill:var(--surface)}
+.gnode[data-off="1"] text{fill:var(--subtle)}
 .gedge{stroke:var(--border-strong);stroke-width:1.5;fill:none}
 .gedge.spine{stroke:var(--subtle)}
 .gedge.done{stroke:var(--ok)}
@@ -733,7 +754,8 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
           <div class="card-body flush">
             <table class="cat">
               <thead>
-                <tr><th scope="col">Componente</th><th scope="col">Tipo</th><th scope="col">Qué hace</th></tr>
+                <tr><th scope="col">Componente</th><th scope="col">Tipo</th>
+                    <th scope="col">Qué hace</th><th scope="col">En este repo</th></tr>
               </thead>
               <tbody id="catRows"></tbody>
             </table>
@@ -876,6 +898,59 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
                 <input class="field mono" id="extraFlags" placeholder="--max-turns 20">
               </div>
             </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h2>Diseño de interfaz</h2>
+            <span class="sub">fuentes de la fase 3</span></div>
+          <div class="card-body">
+            <p class="prose" style="margin-bottom:16px">
+              Las dos vienen apagadas: el plugin corre también en repos de backend, donde
+              un agente de diseño no tiene con qué trabajar. Se encienden por separado
+              porque son independientes — hay equipos con design system en Storybook y sin
+              Figma, y al revés. El agente <code>@ux</code> se habilita en el
+              <a href="#" id="linkCatalogo">catálogo</a>.
+            </p>
+            <div class="form-grid">
+              <div class="f">
+                <span class="f-label">Storybook <code>storybook.enabled</code></span>
+                <button class="switch" id="swStorybook" aria-pressed="false">
+                  <span class="track"></span><span class="lbl">deshabilitado</span>
+                </button>
+                <span class="f-help">La fuente de verdad de qué componentes ya existen.</span>
+              </div>
+              <div class="f">
+                <span class="f-label">Figma <code>figma.enabled</code></span>
+                <button class="switch" id="swFigma" aria-pressed="false">
+                  <span class="track"></span><span class="lbl">deshabilitado</span>
+                </button>
+                <span class="f-help">Necesita Figma Desktop abierto en esta máquina.</span>
+              </div>
+              <div class="f">
+                <label class="f-label" for="sbDir">Directorio de Storybook <code>storybook.dir</code></label>
+                <input class="field mono" id="sbDir" placeholder=".storybook">
+              </div>
+              <div class="f">
+                <label class="f-label" for="sbUrl">Storybook publicado <code>storybook.url</code></label>
+                <input class="field mono" id="sbUrl" placeholder="https://storybook.interno/ui">
+              </div>
+              <div class="f">
+                <label class="f-label" for="fgKey">Archivo de Figma <code>figma.file_key</code></label>
+                <input class="field mono" id="fgKey" aria-describedby="hFgKey" placeholder="AbCdEf123456">
+                <span class="f-help" id="hFgKey">De la URL: figma.com/design/<b>&lt;file_key&gt;</b>/nombre.</span>
+              </div>
+              <div class="f">
+                <label class="f-label" for="fgNode">Nodo raíz <code>figma.node_id</code></label>
+                <input class="field mono" id="fgNode" aria-describedby="hFgNode" placeholder="1234:5678">
+                <span class="f-help" id="hFgNode">Opcional. El parámetro <code>node-id</code> del frame.</span>
+              </div>
+            </div>
+          </div>
+          <div class="card-foot">
+            <span class="dirty" id="cfgStatus"></span>
+            <span class="grow"></span>
+            <button class="btn primary" id="btnSaveDesign">Guardar</button>
           </div>
         </div>
 
@@ -1048,19 +1123,20 @@ function banner(kind, text) {
 // Cada fase declara qué componentes le pertenecen. Es lo que une el plugin en
 // disco con el ciclo que describe el SKILL.md.
 const PHASE_PARTS = {
-  0: { scripts: ['resolve-story.sh'], skills: ['us'] },
+  0: { scripts: ['resolve-story.sh', 'config.sh'], skills: ['us'] },
   1: { agents: ['refinamiento'] },
   2: { agents: ['arquitectura'] },
-  3: { agents: ['desarrollador'] },
-  4: { agents: ['qa', 'seguridad'] },
-  5: { agents: ['reviewer'] },
-  6: { main: true },
+  3: { agents: ['ux'] },
+  4: { agents: ['desarrollador'] },
+  5: { agents: ['qa', 'seguridad'] },
+  6: { agents: ['reviewer'] },
+  7: { main: true },
 };
 
 // Las fases sin subagente no están vacías: las hace la sesión principal, la
 // misma que corre el skill. Que no figurara nada se leía como un componente
 // faltante, cuando es una decisión de diseño: ningún subagente puede escribir.
-const MAIN_TAG = { 6: 'abre el PR' };
+const MAIN_TAG = { 7: 'abre el PR' };
 
 // Los nombres son los de Claude Code, no etiquetas inventadas para el studio:
 // quien use el panel tiene que poder buscar estos términos en la documentación
@@ -1106,13 +1182,14 @@ const KINDS = {
 
 // Qué pasa en cada fase, en una línea y sin jerga.
 const PHASE_HELP = {
-  0: 'Busca la historia y la deja siempre en el mismo formato.',
+  0: 'Busca la historia y lee qué agentes tiene habilitados este repo.',
   1: 'Decide si la historia se puede implementar. Si es ambigua, el ciclo corta acá.',
   2: 'Diseña el cambio antes de tocar una línea de código.',
-  3: 'Escribe el código y los tests en una branch nueva. Es el único subagente que escribe: los demás auditan.',
-  4: 'Dos subagentes revisan en paralelo: uno calidad, otro seguridad. Solo reportan; las correcciones vuelven a @desarrollador, hasta 3 ciclos.',
-  5: 'Una última lectura del diff, buscando razones para rechazarlo.',
-  6: 'Abre el Pull Request en draft para que lo revise una persona.',
+  3: 'Baja la historia a contrato de UI contra lo que ya existe en Storybook y Figma. Apagada por defecto: un repo de backend no tiene interfaz que revisar.',
+  4: 'Escribe el código y los tests en una branch nueva. Es el único subagente que escribe: los demás auditan.',
+  5: 'Dos subagentes revisan en paralelo: uno calidad, otro seguridad. Solo reportan; las correcciones vuelven a @desarrollador, hasta 3 ciclos.',
+  6: 'Una última lectura del diff, buscando razones para rechazarlo.',
+  7: 'Abre el Pull Request en draft para que lo revise una persona.',
 };
 
 /** Deduce qué tipo de componente es un archivo, por dónde vive en el plugin. */
@@ -1222,6 +1299,100 @@ function catalogItems() {
   return out;
 }
 
+/* ------------------------------------------- qué está habilitado en el repo */
+
+// Un agente apagado no corre: lo impide un hook, no la buena voluntad del
+// modelo. El studio muestra y edita ese estado, que vive en el repo objetivo
+// —`.claude/globant-sdlc.json`— porque es una propiedad del proyecto, no de
+// quien lo abre. Un repo de backend no tiene interfaz que revisar, y eso no
+// cambia según quién corra el ciclo.
+let CONFIG = null;
+
+const agenteOn = nombre => (CONFIG ? CONFIG.agents?.[nombre] !== false : true);
+
+async function loadConfig() {
+  try {
+    CONFIG = await api('/api/config?repoDir=' + encodeURIComponent($('repoDir').value.trim()));
+    pintarDesign();
+    renderCatalog();
+    renderGraph();
+  } catch (e) {
+    CONFIG = null;
+    banner('err', `No se pudo leer la config del repo: ${e.message}`);
+  }
+}
+
+function pintarSwitch(el, on) {
+  el.setAttribute('aria-pressed', String(!!on));
+  el.querySelector('.lbl').textContent = on ? 'habilitado' : 'deshabilitado';
+}
+
+function pintarDesign() {
+  if (!CONFIG) return;
+  pintarSwitch($('swStorybook'), CONFIG.storybook?.enabled);
+  pintarSwitch($('swFigma'), CONFIG.figma?.enabled);
+  $('sbDir').value = CONFIG.storybook?.dir || '';
+  $('sbUrl').value = CONFIG.storybook?.url || '';
+  $('fgKey').value = CONFIG.figma?.file_key || '';
+  $('fgNode').value = CONFIG.figma?.node_id || '';
+}
+
+/** Manda la config entera: el servidor devuelve lo efectivo, que es lo que vale. */
+async function guardarConfig(cambios = {}) {
+  const base = CONFIG || { agents: {}, figma: {}, storybook: {} };
+  const cuerpo = {
+    repoDir: $('repoDir').value.trim(),
+    agents: { ...base.agents, ...(cambios.agents || {}) },
+    figma: {
+      enabled: $('swFigma').getAttribute('aria-pressed') === 'true',
+      file_key: $('fgKey').value.trim(),
+      node_id: $('fgNode').value.trim(),
+      ...(cambios.figma || {}),
+    },
+    storybook: {
+      enabled: $('swStorybook').getAttribute('aria-pressed') === 'true',
+      dir: $('sbDir').value.trim(),
+      url: $('sbUrl').value.trim(),
+      ...(cambios.storybook || {}),
+    },
+  };
+  const r = await api('/api/config', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(cuerpo),
+  });
+  CONFIG = r;
+  pintarDesign();
+  renderCatalog();
+  renderGraph();
+  return r;
+}
+
+for (const [id, seccion] of [['swStorybook', 'storybook'], ['swFigma', 'figma']]) {
+  $(id).addEventListener('click', () => {
+    pintarSwitch($(id), $(id).getAttribute('aria-pressed') !== 'true');
+    $('cfgStatus').textContent = 'sin guardar';
+  });
+  // el nombre de la sección se usa al guardar; queda acá para no perder el par
+  void seccion;
+}
+
+$('btnSaveDesign').addEventListener('click', async () => {
+  $('btnSaveDesign').dataset.busy = '1';
+  try {
+    const r = await guardarConfig();
+    $('cfgStatus').textContent = '';
+    banner('ok', `Guardado en ${r.path}`);
+  } catch (e) {
+    banner('err', `No se pudo guardar: ${e.message}`);
+  } finally {
+    delete $('btnSaveDesign').dataset.busy;
+  }
+});
+
+$('linkCatalogo').addEventListener('click', e => { e.preventDefault(); showView('catalogo'); });
+$('repoDir').addEventListener('change', loadConfig);
+
 const catFiltros = new Set();
 
 function renderFilters() {
@@ -1259,13 +1430,40 @@ function renderCatalog() {
         ${i.meta.length ? `<div class="cat-meta">${i.meta.map(m =>
           `<span class="tag${i.bad ? ' warn' : ''}">${esc(m)}</span>`).join('')}</div>` : ''}
       </td>
+      <td>${i.kind === 'agent'
+        ? `<button class="switch" data-agent="${esc(i.name)}"
+                   aria-pressed="${agenteOn(i.name)}"
+                   aria-label="Habilitar o deshabilitar el subagente ${esc(i.name)}">
+             <span class="track"></span>
+             <span class="lbl">${agenteOn(i.name) ? 'habilitado' : 'deshabilitado'}</span>
+           </button>`
+        : '<span class="cat-desc">—</span>'}</td>
     </tr>`).join('');
 
   $('catRows').querySelectorAll('tr').forEach(tr => {
-    const abrir = () => open(tr.dataset.path);
+    const abrir = e => { if (!e?.target?.closest?.('.switch')) open(tr.dataset.path); };
     tr.addEventListener('click', abrir);
     tr.addEventListener('keydown', e => {
+      if (e.target.closest('.switch')) return;
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); abrir(); }
+    });
+  });
+
+  // Encender o apagar un agente escribe en el repo en el acto: es el mismo
+  // archivo que lee el hook, así que no hay un "guardar" que se pueda olvidar.
+  $('catRows').querySelectorAll('.switch[data-agent]').forEach(sw => {
+    sw.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const nombre = sw.dataset.agent;
+      const nuevoEstado = sw.getAttribute('aria-pressed') !== 'true';
+      sw.disabled = true;
+      try {
+        await guardarConfig({ agents: { [nombre]: nuevoEstado } });
+        banner('ok', `@${nombre} ${nuevoEstado ? 'habilitado' : 'deshabilitado'} en este repo`);
+      } catch (err) {
+        banner('err', `No se pudo cambiar @${nombre}: ${err.message}`);
+        sw.disabled = false;
+      }
     });
   });
 }
@@ -1831,7 +2029,7 @@ function layout() {
 
   // qa y seguridad no corrigen: reportan, y la corrección vuelve a la fase 3.
   // Sin este lazo el diagrama sugiere un flujo lineal que no es el real.
-  edges.push({ a: 'phase:4', b: 'phase:3', kind: 'loop' });
+  edges.push({ a: 'phase:5', b: 'phase:4', kind: 'loop' });
 
   // Banda lateral. Ni los hooks ni los MCP cuelgan de una fase: los hooks
   // corren sobre cualquiera y los MCP son de dónde sale la historia.
@@ -1886,13 +2084,18 @@ function renderGraph() {
   const nodeSvg = n => {
     const st = nodeState(n.id);
     const palabra = STATE_WORD[st] || '';
-    const sub = [palabra, n.sub].filter(Boolean).join(' · ');
+    // Un agente apagado se dibuja igual pero dice que no va a correr: sacarlo
+    // del diagrama haría creer que el ciclo no tiene esa fase.
+    const apagado = n.kind === 'agent' && !agenteOn(String(n.id).split(':')[1]);
+    const sub = apagado
+      ? ['deshabilitado', n.sub].filter(Boolean).join(' · ')
+      : [palabra, n.sub].filter(Boolean).join(' · ');
     const label = n.label || n.name;
     return `
       <g class="gnode" data-node="${esc(n.id)}" data-kind="${esc(n.kind)}"
          data-state="${esc(st)}" data-sel="${n.id === selectedNode ? 1 : 0}"
-         tabindex="0" role="button"
-         aria-label="${esc(label)}${palabra ? `, ${palabra}` : ''}">
+         data-off="${apagado ? 1 : 0}" tabindex="0" role="button"
+         aria-label="${esc(label)}${apagado ? ', deshabilitado' : palabra ? `, ${palabra}` : ''}">
         <rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}"/>
         <text x="${n.x + 14}" y="${n.y + (sub ? 23 : 30)}">${esc(label)}</text>
         ${sub ? `<text class="gsub" x="${n.x + 14}" y="${n.y + 39}">${esc(sub)}</text>` : ''}
@@ -1903,7 +2106,7 @@ function renderGraph() {
     ...g.edges.map(e => `<path class="gedge ${e.kind}${e.kind === 'loop' ? ' dashed' : ''}${
       done(e.b) && e.kind !== 'loop' ? ' done' : ''}" d="${edgePath(e)}"/>`),
     // Vertical, sobre el lazo: horizontal se montaba encima de las fases.
-    `<text class="glabel gloop" transform="translate(22,${g.TOP + 3.6 * g.ROW}) rotate(-90)">corrige · hasta 3 ciclos</text>`,
+    `<text class="glabel gloop" transform="translate(22,${g.TOP + 4.6 * g.ROW}) rotate(-90)">corrige · hasta 3 ciclos</text>`,
     // Los hooks no se conectan a una fase: se marca con una línea punteada.
     `<path class="gedge dashed" d="M${g.hx - 28} 34 L${g.hx - 28} ${g.height - 30}"/>`,
     ...g.nodes.filter(n => n.kind === 'titulo').map(n =>
@@ -2267,7 +2470,7 @@ async function restaurar() {
 setSession('none', 'Sin sesión abierta');
 medirDock();
 syncSource();
-load().then(restaurar).catch(e => banner('err', e.message));
+load().then(loadConfig).then(restaurar).catch(e => banner('err', e.message));
 refreshAuth();
 </script>
 </body>

@@ -1,9 +1,9 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "globant-sdlc",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "displayName": "Globant SDLC",
-  "description": "Ciclo de desarrollo automatizado a partir del ID de una historia de usuario: refinamiento, arquitectura, implementacion, QA, seguridad y PR.",
+  "description": "Ciclo de desarrollo automatizado a partir del ID de una historia de usuario: refinamiento, arquitectura, diseno de interfaz, implementacion, QA, seguridad y PR.",
   "author": {
     "name": "Globant - Tech Direction"
   },
@@ -13,7 +13,8 @@
     "user-story",
     "qa",
     "security",
-    "architecture"
+    "architecture",
+    "design-system"
   ],
   "userConfig": {
     "tracker_default": {

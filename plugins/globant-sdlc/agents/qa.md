@@ -16,6 +16,9 @@ su propio trabajo se aprueba solo.
 
 1. Traza cada criterio de aceptacion hasta un test concreto. Un criterio sin
    test que lo verifique es un hallazgo, aunque el codigo lo implemente bien.
+   Si el run tiene `design.md`, sus `visual_acceptance` son criterios como
+   cualquier otro y se trazan igual: una story de Storybook o un test de render
+   cuentan como verificacion.
 2. Corre la suite. Un test que no corriste no es evidencia.
 3. Busca casos de borde: vacio, nulo, limites, concurrencia, unicode,
    zona horaria, colecciones grandes, fallo del servicio externo.

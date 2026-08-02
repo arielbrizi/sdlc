@@ -144,6 +144,17 @@ Los problemas del escaneo —un script sin `chmod +x`, un manifest que no parsea
 se listan arriba de la tabla. Son exactamente los que rompen el plugin en
 silencio.
 
+**Cada subagente tiene un interruptor.** Apagarlo escribe
+`.claude/globant-sdlc.json` en el repo objetivo en el acto —no hay un "guardar"
+que se pueda olvidar— y es el mismo archivo que lee el hook que después impide
+invocarlo. En el mapa del ciclo, un agente apagado se sigue viendo, punteado y
+con la palabra "deshabilitado": sacarlo del diagrama haría creer que el plugin
+no tiene esa fase.
+
+Las fuentes de la fase de diseño —Storybook y Figma— se configuran en
+Configuración, porque además del interruptor llevan datos: el directorio del
+catálogo, la URL publicada, el `file_key` del archivo de Figma.
+
 ## Editar
 
 Un clic en cualquier nodo del grafo, o en cualquier fila del catálogo, abre el

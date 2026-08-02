@@ -18,13 +18,46 @@ punta, desde el ID del ticket hasta un Pull Request en draft.
 /us <ID>
   │
   ├─ 0  resolve-story.sh   detecta tracker, normaliza la historia
+  │     config.sh          qué agentes tiene habilitados este repo
   ├─ 1  @refinamiento      ⛔ CIRCUIT BREAKER: aborta si la US es ambigua
   ├─ 2  @arquitectura      plan.md  (⛔ aborta si blast_radius: high)
-  ├─ 3  @desarrollador     branch + código + tests (el único que escribe)
-  ├─ 4  @qa ‖ @seguridad   auditan en paralelo; corrigen volviendo a la 3
-  ├─ 5  @reviewer          revisión adversarial del diff
-  └─ 6  PR en draft + comentario en el ticket
+  ├─ 3  @ux                design.md — contrato de UI  (apagado por defecto)
+  ├─ 4  @desarrollador     branch + código + tests (el único que escribe)
+  ├─ 5  @qa ‖ @seguridad   auditan en paralelo; corrigen volviendo a la 4
+  ├─ 6  @reviewer          revisión adversarial del diff
+  └─ 7  PR en draft + comentario en el ticket
 ```
+
+## Habilitar y deshabilitar agentes
+
+Cualquier agente se prende o apaga **por proyecto**, en el repo donde corre el
+ciclo:
+
+```json
+// <repo>/.claude/globant-sdlc.json
+{
+  "agents": { "ux": true },
+  "storybook": { "enabled": true, "dir": ".storybook" },
+  "figma": { "enabled": true, "file_key": "AbCdEf123456" }
+}
+```
+
+Desde el studio se hace con un interruptor por agente en el catálogo, y las
+integraciones de diseño en Configuración.
+
+| | Default | Por qué |
+|---|---|---|
+| `@ux` y las fuentes de diseño | apagado | El plugin también corre en repos de backend, donde un agente de diseño no tiene con qué trabajar |
+| Todo el resto | encendido | Son los controles del ciclo; apagarlos es una decisión explícita |
+
+Apagar un agente no es una sugerencia: `guard-agents.sh` deniega la invocación
+en `PreToolUse`. Y el skill tampoco lo reemplaza haciendo su trabajo — si `qa`
+está apagado, nadie hace de QA.
+
+El archivo se versiona con el repo, así que el que clona hereda la misma
+configuración del ciclo. Si no existe, valen los defaults de la tabla.
+
+Ver `skills/us/references/design.md` para configurar Storybook y Figma.
 
 ## Instalación
 

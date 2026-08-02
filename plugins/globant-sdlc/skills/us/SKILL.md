@@ -1,6 +1,6 @@
 ---
 name: us
-description: Desarrolla una historia de usuario de punta a punta a partir de su ID (Jira, Azure DevOps o GitHub Issues), coordinando agentes de refinamiento, arquitectura, QA y seguridad hasta abrir el Pull Request. Usar SIEMPRE que el usuario mencione un ID de historia, ticket o issue y quiera implementarla, aunque no diga "us" explicitamente — por ejemplo "implementa GLOB-1234", "arranca con el ticket 8891", "haceme la historia #245".
+description: Desarrolla una historia de usuario de punta a punta a partir de su ID (Jira, Azure DevOps o GitHub Issues), coordinando agentes de refinamiento, arquitectura, diseno de interfaz, QA y seguridad hasta abrir el Pull Request. Usar SIEMPRE que el usuario mencione un ID de historia, ticket o issue y quiera implementarla, aunque no diga "us" explicitamente — por ejemplo "implementa GLOB-1234", "arranca con el ticket 8891", "haceme la historia #245".
 ---
 
 # Ciclo de desarrollo de una historia de usuario
@@ -18,9 +18,32 @@ evidencia auditable y el flujo se aborta ante señales de riesgo en vez de impro
 /us LOCAL-exportar-csv --tracker manual # historia escrita a mano, sin tracker
 ```
 
-## Fase 0 — Resolver la historia
+## Fase 0 — Resolver la historia y la configuración
 
-Ejecutá el resolver, que detecta el tracker y normaliza la historia a un formato único:
+Primero, leé qué tiene habilitado este repo:
+
+```bash
+"${CLAUDE_PLUGIN_ROOT}"/scripts/config.sh json
+```
+
+Guardá la salida en `.claude/run/<ID>/config.json`. Decide dos cosas:
+
+- **Qué agentes corren.** Un agente deshabilitado **no se invoca y no se
+  reemplaza**: si el proyecto apagó `qa`, vos no hacés de QA. Saltás la fase,
+  la dejás registrada como omitida y seguís. Hay un hook que además lo impide,
+  así que intentarlo solo gasta un turno.
+- **Si la fase 3 corre**, y con qué fuentes de diseño.
+
+Dos casos que no son "saltear una fase":
+
+- `desarrollador` deshabilitado — no hay ciclo posible. Reportá y terminá; no
+  implementes vos la historia.
+- `refinamiento` deshabilitado — el equipo apagó el circuit breaker. Corré
+  igual, pero anotalo en la descripción del PR: quien revisa tiene que saber
+  que la historia no pasó por ese control.
+
+Después ejecutá el resolver, que detecta el tracker y normaliza la historia a un
+formato único:
 
 ```bash
 "${CLAUDE_PLUGIN_ROOT}"/scripts/resolve-story.sh <ID> [tracker]
@@ -68,9 +91,31 @@ Si el plan declara `blast_radius: high` (migración de datos, cambio de contrato
 público, tocar auth o billing), **el modo automático no aplica**: dejá el plan
 escrito, no implementes y pedí revisión humana explícita.
 
-## Fase 3 — Implementación
+## Fase 3 — Diseño de interfaz
 
-Delegá en el subagente `desarrollador`, pasándole `plan.md` y `story.json`.
+**Solo si `agents.ux` está habilitado.** Viene apagada por defecto: el plugin
+corre en repos de backend, y ahí un agente de diseño produce hallazgos genéricos
+que nadie puede accionar.
+
+Delegá en `ux`, pasándole `story.json`, `plan.md` y la sección de diseño de
+`config.json`. Produce `design.md` en el directorio del run —escribilo vos con
+el contenido que devuelve en `design_md`— con qué componentes del design system
+reusar, qué falta, tokens, estados y criterios visuales verificables.
+
+Corre **antes** de implementar y no después: el costo caro de no tener diseño en
+el ciclo no es una pantalla fea, es un componente nuevo escrito desde cero
+cuando ya existía uno equivalente.
+
+Si devuelve `verdict: "N_A"` la historia no toca interfaz: no escribas
+`design.md` y seguí. Si devuelve `BLOCKED`, tratalo como el corte de la fase 1.
+
+Ver `references/design.md` para cómo se configuran Storybook y Figma, y qué pasa
+cuando una de las dos fuentes no está disponible.
+
+## Fase 4 — Implementación
+
+Delegá en el subagente `desarrollador`, pasándole `plan.md` y `story.json`. Si
+existe `design.md`, va también: es contrato, no sugerencia.
 
 Es el único agente del ciclo que escribe código: branch `feature/<ID>-<slug>`,
 implementación siguiendo el plan, tests junto con el código y commits atómicos
@@ -83,7 +128,7 @@ parás, igual que en la fase 1.
 **Vos no escribís código en esta fase.** Tu trabajo es orquestar: pasarle el
 contexto, leer su salida y encadenar la fase siguiente.
 
-## Fase 4 — Verificación (en paralelo)
+## Fase 5 — Verificación (en paralelo)
 
 Delegá simultáneamente en:
 
@@ -99,13 +144,13 @@ tercero sigue habiendo hallazgos de severidad alta, abrí el PR igual pero
 marcándolo con el hallazgo abierto y visible en la descripción. Nunca silencies
 un hallazgo para poder cerrar el flujo.
 
-## Fase 5 — Revisión adversarial
+## Fase 6 — Revisión adversarial
 
 Delegá en `reviewer` con el diff completo. Su trabajo es buscar razones para
 rechazar el cambio, no para aprobarlo. Lo que corresponda corregir vuelve a
-`desarrollador`, igual que en la fase 4.
+`desarrollador`, igual que en la fase 5.
 
-## Fase 6 — Pull Request
+## Fase 7 — Pull Request
 
 Abrí el PR **en draft**, con esta descripción:
 
@@ -123,6 +168,9 @@ Abrí el PR **en draft**, con esta descripción:
 ### Decisiones de arquitectura
 <lo relevante de plan.md>
 
+### Diseño
+<lo relevante de design.md — omitilo si la fase 3 no corrió>
+
 ### QA
 <veredicto + cobertura>
 
@@ -131,6 +179,10 @@ Abrí el PR **en draft**, con esta descripción:
 
 ### Qué revisar con atención
 <los 2-3 puntos donde el revisor humano debería mirar de verdad>
+
+### Fases omitidas
+<los agentes deshabilitados en este repo, si los hay, y qué control se perdió
+con cada uno. Omitilo si corrieron todos.>
 
 ---
 Generado por globant-sdlc. Los agentes no aprueban su propio trabajo:
@@ -156,3 +208,4 @@ copiá los criterios de aceptación completos en vez de referenciarlos.
 ## Referencias
 
 - `references/trackers.md` — esquema canónico de la historia y mapeo por tracker
+- `references/design.md` — configuración de Storybook y Figma para la fase 3

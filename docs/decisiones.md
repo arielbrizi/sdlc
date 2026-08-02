@@ -212,3 +212,62 @@ seguidas le hace releer el mismo código para nada.
 
 Si en el piloto los ciclos de corrección resultan caros, la salida no es volver
 atrás sino que el agente reciba el diff en vez del repo entero.
+
+## D12 — Cualquier agente se puede apagar, y apagarlo es un hook
+
+**Contexto.** El ciclo asumía que sus seis agentes corren siempre. La primera
+vez que eso no alcanzó fue con diseño: un agente de UX es indispensable en un
+repo de frontend e inútil en uno de backend, donde produce hallazgos genéricos
+que nadie puede accionar. Y esos hallazgos son peores que no tener el agente,
+porque entrenan al equipo a ignorar la salida del ciclo.
+
+El caso se generaliza: un equipo sin design system, uno que ya corre su propio
+security scanner en CI, uno que hace code review humano y no quiere el reviewer
+adversarial. Todos necesitan lo mismo.
+
+**Decisión.** Cualquier agente se habilita o deshabilita por proyecto, en
+`<repo>/.claude/globant-sdlc.json`. `@ux` y las dos integraciones de diseño
+—Figma y Storybook— vienen apagadas; el resto, encendido.
+
+La config vive en el repo objetivo y no en el `userConfig` del plugin porque es
+una propiedad del proyecto, no de la persona: que un repo tenga interfaz que
+revisar no cambia según quién corra el ciclo. Además se versiona, así que el que
+clona hereda la misma configuración sin enterarse por Slack.
+
+**El gate es un hook, no una instrucción del skill.** `guard-agents.sh` corre en
+`PreToolUse` sobre `Task` y deniega la invocación de un agente apagado. Un prompt
+que dice "no lo invoques" es una sugerencia fuerte; deshabilitar tiene que
+significar que no corre. Es la misma regla de D5.
+
+**Costo y modos de falla.** El parser de la config es `sed` y `grep` —cero
+dependencias, igual que el resto— así que soporta un solo nivel de anidamiento y
+booleanos en su propia línea. Un archivo con otro formato no rompe: cae a los
+defaults. Los defaults están elegidos para que ese camino sea el seguro —los
+agentes que auditan quedan encendidos, y los que dependen de una integración
+externa, apagados—, así que una config ilegible nunca resulta en menos control.
+
+Deshabilitar `desarrollador` deja el ciclo sin nadie que escriba: el skill lo
+detecta y termina en vez de implementar la historia por su cuenta. Deshabilitar
+`refinamiento` apaga el circuit breaker de D2; se permite, pero el PR lo dice.
+
+## D13 — El diseño entra antes de implementar, no después
+
+**Contexto.** Un agente de UX y Visual Design puede correr en dos lugares: antes
+de implementar, produciendo el contrato de UI, o después, auditando la pantalla
+construida.
+
+**Decisión.** Antes, como fase 3, entre arquitectura e implementación.
+
+El costo caro de no tener diseño en el ciclo no es una pantalla fea: es un
+componente nuevo escrito desde cero cuando ya existía uno equivalente en el
+design system. Eso se evita antes de escribir el código; después ya es un
+refactor que compite con el resto del backlog.
+
+**Cómo se audita entonces el resultado.** El agente emite `visual_acceptance`,
+criterios verificables que van a `design.md`, y `qa` los traza igual que a los
+de la historia. No hizo falta un segundo agente: alcanzó con que el contrato sea
+verificable.
+
+**Costo.** Con diseño habilitado el ciclo tiene una invocación más antes de
+implementar. En una historia sin interfaz el agente devuelve `N_A` y no cuesta
+más que ese turno, que es el caso esperado en un repo mixto.

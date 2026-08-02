@@ -289,6 +289,75 @@ async function scanPlugin() {
 
 // Mismo patrón que valida el endpoint de run: sin puntos ni barras, así que no
 // hay traversal posible por el ID. La verificación de contención igual está.
+// ------------------------------------------- config del repo objetivo
+
+/**
+ * Qué agentes e integraciones tiene habilitados un repo.
+ *
+ * La resuelve el mismo `config.sh` que usa el ciclo, en vez de reimplementar los
+ * defaults acá. Dos implementaciones del mismo default terminan divergiendo, y
+ * el studio mostraría habilitado algo que el hook bloquea.
+ */
+function readProjectConfig(repoDir) {
+  return new Promise((resolve, reject) => {
+    const script = path.join(PLUGIN_DIR, 'scripts/config.sh');
+    const child = spawn('bash', [script, 'json'], {
+      cwd: repoDir,
+      env: { ...process.env, CLAUDE_PROJECT_DIR: repoDir, CLAUDE_PLUGIN_ROOT: PLUGIN_DIR },
+    });
+    let out = '', err = '';
+    child.stdout.on('data', d => { out += d; });
+    child.stderr.on('data', d => { err += d; });
+    child.on('error', reject);
+    child.on('close', code => {
+      if (code !== 0) return reject(new Error(err.trim() || `config.sh salió con ${code}`));
+      try { resolve(JSON.parse(out)); }
+      catch (e) { reject(new Error(`config.sh no devolvió JSON: ${e.message}`)); }
+    });
+  });
+}
+
+/**
+ * Escribe `.claude/globant-sdlc.json` en el repo objetivo.
+ *
+ * Se normaliza contra los agentes que existen en el plugin: un nombre que no
+ * corresponde a ningún agente no se guarda. Sin eso, el archivo acumula claves
+ * de agentes renombrados que nadie va a volver a mirar y que hacen creer que
+ * algo está apagado cuando no existe.
+ */
+async function writeProjectConfig(repoDir, body) {
+  const plugin = await scanPlugin();
+  const conocidos = new Set(plugin.agents.map(a => a.name));
+  const texto = (v, def = '') => (typeof v === 'string' ? v.trim() : def);
+
+  const agents = {};
+  for (const [nombre, valor] of Object.entries(body.agents || {})) {
+    if (conocidos.has(nombre)) agents[nombre] = !!valor;
+  }
+
+  const cfg = {
+    agents,
+    figma: {
+      enabled: !!body.figma?.enabled,
+      file_key: texto(body.figma?.file_key),
+      node_id: texto(body.figma?.node_id),
+    },
+    storybook: {
+      enabled: !!body.storybook?.enabled,
+      dir: texto(body.storybook?.dir, '.storybook') || '.storybook',
+      url: texto(body.storybook?.url),
+    },
+  };
+
+  const dir = path.join(path.resolve(repoDir), '.claude');
+  await fsp.mkdir(dir, { recursive: true });
+  const file = path.join(dir, 'globant-sdlc.json');
+  await fsp.writeFile(file, `${JSON.stringify(cfg, null, 2)}\n`, 'utf8');
+  return file;
+}
+
+// ------------------------------------------------------- historia manual
+
 const STORY_ID_RE = /^#?[A-Za-z0-9-]{1,40}$/;
 
 /** Resuelve `.claude/run/<ID>` dentro del repo objetivo y verifica que no se escape. */
@@ -649,18 +718,24 @@ function startLogin(mode) {
 
 /** Fases del skill `us`. El orden es el del SKILL.md. */
 const PHASES = [
-  { id: 0, key: 'resolver',       label: 'Resolver historia', gate: false },
-  { id: 1, key: 'refinamiento',   label: 'Refinamiento',      gate: true  },
-  { id: 2, key: 'arquitectura',   label: 'Arquitectura',      gate: true  },
-  { id: 3, key: 'implementacion', label: 'Implementación',    gate: false },
-  { id: 4, key: 'verificacion',   label: 'Verificación',      gate: false },
-  { id: 5, key: 'revision',       label: 'Revisión',          gate: false },
-  { id: 6, key: 'pr',             label: 'Pull Request',      gate: false },
+  { id: 0, key: 'resolver',       label: 'Resolver historia',  gate: false },
+  { id: 1, key: 'refinamiento',   label: 'Refinamiento',       gate: true  },
+  { id: 2, key: 'arquitectura',   label: 'Arquitectura',       gate: true  },
+  { id: 3, key: 'diseno',         label: 'Diseño de interfaz', gate: false, optional: true },
+  { id: 4, key: 'implementacion', label: 'Implementación',     gate: false },
+  { id: 5, key: 'verificacion',   label: 'Verificación',       gate: false },
+  { id: 6, key: 'revision',       label: 'Revisión',           gate: false },
+  { id: 7, key: 'pr',             label: 'Pull Request',       gate: false },
 ];
 
 const AGENT_PHASE = {
-  refinamiento: 1, arquitectura: 2, desarrollador: 3, qa: 4, seguridad: 4, reviewer: 5,
+  refinamiento: 1, arquitectura: 2, ux: 3, desarrollador: 4, qa: 5, seguridad: 5, reviewer: 6,
 };
+
+// La fase de PR y la primera que escribe código: las usa la inferencia, y sin
+// nombrarlas quedaban como números sueltos que hay que recordar renumerar.
+const PHASE_PR = 7;
+const PHASE_IMPL = 4;
 
 const runs = new Map();
 
@@ -748,7 +823,7 @@ function inferPhase(run, msg) {
       if (name === 'Bash') {
         const cmd = String(input.command || '');
         if (cmd.includes('resolve-story.sh')) setPhase(run, 0, 'resolve-story.sh');
-        else if (/\b(gh pr create|az repos pr create|glab mr create)\b/.test(cmd)) setPhase(run, 6, 'abriendo PR');
+        else if (/\b(gh pr create|az repos pr create|glab mr create)\b/.test(cmd)) setPhase(run, PHASE_PR, 'abriendo PR');
         continue;
       }
       if (['Write', 'Edit', 'MultiEdit', 'NotebookEdit'].includes(name)) {
@@ -759,8 +834,8 @@ function inferPhase(run, msg) {
         // que acababa de pasar.
         const target = String(input.file_path || input.notebook_path || '');
         const esEvidencia = /[\\/]\.claude[\\/]run[\\/]/.test(target);
-        if (!esEvidencia && run.phase !== null && run.phase < 3) {
-          setPhase(run, 3, 'implementando');
+        if (!esEvidencia && run.phase !== null && run.phase < PHASE_IMPL) {
+          setPhase(run, PHASE_IMPL, 'implementando');
         }
       }
     }
@@ -1128,6 +1203,26 @@ const server = http.createServer(async (req, res) => {
       } catch {
         return json(res, 404, { error: 'No hay historia escrita para ese ID' });
       }
+    }
+
+    if (p === '/api/config' && req.method === 'GET') {
+      const repoDir = path.resolve(url.searchParams.get('repoDir') || TARGET_REPO);
+      if (!fs.existsSync(repoDir)) {
+        return json(res, 400, { error: `El directorio no existe: ${repoDir}` });
+      }
+      return json(res, 200, await readProjectConfig(repoDir));
+    }
+
+    if (p === '/api/config' && req.method === 'PUT') {
+      const body = JSON.parse(await readBody(req));
+      const repoDir = path.resolve(body.repoDir || TARGET_REPO);
+      if (!fs.existsSync(repoDir)) {
+        return json(res, 400, { error: `El directorio no existe: ${repoDir}` });
+      }
+      const file = await writeProjectConfig(repoDir, body);
+      // Se devuelve lo efectivo, no lo que mandó el cliente: es lo que va a leer
+      // el ciclo, y si un default pisó algo tiene que verse en el acto.
+      return json(res, 200, { path: file, ...(await readProjectConfig(repoDir)) });
     }
 
     if (p === '/api/run' && req.method === 'POST') {
