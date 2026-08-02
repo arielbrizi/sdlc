@@ -473,6 +473,14 @@ table.cat tbody tr[data-open="1"]{background:color-mix(in srgb,var(--accent) 9%,
 .detail{display:flex;flex-direction:column;gap:12px;padding:16px}
 .detail-head{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
 .detail-head h3{font-size:15px}
+.detail-summary{padding:12px 13px;border:1px solid var(--border);border-radius:var(--r-md);
+  background:var(--surface-2)}
+.detail-summary .label{display:block;margin-bottom:4px;color:var(--subtle);
+  font-size:10.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase}
+.detail-summary p{margin:0;color:var(--text);font-size:13px;line-height:1.55}
+.detail-context{display:flex;flex-direction:column;gap:4px}
+.detail-context .label{color:var(--subtle);font-size:10.5px;font-weight:700;
+  letter-spacing:.07em;text-transform:uppercase}
 .detail-actions{display:flex;gap:8px;flex-wrap:wrap}
 .out{
   background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-md);
@@ -2328,6 +2336,8 @@ function renderNodeDetail() {
 
   const estado = STATE_WORD[nodeState(id)];
   const esDiseno = (kind === 'phase' && name === '3') || (kind === 'agent' && name === 'ux');
+  const agente = kind === 'agent' ? PLUGIN.agents.find(a => a.name === name) : null;
+  const resumen = agente?.description || '';
 
   const cuerpo = entries.length
     ? entries.map(e => `
@@ -2347,9 +2357,18 @@ function renderNodeDetail() {
         ${estado ? `<span class="tag">${esc(estado)}</span>` : ''}
       </div>
       ${kind === 'phase' && PHASE_HELP[name] ? `<p class="prose">${esc(PHASE_HELP[name])}</p>` : ''}
-      <p class="prose">${kind === 'main'
-        ? 'La sesión que corre el skill, no un subagente. Orquesta el ciclo: pasa el contexto a cada agente, encadena las fases y abre el PR.'
-        : esc(KINDS[NODE_KIND[kind] || 'skill']?.what || '')}</p>
+      ${agente ? `
+        <div class="detail-summary">
+          <span class="label">Qué hace</span>
+          <p>${esc(resumen || 'Este agente todavía no tiene un resumen en su description.')}</p>
+        </div>
+        <div class="detail-context">
+          <span class="label">Cómo trabaja</span>
+          <p class="prose">${esc(KINDS.agent.what)}</p>
+        </div>` : `
+        <p class="prose">${kind === 'main'
+          ? 'La sesión que corre el skill, no un subagente. Orquesta el ciclo: pasa el contexto a cada agente, encadena las fases y abre el PR.'
+          : esc(KINDS[NODE_KIND[kind] || 'skill']?.what || '')}</p>`}
       ${kind === 'agent' ? `
         <div class="detail-toggle">
           <button class="switch" id="ndToggle" aria-pressed="${agenteOn(name)}"

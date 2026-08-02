@@ -80,6 +80,11 @@ quedaba con un cuarto del ancho para no decir nada, y el mapa —que es lo que s
 mira— quedaba apretado y con scroll horizontal. Se cierra con su botón y el
 ancho vuelve al diagrama.
 
+En el detalle de cada subagente, **Qué hace** sale de la `description` real de
+su frontmatter y **Cómo trabaja** explica el concepto general de subagente. No
+hay una tabla paralela de resúmenes: al agregar un agente nuevo, su descripción
+aparece automáticamente en el mapa.
+
 **El estado de cada caja va escrito además de pintado** —"listo", "en curso",
 "bloqueado"— y la referencia va en la barra del título del mapa, que estaba
 vacía a la derecha. Un diagrama donde el estado
