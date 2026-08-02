@@ -4,571 +4,974 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>globant-sdlc · studio</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
+/* ============================================================================
+   Sistema visual del studio
+
+   La interfaz es un portal de catálogo, no una terminal: una barra global
+   arriba, navegación fija a la izquierda, y el contenido en tarjetas. Cada
+   pantalla dice dónde estás (breadcrumb + título) y qué podés hacer ahí.
+
+   Tipografía del sistema, sin fuentes remotas: el studio corre en la máquina
+   del developer y en una red corporativa una request a fonts.googleapis.com es
+   una dependencia externa que no aporta nada.
+   ========================================================================== */
+
 :root{
-  --panel:#14161a; --raised:#1b1f26; --sunk:#0f1114; --edge:#272d36;
-  --track:#5c6675; --bone:#e8e6e1; --dim:#949ba6;
-  --clear:#3fb984; --caution:#e8a33d; --danger:#e05252;
-  --display:"Barlow Condensed","Arial Narrow",sans-serif;
-  --body:"IBM Plex Sans",system-ui,sans-serif;
-  --mono:"IBM Plex Mono",ui-monospace,monospace;
+  color-scheme:light;
+  --bg:#f1f3f6;
+  --surface:#ffffff;
+  --surface-2:#eef1f5;
+  --surface-3:#e4e9ef;
+  --border:#d5dbe2;
+  --border-strong:#b3bdc8;
+  --text:#1b2229;
+  --muted:#59656f;
+  --subtle:#78848f;
+  --accent:#1c5c9c;
+  --accent-hover:#164a7e;
+  --accent-fg:#ffffff;
+  --ok:#12704c;
+  --warn:#8a5a00;
+  --danger:#a5271f;
+  --shadow-1:0 1px 2px rgba(20,30,40,.08),0 1px 3px rgba(20,30,40,.06);
+  --shadow-2:0 8px 24px rgba(20,30,40,.14),0 2px 6px rgba(20,30,40,.08);
+  --k-skill:#1c5c9c;
+  --k-agent:#6b3fa0;
+  --k-hook:#8a5a00;
+  --k-script:#0f6b62;
+  --k-mcp:#9c2c6b;
+  --k-reference:#59656f;
+  --k-manifest:#59656f;
+  --k-tool:#0f6b62;
+  --k-plugin:#1c5c9c;
+
+  --r-sm:4px; --r-md:6px; --r-lg:10px;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
 }
+
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#0e1116;
+  --surface:#161b22;
+  --surface-2:#1d232c;
+  --surface-3:#252d38;
+  --border:#2b333d;
+  --border-strong:#3d4854;
+  --text:#e7ecf1;
+  --muted:#9aa7b4;
+  --subtle:#7d8b99;
+  --accent:#5ea1f0;
+  --accent-hover:#7db4f5;
+  --accent-fg:#0e1116;
+  --ok:#4fc78e;
+  --warn:#e0aa4e;
+  --danger:#f0796f;
+  --shadow-1:0 1px 2px rgba(0,0,0,.4);
+  --shadow-2:0 12px 32px rgba(0,0,0,.5);
+  --k-skill:#7fb2f0;
+  --k-agent:#c09bf0;
+  --k-hook:#e0aa4e;
+  --k-script:#5fc9b8;
+  --k-mcp:#eb95b8;
+  --k-reference:#9aa7b4;
+  --k-manifest:#9aa7b4;
+  --k-tool:#5fc9b8;
+  --k-plugin:#7fb2f0;
+}
+
 *{box-sizing:border-box}
 html,body{height:100%}
+/* `hidden` tiene que ganarle a cualquier `display` de clase: sin esto el estado
+   del repositorio dejaba una barra vacía en la pantalla de configuración. */
+[hidden]{display:none!important}
 body{
   margin:0;display:flex;flex-direction:column;overflow:hidden;
-  background:var(--panel);color:var(--bone);
-  font-family:var(--body);font-size:14px;line-height:1.5;
+  background:var(--bg);color:var(--text);
+  font-family:var(--sans);font-size:14px;line-height:1.5;
   -webkit-font-smoothing:antialiased;
 }
 button,input,select,textarea{font:inherit;color:inherit}
-:focus-visible{outline:2px solid var(--bone);outline-offset:2px}
+h1,h2,h3{margin:0;font-weight:600;letter-spacing:-.01em}
+code{font-family:var(--mono);font-size:.86em}
+a{color:var(--accent)}
 
-/* ---------- rail superior ---------- */
-.rail{
-  display:flex;align-items:center;gap:20px;
-  padding:0 20px;height:56px;
-  background:var(--sunk);border-bottom:1px solid var(--edge);
+/* El foco se ve siempre y en el mismo lugar, sea teclado o lector de pantalla. */
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:var(--r-sm)}
+
+.skip{position:absolute;left:8px;top:-48px;z-index:60;background:var(--surface);
+  color:var(--text);border:1px solid var(--border);border-radius:var(--r-md);
+  padding:8px 14px;transition:top .12s}
+.skip:focus{top:8px}
+
+/* ---------------------------------------------------------- barra global */
+.topbar{
+  display:flex;align-items:center;gap:16px;flex-shrink:0;
+  height:52px;padding:0 16px;
+  background:var(--surface);border-bottom:1px solid var(--border);
 }
-.brand{font-family:var(--display);font-weight:700;font-size:20px;
-  letter-spacing:.14em;text-transform:uppercase;white-space:nowrap}
-.brand span{color:var(--dim)}
-.rail-meta{font-family:var(--mono);font-size:11px;color:var(--dim);
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
-.rail-actions{display:flex;gap:8px;flex-shrink:0}
+.brand{display:flex;align-items:center;gap:9px;font-weight:600;font-size:15px;
+  letter-spacing:-.01em;white-space:nowrap}
+.brand .mark{width:22px;height:22px;border-radius:var(--r-sm);flex-shrink:0;
+  background:var(--accent);color:var(--accent-fg);display:grid;place-items:center;
+  font-size:11px;font-weight:700;letter-spacing:.02em}
+.brand small{color:var(--subtle);font-weight:500}
 
+/* Dónde está parado el studio: qué plugin edita y sobre qué repo ejecuta. */
+.context{
+  display:flex;align-items:center;gap:8px;min-width:0;flex:1;
+  font-family:var(--mono);font-size:11.5px;color:var(--muted);
+}
+.context span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:rtl;text-align:left}
+.context .arrow{flex-shrink:0;color:var(--subtle)}
+.top-actions{display:flex;align-items:center;gap:8px;flex-shrink:0}
+
+/* -------------------------------------------------------------- botones */
 .btn{
-  background:transparent;border:1px solid var(--edge);color:var(--bone);
-  padding:6px 14px;border-radius:2px;cursor:pointer;
-  font-family:var(--display);font-size:14px;font-weight:600;
-  letter-spacing:.1em;text-transform:uppercase;
-  transition:background .12s,border-color .12s;
+  display:inline-flex;align-items:center;justify-content:center;gap:7px;
+  min-height:32px;padding:0 13px;border-radius:var(--r-md);cursor:pointer;
+  background:var(--surface);border:1px solid var(--border-strong);color:var(--text);
+  font-size:13px;font-weight:500;white-space:nowrap;
+  transition:background .12s,border-color .12s,color .12s;
 }
-.btn:hover:not(:disabled){background:var(--raised);border-color:var(--track)}
-.btn:disabled{opacity:.4;cursor:not-allowed}
-.btn.lit{background:var(--bone);color:var(--panel);border-color:var(--bone)}
-.btn.lit:hover:not(:disabled){background:#fff}
-.btn.stop{border-color:var(--danger);color:var(--danger)}
-.btn.ghost{border-color:transparent;color:var(--dim)}
-.btn.ghost:hover:not(:disabled){color:var(--bone);border-color:var(--edge);background:transparent}
-.btn.ghost[aria-expanded="true"]{color:var(--bone);border-color:var(--track)}
+.btn:hover:not(:disabled){background:var(--surface-2);border-color:var(--subtle)}
+.btn:active:not(:disabled){background:var(--surface-3)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-fg);font-weight:600}
+.btn.primary:hover:not(:disabled){background:var(--accent-hover);border-color:var(--accent-hover)}
+.btn.danger{color:var(--danger);border-color:var(--danger)}
+.btn.danger:hover:not(:disabled){background:var(--danger);color:var(--surface);border-color:var(--danger)}
+.btn.ghost{background:transparent;border-color:transparent;color:var(--muted)}
+.btn.ghost:hover:not(:disabled){background:var(--surface-2);color:var(--text)}
+.btn.sm{min-height:28px;padding:0 10px;font-size:12.5px}
+.btn .ico{width:15px;height:15px;flex-shrink:0}
+.btn[data-busy="1"]{position:relative;color:transparent}
+.btn[data-busy="1"]::after{
+  content:"";position:absolute;inset:0;margin:auto;width:14px;height:14px;
+  border:2px solid currentColor;border-top-color:transparent;border-radius:50%;
+  color:var(--text);animation:spin .7s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
 
-/* ---------- campos ----------
-   Un solo estilo para todo lo que se escribe. Antes cada bloque traía el suyo y
-   varios quedaban con el aspecto por defecto del navegador: fondo blanco sobre
-   un panel oscuro. */
+/* ------------------------------------------------------ campos de formulario */
 .field{
-  background:var(--sunk);border:1px solid var(--edge);color:var(--bone);
-  padding:9px 11px;border-radius:4px;min-width:0;
-  font-family:var(--mono);font-size:12.5px;line-height:1.4;
+  background:var(--surface);border:1px solid var(--border-strong);color:var(--text);
+  min-height:32px;padding:6px 10px;border-radius:var(--r-md);min-width:0;width:100%;
+  font-size:13px;line-height:1.45;
   transition:border-color .12s,box-shadow .12s;
 }
-.field::placeholder{color:#6b7482}
-.field:hover:not(:disabled):not(:focus){border-color:var(--track)}
-.field:focus{
-  border-color:var(--bone);outline:none;
-  box-shadow:0 0 0 3px rgba(232,230,225,.10);
-}
-.field:disabled{opacity:.45;cursor:not-allowed}
-select.field{cursor:pointer;appearance:none;padding-right:28px;
-  background-image:linear-gradient(45deg,transparent 50%,var(--dim) 50%),
-                   linear-gradient(135deg,var(--dim) 50%,transparent 50%);
-  background-position:calc(100% - 15px) 52%,calc(100% - 10px) 52%;
+.field::placeholder{color:var(--subtle)}
+.field:hover:not(:disabled):not(:focus){border-color:var(--subtle)}
+.field:focus{border-color:var(--accent);outline:none;
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 22%,transparent)}
+.field:disabled{opacity:.5;cursor:not-allowed;background:var(--surface-2)}
+select.field{cursor:pointer;appearance:none;padding-right:30px;
+  background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),
+                   linear-gradient(135deg,var(--muted) 50%,transparent 50%);
+  background-position:calc(100% - 16px) 52%,calc(100% - 11px) 52%;
   background-size:5px 5px,5px 5px;background-repeat:no-repeat}
-textarea.field{resize:vertical;line-height:1.6}
+textarea.field{resize:vertical;line-height:1.6;font-family:var(--mono);font-size:12.5px}
+input.mono,.field.mono{font-family:var(--mono);font-size:12.5px}
 
-/* ---------- barra de ejecución ---------- */
-.runbar{display:flex;gap:8px;align-items:center;padding:12px 20px;
-  background:var(--sunk);border-bottom:1px solid var(--edge);flex-shrink:0}
-#source{flex:0 0 220px}
-#story{flex:1;font-size:13.5px;letter-spacing:.03em}
-.rb-sep{flex:0 0 1px;height:24px;background:var(--edge);margin:0 4px}
+/* Un campo es siempre lo mismo: etiqueta en criollo, clave real, control, ayuda.
+   Es la pieza que faltaba en el CSS y por eso los formularios se leían pegados. */
+.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px 20px}
+.form-grid.one{grid-template-columns:1fr}
+.f-wide{grid-column:1/-1}
+.f{display:flex;flex-direction:column;gap:6px;min-width:0}
+.f-label{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;
+  font-size:13px;font-weight:600;color:var(--text)}
+.f-label code{font-size:11px;color:var(--muted);background:var(--surface-2);
+  border:1px solid var(--border);border-radius:var(--r-sm);padding:1px 6px;font-weight:400}
+.f-label .req{color:var(--danger);font-weight:700}
+.f-help{font-size:12px;color:var(--muted);line-height:1.5}
+.f-row{display:flex;gap:8px;align-items:flex-start}
+.f-row .field{flex:1}
 
-.settings{background:var(--sunk);border-bottom:1px solid var(--edge);flex-shrink:0}
-.settings summary{display:none}
-.set-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px 16px;padding:4px 20px 18px}
-.set-field{display:flex;flex-direction:column;gap:5px;min-width:0}
-.set-field>span{font-family:var(--display);font-size:11px;font-weight:600;
-  letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
-.set-field .field{width:100%}
-.set-row{display:flex;gap:8px}
-.set-row .field{flex:1}
-.span2{grid-column:span 2}
-.span4{grid-column:1/-1}
-.hint{font-size:11px;color:var(--dim);font-family:var(--mono);word-break:break-all;line-height:1.5}
-.repo-state{padding:10px 12px;border-radius:4px;border:1px solid var(--edge);
-  background:var(--raised);font-size:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-.repo-state .dot{width:8px;height:8px;border-radius:50%;background:var(--track);flex-shrink:0}
-.repo-state[data-ok="1"] .dot{background:var(--clear)}
-.repo-state[data-ok="0"] .dot{background:var(--danger)}
-.repo-state code{font-family:var(--mono);font-size:11px;color:var(--dim)}
-.repo-state .grow,.dock-head .grow{flex:1}
-@media (max-width:900px){.set-grid{grid-template-columns:1fr 1fr}.span2,.span4{grid-column:1/-1}}
-
-/* ---------- paneles ---------- */
-.pane{flex:1;min-height:0;overflow:hidden;display:none}
-.pane[data-active="1"]{display:flex;flex-direction:column}
-.empty{margin:auto;padding:40px;text-align:center;color:var(--dim);max-width:380px}
-
+/* --------------------------------------------------- barra de ejecución */
+/* La acción primaria de la app vive siempre a la vista, en el mismo lugar,
+   pase lo que pase con la navegación. */
+.runbar{
+  display:flex;align-items:center;gap:10px;flex-shrink:0;flex-wrap:wrap;
+  padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--border);
+}
+.runbar #source{flex:0 0 210px;width:210px}
+.runbar #story{flex:1 1 260px;width:auto;font-family:var(--mono);font-size:12.5px}
+.run-state{
+  display:inline-flex;align-items:center;gap:8px;flex-shrink:0;
+  padding:5px 11px;border-radius:999px;border:1px solid var(--border);
+  background:var(--surface-2);font-size:12.5px;color:var(--muted);
+}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--subtle);flex-shrink:0}
+[data-s="running"] .dot{background:var(--warn);animation:pulse 1.5s ease-in-out infinite}
+[data-s="idle"] .dot{background:var(--ok)}
+[data-s="error"] .dot{background:var(--danger)}
 @keyframes pulse{
-  0%,100%{box-shadow:0 0 0 0 rgba(232,163,61,.55)}
-  50%{box-shadow:0 0 0 7px rgba(232,163,61,0)}
+  0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--warn) 55%,transparent)}
+  70%{box-shadow:0 0 0 6px transparent}
 }
 
-/* Barras de scroll discretas: las del sistema cortaban el panel como un marco. */
-*{scrollbar-width:thin;scrollbar-color:var(--edge) transparent}
-::-webkit-scrollbar{width:10px;height:10px}
-::-webkit-scrollbar-track{background:transparent}
-::-webkit-scrollbar-thumb{background:var(--edge);border-radius:6px;
-  border:3px solid transparent;background-clip:content-box}
-::-webkit-scrollbar-thumb:hover{background:var(--track);background-clip:content-box}
+/* ------------------------------------------------------------- estructura */
+.shell{display:flex;flex:1;min-height:0}
 
-/* ---------- una sola pantalla ----------
-   El grafo es la vista principal y se queda con todo el alto disponible. La
-   consola se pliega a una línea cuando no hay nada que mirar: vacía se estaba
-   comiendo un tercio de la pantalla. */
-.stage{display:grid;grid-template-columns:1fr minmax(320px,26%);flex:1;min-height:0}
-.canvas{overflow:auto;background:var(--sunk);padding:20px}
-.panel{border-left:1px solid var(--edge);overflow:hidden;
-  display:flex;flex-direction:column;min-width:0;background:var(--panel)}
-
-.dock{display:flex;flex-direction:column;flex-shrink:0;
-  border-top:1px solid var(--edge);background:var(--panel)}
-.dock[data-open="1"]{height:34vh}
-.dock-head{
-  display:flex;align-items:center;gap:9px;width:100%;
-  padding:9px 20px;background:none;border:none;cursor:pointer;
-  font-family:var(--mono);font-size:11.5px;color:var(--dim);text-align:left;
+.sidenav{
+  flex:0 0 216px;display:flex;flex-direction:column;gap:2px;padding:12px 10px;
+  background:var(--surface);border-right:1px solid var(--border);overflow-y:auto;
 }
-.dock-head:hover{background:var(--raised);color:var(--bone)}
-.dock-head .dot{width:8px;height:8px;border-radius:50%;background:var(--track);flex-shrink:0}
-.dock[data-s="running"] .dock-head .dot{background:var(--caution);animation:pulse 1.4s ease-in-out infinite}
-.dock[data-s="idle"] .dock-head .dot{background:var(--clear)}
-.dock[data-s="error"] .dock-head .dot{background:var(--danger)}
-.dock-chevron{transition:transform .15s}
-.dock[data-open="1"] .dock-chevron{transform:rotate(180deg)}
-.dock[data-open="0"] .log,.dock[data-open="0"] .send{display:none}
-
-/* ---------- editor ---------- */
-.ed-head{padding:16px 20px 12px;border-bottom:1px solid var(--edge);flex-shrink:0}
-.ed-path{font-family:var(--mono);font-size:12px;color:var(--dim)}
-.ed-title{font-family:var(--display);font-size:22px;font-weight:600;
-  letter-spacing:.06em;text-transform:uppercase;margin:2px 0 6px}
-.ed-body{flex:1 1 auto;display:flex;flex-direction:column;padding:14px 20px;min-height:0}
-.ed-body>label{font-family:var(--display);font-size:12px;font-weight:600;
-  letter-spacing:.16em;text-transform:uppercase;color:var(--dim);margin-bottom:8px}
-.ed-body textarea{
-  flex:1;width:100%;resize:none;background:var(--sunk);
-  border:1px solid var(--edge);border-radius:3px;padding:14px;
-  font-family:var(--mono);font-size:12.5px;line-height:1.65;tab-size:2;min-height:0;
+.nav-title{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--subtle);padding:10px 10px 6px}
+.nav-item{
+  display:flex;align-items:center;gap:11px;width:100%;
+  padding:9px 10px;border-radius:var(--r-md);border:1px solid transparent;
+  background:none;cursor:pointer;text-align:left;
+  font-size:13.5px;color:var(--muted);transition:background .12s,color .12s;
 }
-.ed-body textarea:focus{border-color:var(--track);outline:none}
-.ed-foot{display:flex;align-items:center;gap:10px;padding:12px 20px;
-  border-top:1px solid var(--edge);flex-shrink:0}
-.dirty{font-family:var(--mono);font-size:11px;color:var(--caution);margin-right:auto}
-
-/* ---------- editar a pantalla completa ---------- */
-.editor-modal{
-  width:min(1180px,94vw);height:min(88vh,940px);max-width:none;max-height:none;
-  padding:0;border:1px solid var(--edge);border-radius:4px;background:var(--panel);
+.nav-item .ico{width:17px;height:17px;flex-shrink:0;opacity:.85}
+.nav-item:hover{background:var(--surface-2);color:var(--text)}
+.nav-item[aria-current="page"]{
+  background:color-mix(in srgb,var(--accent) 12%,transparent);
+  color:var(--accent);font-weight:600;
 }
-.editor-modal::backdrop{background:rgba(0,0,0,.72)}
-.editor-modal .pane{display:flex!important;flex-direction:column;height:100%;overflow:hidden}
-.editor-modal .empty{display:none}
-.editor-modal #edView{display:flex;flex-direction:column;height:100%;min-height:0}
-/* Dos columnas: la configuración a un lado y las instrucciones al otro, para
-   que el texto —que es lo que se viene a editar— arranque con altura real. */
-.ed-main{flex:1;min-height:0;display:grid;grid-template-columns:minmax(300px,34%) 1fr}
-.ed-main .fm{border-right:1px solid var(--edge);border-bottom:none;overflow-y:auto}
-.ed-main .fm summary{display:none}
-.ed-main .fm-grid{grid-template-columns:1fr}
-@media (max-width:860px){
-  .ed-main{grid-template-columns:1fr;overflow-y:auto}
-  .ed-main .fm{border-right:none;border-bottom:1px solid var(--edge)}
-}
+.nav-item[aria-current="page"] .ico{opacity:1}
+.nav-item .count{margin-left:auto;font-size:11px;color:var(--subtle);
+  font-family:var(--mono)}
+.nav-item .warnmark{margin-left:auto;width:7px;height:7px;border-radius:50%;
+  background:var(--danger)}
+.nav-sep{height:1px;background:var(--border);margin:10px 4px}
 
-/* ---------- identidad de cada componente ---------- */
-/* Cada cosa que el panel muestra dice qué es. Los nombres son los de Claude
-   Code — skill, subagente, hook, MCP server — para que usar el studio enseñe
-   el vocabulario real y no uno inventado acá. */
+.main{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden}
+.view{flex:1;min-height:0;overflow-y:auto;display:none;flex-direction:column}
+.view[data-active="1"]{display:flex}
+
+.page-head{padding:16px 24px 14px;border-bottom:1px solid var(--border);
+  background:var(--surface);flex-shrink:0}
+.crumbs{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--subtle);
+  margin-bottom:6px}
+.crumbs b{font-weight:500;color:var(--muted)}
+.page-head h1{font-size:21px;margin-bottom:5px}
+.page-head p{margin:0;color:var(--muted);font-size:13px;max-width:78ch}
+.page-body{padding:20px 24px 28px;display:flex;flex-direction:column;gap:18px}
+
+/* ---------------------------------------------------------------- tarjetas */
+.card{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);
+  box-shadow:var(--shadow-1);overflow:hidden;
+}
+.card-head{
+  display:flex;align-items:center;gap:12px;padding:13px 16px;
+  border-bottom:1px solid var(--border);background:var(--surface);
+}
+.card-head h2{font-size:14px;letter-spacing:0}
+.card-head .sub{font-size:12px;color:var(--subtle)}
+.card-head .grow{flex:1}
+.card-body{padding:16px}
+.card-body.flush{padding:0}
+.card-foot{display:flex;align-items:center;gap:10px;padding:12px 16px;
+  border-top:1px solid var(--border);background:var(--surface-2)}
+.card-foot .grow{flex:1}
+
+/* --------------------------------------------------------- tipo de componente */
+/* Los nombres son los de Claude Code —skill, subagente, hook, MCP server— para
+   que usar el studio enseñe el vocabulario real y no uno inventado acá. */
 .kind{
-  display:inline-block;padding:1px 5px;border-radius:2px;
-  font-family:var(--display);font-size:10px;font-weight:600;
-  letter-spacing:.1em;text-transform:uppercase;
-  border:1px solid currentColor;flex-shrink:0;
+  display:inline-flex;align-items:center;gap:5px;flex-shrink:0;
+  padding:2px 8px;border-radius:999px;
+  font-size:11px;font-weight:600;letter-spacing:.01em;
+  color:var(--k);background:color-mix(in srgb,var(--k) 13%,transparent);
+  border:1px solid color-mix(in srgb,var(--k) 34%,transparent);
 }
-.kind[data-k="skill"]{color:#7fb2f0}
-.kind[data-k="agent"]{color:#c79bf0}
-.kind[data-k="hook"]{color:var(--caution)}
-.kind[data-k="script"]{color:#8fd0c0}
-.kind[data-k="mcp"]{color:#e8a0b8}
-.kind[data-k="reference"]{color:var(--dim)}
-.kind[data-k="manifest"]{color:var(--dim)}
-.chip[aria-pressed="true"] .kind{color:#4a525f}
+.kind[data-k="skill"]{--k:var(--k-skill)}
+.kind[data-k="agent"]{--k:var(--k-agent)}
+.kind[data-k="hook"]{--k:var(--k-hook)}
+.kind[data-k="script"]{--k:var(--k-script)}
+.kind[data-k="mcp"]{--k:var(--k-mcp)}
+.kind[data-k="reference"]{--k:var(--k-reference)}
+.kind[data-k="manifest"]{--k:var(--k-manifest)}
+.kind[data-k="tool"]{--k:var(--k-tool)}
+.kind[data-k="plugin"]{--k:var(--k-plugin)}
 
-.what{font-size:12px;color:var(--dim);line-height:1.55;margin:6px 0 0;max-width:74ch}
-.phase-help{font-size:11.5px;color:var(--dim);line-height:1.45;padding:2px 0 0}
+.tag{display:inline-flex;align-items:center;padding:2px 7px;border-radius:var(--r-sm);
+  background:var(--surface-2);border:1px solid var(--border);
+  font-family:var(--mono);font-size:11px;color:var(--muted)}
+.tag.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 40%,transparent);
+  background:color-mix(in srgb,var(--warn) 12%,transparent)}
+.tag.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 40%,transparent);
+  background:color-mix(in srgb,var(--ok) 12%,transparent)}
 
-/* ---------- barra de sesión de Claude ---------- */
-.auth{
-  display:flex;align-items:center;gap:7px;padding:5px 10px;border-radius:2px;
-  background:var(--raised);border:1px solid var(--edge);cursor:pointer;
-  font-family:var(--mono);font-size:11px;color:var(--bone);flex-shrink:0;
+.prose{font-size:13px;color:var(--muted);line-height:1.6;max-width:78ch;margin:0}
+.prose+.prose{margin-top:10px}
+
+/* ------------------------------------------------------------- catálogo */
+.cat-tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:14px 16px;
+  border-bottom:1px solid var(--border)}
+.cat-tools .search{flex:1 1 240px;max-width:340px}
+.filters{display:flex;gap:6px;flex-wrap:wrap}
+.filter{
+  padding:4px 11px;border-radius:999px;border:1px solid var(--border-strong);
+  background:var(--surface);color:var(--muted);font-size:12.5px;cursor:pointer;
 }
-.auth:hover{border-color:var(--track)}
-.auth .dot{width:7px;height:7px;border-radius:50%;background:var(--track);flex-shrink:0}
-.auth[data-on="1"] .dot{background:var(--clear)}
-.auth[data-on="0"] .dot{background:var(--danger)}
+.filter:hover{background:var(--surface-2);color:var(--text)}
+.filter[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);
+  color:var(--accent-fg);font-weight:600}
 
+table.cat{width:100%;border-collapse:collapse}
+table.cat th{
+  text-align:left;font-size:11px;font-weight:700;letter-spacing:.07em;
+  text-transform:uppercase;color:var(--subtle);
+  padding:10px 16px;border-bottom:1px solid var(--border);background:var(--surface-2);
+  position:sticky;top:0;z-index:1;
+}
+table.cat td{padding:12px 16px;border-bottom:1px solid var(--border);vertical-align:top}
+table.cat tr:last-child td{border-bottom:none}
+table.cat tbody tr{cursor:pointer;transition:background .1s}
+table.cat tbody tr:hover{background:var(--surface-2)}
+table.cat tbody tr[data-open="1"]{background:color-mix(in srgb,var(--accent) 9%,transparent)}
+.cat-name{font-weight:600;font-size:13.5px;display:block}
+.cat-path{font-family:var(--mono);font-size:11px;color:var(--subtle);display:block;margin-top:2px}
+.cat-desc{font-size:12.5px;color:var(--muted);line-height:1.5;max-width:62ch}
+.cat-meta{display:flex;gap:5px;flex-wrap:wrap;margin-top:7px}
+.cat-empty{padding:38px 16px;text-align:center;color:var(--subtle);font-size:13px}
+@media (max-width:900px){
+  table.cat thead{display:none}
+  table.cat tr{display:block;border-bottom:1px solid var(--border)}
+  table.cat td{display:block;border:none;padding:4px 16px}
+  table.cat td:first-child{padding-top:14px}
+  table.cat td:last-child{padding-bottom:14px}
+}
+
+/* -------------------------------------------------------------- el ciclo */
+.ciclo-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,25%);gap:18px;
+  align-items:start}
+@media (max-width:1080px){.ciclo-grid{grid-template-columns:1fr}}
+/* El mapa scrollea adentro de su tarjeta en vez de estirar la página: así la
+   referencia de estados y el panel de detalle no se van abajo del pliegue. */
+.canvas{overflow:auto;padding:16px;background:var(--surface);
+  max-height:min(64vh,760px);min-height:280px}
+
+/* Con las dos columnas al lado, la vista del ciclo ocupa el alto disponible y
+   lo único que scrollea es el mapa. En una pantalla de 800px el diagrama entra
+   entero sin empujar la referencia de estados fuera de cuadro. */
+@media (min-width:1081px){
+  #viewCiclo{overflow:hidden}
+  #viewCiclo .page-body{flex:1;min-height:0}
+  #viewCiclo .ciclo-grid{height:100%;min-height:0}
+  #viewCiclo .ciclo-grid>.card{height:100%;min-height:0;display:flex;flex-direction:column}
+  #viewCiclo .card-body.flush{flex:1;min-height:0;display:flex;flex-direction:column}
+  #viewCiclo .canvas{flex:1;max-height:none}
+  #viewCiclo #nodeDetail{flex:1;min-height:0;overflow-y:auto}
+}
+#graph{display:block}
+
+.legend{display:flex;gap:16px;flex-wrap:wrap;padding:11px 16px;
+  border-top:1px solid var(--border);background:var(--surface-2);
+  font-size:12px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{width:11px;height:11px;border-radius:3px;border:2px solid var(--border-strong);
+  display:inline-block}
+.legend i.done{border-color:var(--ok)}
+.legend i.active{border-color:var(--warn)}
+.legend i.blocked{border-color:var(--danger)}
+
+/* Nodos del grafo. El estado se marca con color y además con una palabra en el
+   subtítulo: el color solo deja afuera a quien no lo distingue. */
+.gnode{cursor:pointer}
+.gnode rect{fill:var(--surface-2);stroke:var(--border-strong);stroke-width:1.5;rx:7;
+  transition:stroke .12s,fill .12s}
+.gnode text{font-family:var(--sans);font-size:12px;fill:var(--text)}
+.gnode .gsub{font-size:10.5px;fill:var(--muted)}
+.gnode:hover rect{stroke:var(--accent)}
+.gnode:focus{outline:none}
+.gnode:focus-visible rect{stroke:var(--accent);stroke-width:2.5}
+.gnode[data-sel="1"] rect{stroke:var(--accent);stroke-width:2.5;
+  fill:color-mix(in srgb,var(--accent) 10%,var(--surface-2))}
+.gnode[data-state="active"] rect{stroke:var(--warn);stroke-width:2}
+.gnode[data-state="done"] rect{stroke:var(--ok)}
+.gnode[data-state="blocked"] rect{stroke:var(--danger);stroke-width:2}
+.gnode[data-kind="phase"] rect{fill:var(--surface)}
+.gnode[data-kind="agent"] rect{fill:color-mix(in srgb,var(--k-agent) 11%,var(--surface))}
+.gnode[data-kind="hook"] rect{fill:color-mix(in srgb,var(--k-hook) 11%,var(--surface))}
+.gnode[data-kind="script"] rect{fill:color-mix(in srgb,var(--k-script) 11%,var(--surface))}
+.gnode[data-kind="mcp"] rect{fill:color-mix(in srgb,var(--k-mcp) 11%,var(--surface))}
+.gnode[data-kind="main"] rect{fill:var(--surface);stroke-dasharray:5 3}
+.gedge{stroke:var(--border-strong);stroke-width:1.5;fill:none}
+.gedge.spine{stroke:var(--subtle)}
+.gedge.done{stroke:var(--ok)}
+.gedge.loop{stroke:var(--warn)}
+.gedge.dashed{stroke-dasharray:4 4}
+.glabel{font-family:var(--sans);font-size:11px;font-weight:700;letter-spacing:.07em;
+  text-transform:uppercase;fill:var(--subtle)}
+.gloop{fill:var(--warn);font-size:10px;text-anchor:middle;font-weight:600}
+
+/* ------------------------------------------------------- panel de detalle */
+.detail{display:flex;flex-direction:column;gap:12px;padding:16px}
+.detail-head{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.detail-head h3{font-size:15px}
+.detail-actions{display:flex;gap:8px;flex-wrap:wrap}
+.out{
+  background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-md);
+  border-left:3px solid var(--border-strong);padding:10px 12px;
+  font-family:var(--mono);font-size:11.5px;line-height:1.6;
+  white-space:pre-wrap;word-break:break-word;max-height:320px;overflow-y:auto;
+}
+.out header{font-family:var(--sans);font-size:10.5px;font-weight:700;letter-spacing:.07em;
+  text-transform:uppercase;color:var(--subtle);margin-bottom:6px}
+.out.call{border-left-color:var(--k-script)}
+.out.say{border-left-color:var(--k-skill)}
+.out.result{border-left-color:var(--ok)}
+.placeholder{padding:22px 16px;text-align:center;color:var(--subtle);font-size:12.5px;
+  line-height:1.6}
+
+/* ---------------------------------------------------------------- consola */
+.dock{display:flex;flex-direction:column;flex-shrink:0;
+  border-top:1px solid var(--border);background:var(--surface)}
+.dock[data-open="1"]{height:34vh;min-height:220px}
+.dock-head{
+  display:flex;align-items:center;gap:10px;width:100%;padding:10px 16px;
+  background:none;border:none;cursor:pointer;text-align:left;font-size:13px;color:var(--muted);
+}
+.dock-head:hover{background:var(--surface-2);color:var(--text)}
+.dock-head .grow{flex:1}
+.dock-head .chev{transition:transform .15s;color:var(--subtle);font-size:11px}
+.dock[data-open="1"] .dock-head .chev{transform:rotate(180deg)}
+.dock[data-open="0"] .log,.dock[data-open="0"] .send{display:none}
+.log{flex:1;overflow-y:auto;padding:8px 16px 12px;font-family:var(--mono);font-size:12px;
+  background:var(--surface-2)}
+.ev{display:flex;gap:12px;padding:4px 0;border-bottom:1px solid var(--border)}
+.ev:last-child{border-bottom:none}
+.ev-t{color:var(--subtle);flex-shrink:0;font-size:11px}
+.ev-k{flex-shrink:0;width:78px;font-size:11px;color:var(--subtle)}
+.ev-m{white-space:pre-wrap;word-break:break-word;min-width:0;color:var(--text)}
+.ev[data-k="phase"] .ev-k,.ev[data-k="agent"] .ev-k{color:var(--warn);font-weight:600}
+.ev[data-k="blocked"] .ev-k,.ev[data-k="error"] .ev-k,.ev[data-k="stderr"] .ev-k{color:var(--danger);font-weight:600}
+.ev[data-k="result"] .ev-k,.ev[data-k="artifact"] .ev-k{color:var(--ok);font-weight:600}
+.ev[data-k="tool"] .ev-k{color:var(--k-script)}
+.ev[data-k="ask"] .ev-k{color:var(--k-skill)}
+.ev-tool b{font-weight:600;color:var(--k-script)}
+.send{display:flex;gap:8px;padding:10px 16px;border-top:1px solid var(--border);
+  background:var(--surface);flex-shrink:0}
+.send textarea{flex:1;resize:none;height:36px}
+
+/* ------------------------------------------------------------- diálogos */
 dialog{
-  border:1px solid var(--edge);border-radius:3px;background:var(--panel);
-  color:var(--bone);padding:0;max-width:640px;width:calc(100% - 40px);
+  border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface);
+  color:var(--text);padding:0;max-width:620px;width:calc(100% - 40px);
+  box-shadow:var(--shadow-2);
 }
-dialog::backdrop{background:rgba(0,0,0,.62)}
-.dlg-head{display:flex;align-items:baseline;gap:10px;padding:16px 20px 12px;
-  border-bottom:1px solid var(--edge)}
-.dlg-head h2{font-family:var(--display);font-size:19px;font-weight:600;
-  letter-spacing:.1em;text-transform:uppercase;margin:0}
-.dlg-body{padding:16px 20px;max-height:60vh;overflow-y:auto}
-.dlg-foot{display:flex;gap:8px;padding:12px 20px;border-top:1px solid var(--edge)}
+dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
+.dlg-head{display:flex;align-items:center;gap:10px;padding:16px 20px;
+  border-bottom:1px solid var(--border)}
+.dlg-head h2{font-size:16px}
+.dlg-head .grow{flex:1}
+.dlg-body{padding:18px 20px;max-height:62vh;overflow-y:auto;
+  display:flex;flex-direction:column;gap:12px}
+.dlg-foot{display:flex;gap:8px;align-items:center;padding:13px 20px;
+  border-top:1px solid var(--border);background:var(--surface-2)}
 .dlg-foot .grow{flex:1}
 .auth-out{
-  background:var(--sunk);border:1px solid var(--edge);border-radius:2px;
-  padding:10px;margin-top:12px;font-family:var(--mono);font-size:11px;
+  background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-md);
+  padding:10px 12px;font-family:var(--mono);font-size:11.5px;
   white-space:pre-wrap;word-break:break-word;max-height:200px;overflow-y:auto;
 }
-.auth-out a{color:var(--clear)}
-.glos{display:grid;grid-template-columns:auto 1fr;gap:12px 14px;align-items:start}
-.glos dd{margin:0;font-size:12.5px;color:var(--dim);line-height:1.55}
+.glos{display:grid;gap:14px}
+.glos-row{display:grid;grid-template-columns:120px 1fr;gap:14px;align-items:start}
+.glos-row p{margin:0;font-size:12.5px;color:var(--muted);line-height:1.6}
+@media (max-width:560px){.glos-row{grid-template-columns:1fr;gap:6px}}
 
-/* ---------- consola de la sesión ---------- */
-.send{display:flex;gap:8px;padding:12px 20px;border-top:1px solid var(--edge);
-  background:var(--sunk);flex-shrink:0}
-.send textarea{
-  flex:1;resize:none;height:38px;background:var(--panel);border:1px solid var(--edge);
-  border-radius:2px;padding:9px 10px;font-family:var(--mono);font-size:12px;
+/* ------------------------------------------------------- editor a pantalla */
+/* Solo cuando está abierto: un `display` incondicional acá le gana al
+   `display:none` que el navegador le da a un <dialog> cerrado, y el editor
+   quedaba encima de todo desde que cargaba la página. */
+.editor{width:min(1220px,95vw);height:min(90vh,960px);max-width:none}
+.editor[open]{display:flex}
+.ed-wrap{display:flex;flex-direction:column;width:100%;min-height:0}
+.ed-head{padding:16px 20px;border-bottom:1px solid var(--border);flex-shrink:0}
+.ed-crumb{font-family:var(--mono);font-size:11.5px;color:var(--subtle);margin-bottom:6px}
+.ed-title-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.ed-title-row h2{font-size:18px}
+.ed-what{margin:8px 0 0;font-size:12.5px;color:var(--muted);line-height:1.55;max-width:88ch}
+.ed-main{flex:1;min-height:0;display:grid;grid-template-columns:minmax(300px,33%) minmax(0,1fr)}
+/* Un archivo sin frontmatter —un .sh, un .json— no tiene columna de configuración:
+   sin esto quedaban 300px vacíos comiéndose el ancho del texto. */
+.ed-main.no-fm{grid-template-columns:1fr}
+.ed-side{border-right:1px solid var(--border);overflow-y:auto;padding:16px 18px;
+  background:var(--surface-2)}
+.ed-side h3{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--subtle);margin-bottom:14px}
+.ed-body{display:flex;flex-direction:column;min-height:0;padding:16px 18px}
+.ed-body>label{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--subtle);margin-bottom:9px}
+.ed-body textarea{
+  flex:1;width:100%;resize:none;min-height:0;
+  background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-md);
+  padding:13px;font-family:var(--mono);font-size:12.5px;line-height:1.7;tab-size:2;
 }
-.send textarea:focus{border-color:var(--track);outline:none}
-.send textarea:disabled{opacity:.45}
-
-/* ---------- grafo de ejecución ---------- */
-#graph{display:block}
-.gnode rect{fill:var(--raised);stroke:var(--edge);stroke-width:1.5;rx:3}
-.gnode text{font-family:var(--mono);font-size:11px;fill:var(--bone)}
-.gnode .gsub{font-size:9px;fill:var(--dim)}
-.gnode{cursor:pointer}
-.gnode:hover rect{stroke:var(--track)}
-.gnode[data-sel="1"] rect{stroke:var(--bone);stroke-width:2.5}
-.gnode[data-state="active"] rect{stroke:var(--caution)}
-.gnode[data-state="done"] rect{stroke:var(--clear)}
-.gnode[data-state="blocked"] rect{stroke:var(--danger)}
-.gnode[data-kind="agent"] rect{fill:#1e1a26}
-.gnode[data-kind="hook"] rect{fill:#241f14}
-.gnode[data-kind="script"] rect{fill:#16211f}
-.gnode[data-kind="mcp"] rect{fill:#241a1f}
-.gnode[data-kind="main"] rect{fill:#1a2028;stroke-dasharray:4 3}
-.gedge.loop{stroke:var(--caution)}
-.gedge{stroke:var(--edge);stroke-width:1.5;fill:none}
-.gedge.spine{stroke:var(--track)}
-.gedge.done{stroke:var(--clear)}
-.gedge.dashed{stroke-dasharray:3 3}
-.glabel{font-family:var(--display);font-size:11px;letter-spacing:.16em;
-  text-transform:uppercase;fill:var(--dim)}
-.gloop{fill:var(--caution);font-size:10px;text-anchor:middle}
-.gnode rect{transition:stroke .12s}
-
-.node-detail{padding:16px 20px;overflow-y:auto;flex:1;min-height:0}
-.nd-head{display:flex;align-items:center;gap:10px;margin-bottom:6px}
-.nd-title{font-family:var(--display);font-size:17px;font-weight:600;
-  letter-spacing:.08em;text-transform:uppercase;margin:0}
-.nd-out{
-  background:var(--sunk);border:1px solid var(--edge);border-radius:2px;
-  padding:10px 12px;margin-top:10px;font-family:var(--mono);font-size:11.5px;
-  white-space:pre-wrap;word-break:break-word;line-height:1.6;
+.ed-body textarea:focus{border-color:var(--accent);outline:none;
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 20%,transparent)}
+.dirty{font-size:12px;color:var(--warn);display:flex;align-items:center;gap:6px}
+@media (max-width:860px){
+  .ed-main{grid-template-columns:1fr;overflow-y:auto}
+  .ed-side{border-right:none;border-bottom:1px solid var(--border)}
+  .ed-body{min-height:420px}
 }
-.nd-out header{
-  font-family:var(--display);font-size:10px;letter-spacing:.14em;
-  text-transform:uppercase;color:var(--dim);margin-bottom:6px;
+
+/* ------------------------------------------------------------------ avisos */
+/* Toasts en vez de una franja: avisar no tiene por qué mover el contenido de
+   lugar justo cuando el ojo estaba en otra cosa. */
+/* Arriba a la derecha: abajo tapaban el campo para escribirle a Claude, que es
+   justo lo que uno quiere usar después de leer el aviso. */
+.toasts{position:fixed;right:16px;top:118px;z-index:50;display:flex;
+  flex-direction:column;gap:8px;max-width:min(460px,calc(100vw - 32px))}
+.toast{
+  display:flex;align-items:flex-start;gap:10px;padding:11px 13px;
+  background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--subtle);
+  border-radius:var(--r-md);box-shadow:var(--shadow-2);font-size:12.5px;line-height:1.5;
+  animation:slide-in .16s ease-out;
 }
-.nd-out.call{border-left:2px solid #8fd0c0}
-.nd-out.say{border-left:2px solid #7fb2f0}
-.nd-out.result{border-left:2px solid var(--clear)}
+.toast.ok{border-left-color:var(--ok)}
+.toast.err{border-left-color:var(--danger)}
+.toast .msg{flex:1;min-width:0;word-break:break-word}
+.toast .x{background:none;border:none;cursor:pointer;color:var(--subtle);
+  font-size:16px;line-height:1;padding:0 2px}
+.toast .x:hover{color:var(--text)}
+@keyframes slide-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 
-/* historia escrita a mano */
-.story{padding:18px 20px 24px;overflow-y:auto;flex:1;min-height:0}
-.node-detail code,.story code{background:var(--sunk);padding:1px 5px;border-radius:3px;
-  font-family:var(--mono);font-size:11px}
-.story-lead{margin:0 0 16px;font-size:12.5px;color:var(--dim);max-width:74ch}
-/* Etiqueta arriba del campo: en un panel angosto, la etiqueta a la izquierda
-   se comía 150px y dejaba el campo sin ancho para escribir. */
-.story-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px 14px;align-items:start}
-.story-key{font-family:var(--display);font-size:11px;font-weight:600;
-  letter-spacing:.12em;text-transform:uppercase;color:var(--dim);
-  grid-column:1/-1;margin-bottom:-9px}
-.story-key .req{color:var(--caution)}
-.story-grid .field{width:100%;grid-column:1/-1}
-.story-grid #stPoints{grid-column:1}
-.story-grid #stLabels{grid-column:2}
-.story-grid textarea.field{min-height:76px}
-.story-note{grid-column:2;font-family:var(--mono);font-size:10.5px;color:var(--dim);
-  margin:-4px 0 2px}
-.story-foot{display:flex;align-items:center;gap:10px;padding-top:20px}
-.story-foot .grow{flex:1}
+.notice{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;
+  border-radius:var(--r-md);font-size:12.5px;line-height:1.55}
+.notice.warn{background:color-mix(in srgb,var(--warn) 11%,transparent);
+  border:1px solid color-mix(in srgb,var(--warn) 35%,transparent);color:var(--text)}
+.notice.err{background:color-mix(in srgb,var(--danger) 10%,transparent);
+  border:1px solid color-mix(in srgb,var(--danger) 35%,transparent);color:var(--text)}
+.notice ul{margin:6px 0 0;padding-left:18px}
 
-/* log */
-.log{flex:1;overflow-y:auto;padding:14px 20px;font-family:var(--mono);font-size:12px}
-.ev{display:flex;gap:10px;padding:3px 0;border-bottom:1px solid rgba(39,45,54,.5)}
-.ev-t{color:var(--dim);flex-shrink:0;font-size:11px}
-.ev-k{flex-shrink:0;width:74px;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--track)}
-.ev-m{white-space:pre-wrap;word-break:break-word;min-width:0}
-.ev[data-k="phase"] .ev-k,.ev[data-k="agent"] .ev-k{color:var(--caution)}
-.ev[data-k="blocked"] .ev-k,.ev[data-k="error"] .ev-k,.ev[data-k="stderr"] .ev-k{color:var(--danger)}
-.ev[data-k="result"] .ev-k,.ev[data-k="artifact"] .ev-k{color:var(--clear)}
-.ev[data-k="tool"] .ev-k{color:#8fd0c0}
-.ev[data-k="ask"] .ev-k{color:#7fb2f0}
-.ev[data-k="ask"] .ev-m{color:#cfe2fa}
-.ev-tool{font-family:var(--mono);color:var(--bone)}
-.ev-tool b{font-weight:500;color:#8fd0c0}
+.state-line{display:flex;gap:10px;align-items:center;flex-wrap:wrap;
+  padding:11px 13px;border:1px solid var(--border);border-radius:var(--r-md);
+  background:var(--surface-2);font-size:12.5px}
+.state-line .grow{flex:1}
+.state-line[data-ok="1"] .dot{background:var(--ok)}
+.state-line[data-ok="0"] .dot{background:var(--danger)}
 
-.banner{padding:10px 20px;font-family:var(--mono);font-size:12px;flex-shrink:0}
-.banner.err{background:rgba(224,82,82,.12);color:var(--danger);
-  border-bottom:1px solid rgba(224,82,82,.3)}
-.banner.ok{background:rgba(63,185,132,.1);color:var(--clear);
-  border-bottom:1px solid rgba(63,185,132,.3)}
+/* Barras de scroll discretas: las del sistema cortaban el panel como un marco. */
+*{scrollbar-width:thin;scrollbar-color:var(--border-strong) transparent}
+::-webkit-scrollbar{width:11px;height:11px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:7px;
+  border:3px solid transparent;background-clip:content-box}
+::-webkit-scrollbar-thumb:hover{background:var(--subtle);background-clip:content-box}
 
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+@media (max-width:760px){
+  .sidenav{flex-basis:64px;padding:10px 6px}
+  .sidenav .nav-item span:not(.count):not(.warnmark){display:none}
+  .nav-title{display:none}
+  .context{display:none}
+}
 </style>
 </head>
 <body>
 
-<div class="rail">
-  <div class="brand">globant<span>·</span>sdlc <span>studio</span></div>
-  <div class="rail-meta" id="railMeta">cargando…</div>
-  <div class="rail-actions">
-    <button class="auth" id="authChip" title="Sesión de Claude Code">
+<a class="skip" href="#main">Saltar al contenido</a>
+
+<!-- ------------------------------------------------------------ barra global -->
+<header class="topbar">
+  <div class="brand">
+    <span class="mark" aria-hidden="true">GS</span>
+    globant-sdlc <small>studio</small>
+  </div>
+  <div class="context" id="railMeta" title="Plugin que se edita → repositorio donde se ejecuta">
+    cargando…
+  </div>
+  <div class="top-actions">
+    <button class="btn sm" id="btnValidate">Validar plugin</button>
+    <button class="btn sm ghost" id="btnReload" title="Volver a leer el plugin del disco">Recargar</button>
+    <button class="btn sm ghost" id="btnTheme" aria-label="Cambiar entre tema claro y oscuro">
+      <span id="themeText">Oscuro</span>
+    </button>
+    <button class="btn sm" id="authChip" data-s="none" title="Sesión de Claude Code">
       <span class="dot"></span><span id="authText">sesión…</span>
     </button>
-    <button class="btn" id="btnGlosario" title="Qué es cada componente">Glosario</button>
-    <button class="btn" id="btnValidate">Validar</button>
-    <button class="btn" id="btnReload">Recargar</button>
   </div>
+</header>
+
+<!-- ------------------------------------------------------- acción primaria -->
+<div class="runbar" role="region" aria-label="Ejecutar una historia">
+  <select class="field" id="source" aria-label="Origen de la historia">
+    <option value="tracker">Historia: desde el tracker</option>
+    <option value="manual">Historia: escrita acá</option>
+    <option value="console">Solo consola, sin historia</option>
+  </select>
+  <input class="field" id="story" aria-label="ID de la historia"
+         placeholder="ID de historia — GLOB-1234, 8891, #245" autocomplete="off">
+  <button class="btn primary" id="btnRun">Ejecutar ciclo</button>
+  <button class="btn danger" id="btnStop" disabled>Detener</button>
+  <span class="run-state" id="runState" data-s="none">
+    <span class="dot"></span><span id="runStateText">Sin sesión abierta</span>
+  </span>
 </div>
 
-<!-- Sesión de Claude Code: el studio no guarda credenciales, delega en el CLI. -->
-<dialog id="dlgAuth">
-  <div class="dlg-head">
-    <h2>Sesión de Claude Code</h2>
-  </div>
+<div class="shell">
+
+  <!-- ------------------------------------------------------------ navegación -->
+  <nav class="sidenav" aria-label="Secciones del studio">
+    <div class="nav-title">Studio</div>
+    <button class="nav-item" data-view="ciclo" aria-current="page">
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="3" y="3" width="7" height="5" rx="1"/><rect x="3" y="10" width="7" height="5" rx="1"/>
+        <rect x="3" y="17" width="7" height="4" rx="1"/><path d="M10 5.5h4M10 12.5h4M10 19h4"/>
+        <rect x="14" y="9" width="7" height="7" rx="1"/>
+      </svg>
+      <span>Ciclo</span>
+    </button>
+    <button class="nav-item" data-view="catalogo">
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M4 6h16M4 12h16M4 18h16"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/>
+        <circle cx="4" cy="18" r="1"/>
+      </svg>
+      <span>Catálogo</span><span class="count" id="catCount"></span>
+    </button>
+    <button class="nav-item" data-view="historia">
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M5 3h9l5 5v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/>
+        <path d="M14 3v5h5M8 13h8M8 17h5"/>
+      </svg>
+      <span>Historia</span>
+    </button>
+    <button class="nav-item" data-view="config">
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M12 2.6l1.6 2.2 2.6-.5.4 2.6 2.4 1.1-1.2 2.4 1.2 2.4-2.4 1.1-.4 2.6-2.6-.5L12 21.4l-1.6-2.2-2.6.5-.4-2.6-2.4-1.1 1.2-2.4-1.2-2.4 2.4-1.1.4-2.6 2.6.5z"/>
+      </svg>
+      <span>Configuración</span><span id="cfgWarn" hidden class="warnmark" title="Hay un problema con el repositorio"></span>
+    </button>
+
+    <div class="nav-sep"></div>
+    <div class="nav-title">Ayuda</div>
+    <button class="nav-item" id="btnGlosario">
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.4 2.3c-.6.3-.9.8-.9 1.4v.3"/>
+        <circle cx="12" cy="17" r=".6" fill="currentColor"/>
+      </svg>
+      <span>Glosario</span>
+    </button>
+  </nav>
+
+  <main class="main" id="main">
+
+    <!-- ================================================================ ciclo -->
+    <section class="view" id="viewCiclo" data-active="1" aria-labelledby="tCiclo">
+      <div class="page-head">
+        <div class="crumbs"><b>Studio</b> › Ciclo</div>
+        <h1 id="tCiclo">Ciclo de la historia</h1>
+        <p>El recorrido que hace una historia de punta a punta: a la izquierda el orden
+           de las fases, y colgando de cada una los componentes que intervienen ahí.</p>
+      </div>
+      <div class="page-body">
+        <div class="ciclo-grid">
+          <div class="card">
+            <div class="card-head">
+              <h2 id="cicloCmd">Mapa del ciclo</h2>
+              <span class="sub" id="cicloSub"></span>
+              <span class="grow"></span>
+            </div>
+            <div class="card-body flush">
+              <div class="canvas"><svg id="graph" role="img" aria-label="Mapa del ciclo"></svg></div>
+            </div>
+            <div class="legend" aria-hidden="false">
+              <span><i></i> sin correr</span>
+              <span><i class="active"></i> en curso</span>
+              <span><i class="done"></i> listo</span>
+              <span><i class="blocked"></i> bloqueado</span>
+              <span>El estado también va escrito en cada caja.</span>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><h2>Detalle</h2></div>
+            <div id="nodeDetail">
+              <p class="placeholder">Elegí un componente del mapa.<br>
+                Si tiene archivo se puede abrir para editar, y si ya corrió vas a ver
+                acá lo que dijo el modelo en ese punto.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================= catálogo -->
+    <section class="view" id="viewCatalogo" aria-labelledby="tCatalogo">
+      <div class="page-head">
+        <div class="crumbs"><b>Studio</b> › Catálogo</div>
+        <h1 id="tCatalogo">Catálogo de componentes</h1>
+        <p>Todo lo que aporta el plugin, en un solo lugar. Cada fila es un archivo real
+           en disco: al abrirlo se edita ahí, y lo que guardes es lo que va a correr.</p>
+      </div>
+      <div class="page-body">
+        <div id="catProblems"></div>
+        <div class="card">
+          <div class="cat-tools">
+            <input class="field search" id="catSearch" type="search" autocomplete="off"
+                   placeholder="Buscar por nombre, archivo o descripción" aria-label="Buscar en el catálogo">
+            <div class="filters" id="catFilters" role="group" aria-label="Filtrar por tipo"></div>
+          </div>
+          <div class="card-body flush">
+            <table class="cat">
+              <thead>
+                <tr><th scope="col">Componente</th><th scope="col">Tipo</th><th scope="col">Qué hace</th></tr>
+              </thead>
+              <tbody id="catRows"></tbody>
+            </table>
+            <div class="cat-empty" id="catEmpty" hidden>Ningún componente coincide con el filtro.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================= historia -->
+    <section class="view" id="viewHistoria" aria-labelledby="tHistoria">
+      <div class="page-head">
+        <div class="crumbs"><b>Studio</b> › Historia</div>
+        <h1 id="tHistoria">Historia escrita acá</h1>
+        <p>Para equipos que no integran con ningún tracker. Se guarda como
+           <code>.claude/run/&lt;ID&gt;/story.json</code>, el mismo formato normalizado que
+           produce Jira o ADO: de la fase 1 en adelante el ciclo no distingue de dónde vino.</p>
+      </div>
+      <div class="page-body">
+        <div class="card">
+          <div class="card-head"><h2>Datos de la historia</h2></div>
+          <div class="card-body">
+            <div class="form-grid">
+              <div class="f f-wide">
+                <label class="f-label" for="stTitle">Título <span class="req" aria-hidden="true">*</span></label>
+                <input class="field" id="stTitle" autocomplete="off" required
+                       aria-describedby="hTitle"
+                       placeholder="Permitir exportar el reporte de consumo a CSV">
+                <span class="f-help" id="hTitle">Es el único campo obligatorio.</span>
+              </div>
+
+              <div class="f f-wide">
+                <label class="f-label" for="stId">ID</label>
+                <input class="field mono" id="stId" autocomplete="off" aria-describedby="hId"
+                       placeholder="opcional">
+                <span class="f-help" id="hId">Si lo dejás vacío se deriva del título: <code>LOCAL-exportar-csv</code>.</span>
+              </div>
+
+              <div class="f f-wide">
+                <label class="f-label" for="stDesc">Descripción</label>
+                <textarea class="field" id="stDesc" rows="4" spellcheck="false"
+                          placeholder="Contexto, qué problema resuelve, para quién."></textarea>
+              </div>
+
+              <div class="f f-wide">
+                <label class="f-label" for="stAc">Criterios de aceptación</label>
+                <textarea class="field" id="stAc" rows="6" spellcheck="false" aria-describedby="hAc"
+                          placeholder="Uno por línea.&#10;El botón Exportar aparece solo para usuarios con rol Analyst&#10;El CSV incluye las columnas fecha, usuario, consumo"></textarea>
+                <span class="f-help" id="hAc">Uno por línea. Es el campo que decide el run:
+                  <code>@refinamiento</code> bloquea si faltan o no son verificables. Escribir la
+                  historia acá no saltea ese control.</span>
+              </div>
+
+              <div class="f">
+                <label class="f-label" for="stPoints">Puntos</label>
+                <input class="field" id="stPoints" type="number" min="1" max="100" placeholder="opcional">
+              </div>
+
+              <div class="f">
+                <label class="f-label" for="stLabels">Labels</label>
+                <input class="field" id="stLabels" autocomplete="off" placeholder="separados por coma">
+              </div>
+            </div>
+          </div>
+          <div class="card-foot">
+            <span class="dirty" id="stStatus"></span>
+            <span class="grow"></span>
+            <button class="btn" id="btnLoadStory" title="Trae del disco una historia ya escrita">Cargar</button>
+            <button class="btn primary" id="btnSaveStory">Guardar historia</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================== configuración -->
+    <section class="view" id="viewConfig" aria-labelledby="tConfig">
+      <div class="page-head">
+        <div class="crumbs"><b>Studio</b> › Configuración</div>
+        <h1 id="tConfig">Configuración del run</h1>
+        <p>Se configura una vez y se ejecuta muchas. Nada de esto cambia entre historias,
+           por eso vive acá y no en la barra de ejecución.</p>
+      </div>
+      <div class="page-body">
+
+        <div class="card">
+          <div class="card-head"><h2>Repositorio</h2>
+            <span class="sub">dónde va a trabajar el ciclo</span></div>
+          <div class="card-body">
+            <div class="form-grid">
+              <div class="f f-wide">
+                <label class="f-label" for="repoUrl">Origen</label>
+                <div class="f-row">
+                  <input class="field mono" id="repoUrl" aria-describedby="hRepo"
+                         placeholder="https://github.com/org/repo, o una carpeta local">
+                  <button class="btn" id="btnPrepare">Preparar</button>
+                </div>
+                <span class="f-help" id="hRepo">Preparar clona o actualiza el repo y lista sus branches.
+                  Si falta iniciar sesión en GitHub o Azure, te lo dice acá mismo.</span>
+              </div>
+              <div class="f">
+                <label class="f-label" for="repoDir">Carpeta local</label>
+                <input class="field mono" id="repoDir" aria-describedby="hDir" placeholder="la completa Preparar">
+                <span class="f-help" id="hDir">Es el <code>cwd</code> del run.</span>
+              </div>
+              <div class="f">
+                <label class="f-label" for="baseBranch">Branch base</label>
+                <select class="field" id="baseBranch" disabled><option value="">—</option></select>
+                <span class="f-help">Se llena al preparar el repositorio.</span>
+              </div>
+              <div class="f-wide"><div class="state-line" id="repoState" hidden></div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h2>Permisos y herramientas</h2>
+            <span class="sub">qué puede hacer la sesión</span></div>
+          <div class="card-body">
+            <div class="notice warn" style="margin-bottom:18px">
+              <span>El run corre con <code>claude -p</code>, que no es interactivo: no hay dónde
+                aceptar un permiso, así que todo lo que no esté autorizado de antemano se deniega.
+                El ciclo necesita <code>Bash</code> desde la fase 0, por eso <code>acceptEdits</code>
+                solo no alcanza.</span>
+            </div>
+            <div class="form-grid">
+              <div class="f f-wide">
+                <label class="f-label" for="permMode">Modo de permisos <code>--permission-mode</code></label>
+                <select class="field" id="permMode">
+                  <option value="">Por defecto — deniega lo que no esté autorizado</option>
+                  <option value="acceptEdits">acceptEdits — acepta editar archivos (no Bash)</option>
+                  <option value="bypassPermissions">bypassPermissions — sin preguntar</option>
+                  <option value="plan">plan — analiza, no ejecuta</option>
+                </select>
+              </div>
+              <div class="f">
+                <label class="f-label" for="allowedTools">Herramientas permitidas <code>--allowedTools</code></label>
+                <input class="field mono" id="allowedTools" placeholder="Bash,Write,Edit" aria-describedby="hTools">
+                <span class="f-help" id="hTools">Acepta patrones: <code>Bash(git *)</code>.</span>
+              </div>
+              <div class="f">
+                <label class="f-label" for="extraFlags">Flags extra</label>
+                <input class="field mono" id="extraFlags" placeholder="--max-turns 20">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h2>Último comando</h2>
+            <span class="sub">lo que el studio ejecutó de verdad</span></div>
+          <div class="card-body">
+            <div class="out mono" id="cmdHint">Todavía no se ejecutó ningún run en esta sesión del studio.</div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ------------------------------------------------------------- consola -->
+    <div class="dock" id="dock" data-open="0" data-s="none">
+      <button class="dock-head" id="dockHead" aria-expanded="false" aria-controls="log">
+        <span class="dot"></span>
+        <span id="sessionText">Sin sesión abierta</span>
+        <span class="grow"></span>
+        <span class="tag" id="evCount" hidden>0 eventos</span>
+        <span class="chev">▾</span>
+      </button>
+      <div class="log" id="log" role="log" aria-label="Eventos de la sesión"></div>
+      <div class="send">
+        <textarea class="field" id="sendText" spellcheck="false" disabled aria-label="Mensaje para Claude"
+          placeholder="Abrí una sesión para escribirle a Claude. Enter envía, Shift+Enter hace salto de línea."></textarea>
+        <button class="btn primary" id="btnSend" disabled>Enviar</button>
+        <button class="btn" id="btnCloseSession" disabled title="Termina la sesión de Claude">Cerrar sesión</button>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+
+<!-- ------------------------------------------------- sesión de Claude Code -->
+<dialog id="dlgAuth" aria-labelledby="dlgAuthTitle">
+  <div class="dlg-head"><h2 id="dlgAuthTitle">Sesión de Claude Code</h2></div>
   <div class="dlg-body">
-    <p class="what" id="authDetail">Consultando…</p>
-    <p class="what">
-      El studio no guarda credenciales: le pide el login al CLI de Claude Code, que
-      es el mismo que usás en la terminal. Iniciar sesión abre el flujo en tu
-      navegador; si el proceso pide un código, pegalo abajo.
+    <p class="prose" id="authDetail">Consultando…</p>
+    <p class="prose">
+      El studio no guarda credenciales: le pide el login al CLI de Claude Code, que es
+      el mismo que usás en la terminal. Iniciar sesión abre el flujo en tu navegador;
+      si el proceso pide un código, pegalo abajo.
     </p>
     <div class="auth-out" id="authOut" hidden></div>
-    <div id="authInputRow" hidden style="margin-top:10px">
-      <input class="field" id="authInput" placeholder="Pegá acá el código y Enter" autocomplete="off">
+    <div class="f" id="authInputRow" hidden>
+      <label class="f-label" for="authInput">Código del flujo de login</label>
+      <input class="field mono" id="authInput" placeholder="pegalo acá y Enter" autocomplete="off">
     </div>
   </div>
   <div class="dlg-foot">
     <button class="btn" id="btnAuthRefresh">Actualizar</button>
     <span class="grow"></span>
     <button class="btn" id="btnAuthLogout">Cerrar sesión</button>
-    <button class="btn lit" id="btnAuthLogin">Iniciar sesión</button>
-    <button class="btn" id="btnAuthClose">Salir</button>
+    <button class="btn primary" id="btnAuthLogin">Iniciar sesión</button>
+    <button class="btn ghost" id="btnAuthClose">Salir</button>
   </div>
 </dialog>
 
 <!-- Glosario: los nombres son los de Claude Code, no etiquetas del studio. -->
-<dialog id="dlgGlosario">
-  <div class="dlg-head">
-    <h2>Qué es cada cosa</h2>
-  </div>
+<dialog id="dlgGlosario" aria-labelledby="dlgGlosTitle">
+  <div class="dlg-head"><h2 id="dlgGlosTitle">Qué es cada cosa</h2></div>
   <div class="dlg-body">
-    <p class="what">
+    <p class="prose">
       Todos estos nombres son los de Claude Code. Si los aprendés acá, los vas a
       reconocer en la documentación y en la terminal.
     </p>
-    <dl class="glos" id="glosList"></dl>
+    <div class="glos" id="glosList"></div>
   </div>
-  <div class="dlg-foot">
-    <span class="grow"></span>
-    <button class="btn lit" id="btnGlosClose">Entendido</button>
-  </div>
+  <div class="dlg-foot"><span class="grow"></span>
+    <button class="btn primary" id="btnGlosClose">Entendido</button></div>
 </dialog>
 
-<!-- Una sola pantalla: el grafo es el mapa y el tablero a la vez. La via
-     lateral se elimino porque era el mismo diagrama dibujado dos veces, y esa
-     duplicacion es la que permitio que mostraran estados distintos. -->
-<!-- Una accion primaria a la vista; el resto de la configuracion se pliega.
-     Se configura una vez y se ejecuta muchas: tenerlo todo desplegado siempre
-     robaba la mitad de la pantalla al grafo, que es lo que se mira. -->
-<div class="runbar">
-  <select class="field" id="source">
-    <option value="tracker">Historia: desde tracker</option>
-    <option value="manual">Historia: escrita acá</option>
-    <option value="console">Solo consola, sin historia</option>
-  </select>
-  <input class="field" id="story" placeholder="ID de historia — GLOB-1234, 8891, #245" autocomplete="off">
-  <button class="btn lit" id="btnRun">Ejecutar</button>
-  <button class="btn stop" id="btnStop" disabled>Detener</button>
-  <span class="rb-sep"></span>
-  <button class="btn ghost" id="btnSettings" aria-expanded="false">Configuración</button>
-</div>
-
-<details class="settings" id="settings">
-  <summary hidden></summary>
-  <div class="set-grid">
-    <label class="set-field span2">
-      <span>Repositorio</span>
-      <div class="set-row">
-        <input class="field" id="repoUrl"
-               placeholder="Pegá la URL — https://github.com/org/repo, o una carpeta local">
-        <button class="btn" id="btnPrepare">Preparar</button>
+<!-- Editar es una tarea enfocada: ocupa la pantalla y se cierra al terminar. -->
+<dialog id="dlgEditor" class="editor" aria-labelledby="edTitle">
+  <div class="ed-wrap" id="edView">
+    <div class="ed-head">
+      <div class="ed-crumb" id="edPath"></div>
+      <div class="ed-title-row">
+        <h2 id="edTitle"></h2>
+        <span id="edKind"></span>
       </div>
-    </label>
-    <label class="set-field">
-      <span>Branch base</span>
-      <select class="field" id="baseBranch" disabled><option value="">—</option></select>
-    </label>
-    <label class="set-field">
-      <span>Carpeta local</span>
-      <input class="field" id="repoDir" placeholder="la completa Preparar">
-    </label>
-    <label class="set-field span2">
-      <span>Permisos</span>
-      <select class="field" id="permMode"
-              title="Con -p no hay dónde aceptar un permiso: lo que no esté autorizado de antemano se deniega.">
-        <option value="">Por defecto — deniega lo que no esté autorizado</option>
-        <option value="acceptEdits">acceptEdits — acepta editar archivos (no Bash)</option>
-        <option value="bypassPermissions">bypassPermissions — sin preguntar</option>
-        <option value="plan">plan — analiza, no ejecuta</option>
-      </select>
-    </label>
-    <label class="set-field">
-      <span>Herramientas permitidas</span>
-      <input class="field" id="allowedTools" placeholder="Bash,Write,Edit"
-             title='Se pasa a --allowedTools. Acepta patrones: Bash(git *)'>
-    </label>
-    <label class="set-field">
-      <span>Flags extra</span>
-      <input class="field" id="extraFlags" placeholder="--max-turns 20">
-    </label>
-    <div class="repo-state span4" id="repoState" hidden></div>
-    <div class="hint span4" id="cmdHint"></div>
+      <p class="ed-what" id="edWhat"></p>
+    </div>
+    <div class="ed-main" id="edMain">
+      <aside class="ed-side" id="edSide">
+        <h3>Configuración del componente</h3>
+        <div class="form-grid one" id="edFm"></div>
+      </aside>
+      <div class="ed-body">
+        <label for="edText" id="edBodyLabel">Instrucciones</label>
+        <textarea id="edText" spellcheck="false"></textarea>
+      </div>
+    </div>
+    <div class="dlg-foot">
+      <span class="dirty" id="edDirty"></span>
+      <span class="grow"></span>
+      <button class="btn" id="btnRevert">Descartar cambios</button>
+      <button class="btn primary" id="btnSave">Guardar</button>
+      <button class="btn ghost" id="btnCerrarEditor">Cerrar</button>
+    </div>
   </div>
-</details>
-
-
-<!-- Editar es una tarea enfocada: ocupa toda la pantalla y se cierra al
-     terminar, en vez de pelear por el ancho de un panel lateral. -->
-<dialog id="dlgEditor" class="editor-modal">
-
-      <div class="empty" id="edEmpty">
-        <h2>Elegí un componente</h2>
-        <p>Cada chip del ciclo es un archivo real del plugin. Al abrirlo se edita en disco: lo que guardes acá es lo que va a correr.</p>
-      </div>
-      <div id="edView" hidden>
-        <div class="ed-head">
-          <div class="ed-path" id="edPath"></div>
-          <h2 class="ed-title" id="edTitle"></h2>
-          <div id="edKind"></div>
-          <p class="what" id="edWhat"></p>
-        </div>
-        <div class="ed-main">
-          <details class="fm" id="edFm" open></details>
-          <div class="ed-body">
-            <label for="edText" id="edBodyLabel">Instrucciones</label>
-            <textarea id="edText" spellcheck="false"></textarea>
-          </div>
-        </div>
-        <div class="ed-foot">
-          <span class="dirty" id="edDirty"></span>
-          <button class="btn" id="btnRevert">Descartar</button>
-          <button class="btn lit" id="btnSave">Guardar</button>
-          <button class="btn" id="btnCerrarEditor">Cerrar</button>
-        </div>
-      </div>
-    </dialog>
-
-<div class="stage">
-  <div class="canvas"><svg id="graph" role="img" aria-label="Grafo de ejecución"></svg></div>
-
-  <!-- Panel contextual: muestra lo que corresponda a lo que clickeaste, en vez
-       de obligar a elegir una pestana antes de saber que hay adentro. -->
-  <aside class="panel">
-    <section class="pane" id="paneDetail" data-active="1">
-      <div class="node-detail" id="nodeDetail">
-        <p class="what">Clickeá cualquier componente del grafo: si tiene archivo se abre para editar, y si ya corrió se ve lo que dijo el modelo ahí.</p>
-      </div>
-    </section>
-
-
-
-    <section class="pane" id="paneStory">
-      <div class="story">
-        <p class="story-lead">
-          Para equipos que no integran con ningún tracker. Lo que escribas acá se
-          guarda como <code>.claude/run/&lt;ID&gt;/story.json</code>, el mismo formato
-          normalizado que produce Jira o ADO — de la fase 1 en adelante el ciclo no
-          distingue de dónde vino.
-        </p>
-        <div class="story-grid">
-          <label class="story-key" for="stTitle">Título <span class="req">*</span></label>
-          <input class="field" id="stTitle" autocomplete="off"
-                 placeholder="Permitir exportar el reporte de consumo a CSV">
-
-          <label class="story-key" for="stId">ID</label>
-          <input class="field" id="stId" autocomplete="off" placeholder="opcional — se deriva del título">
-
-          <label class="story-key" for="stDesc">Descripción</label>
-          <textarea class="field" id="stDesc" rows="5" spellcheck="false"
-                    placeholder="Contexto, qué problema resuelve, para quién."></textarea>
-
-          <label class="story-key" for="stAc">Criterios de aceptación</label>
-          <textarea class="field" id="stAc" rows="6" spellcheck="false"
-                    placeholder="Uno por línea.&#10;El botón Exportar aparece solo para usuarios con rol Analyst&#10;El CSV incluye las columnas fecha, usuario, consumo"></textarea>
-          <p class="story-note">
-            Es el campo que decide el run: <code>@refinamiento</code> bloquea si faltan o
-            no son verificables. Escribir la historia acá no saltea ese gate.
-          </p>
-
-          <label class="story-key" for="stPoints" style="grid-column:1">Puntos</label>
-          <input class="field" id="stPoints" type="number" min="1" max="100" placeholder="opcional">
-
-          <label class="story-key" for="stLabels" style="grid-column:2;margin-top:0">Labels</label>
-          <input class="field" id="stLabels" autocomplete="off" placeholder="separados por coma">
-        </div>
-        <div class="story-foot">
-          <span class="dirty grow" id="stStatus"></span>
-          <button class="btn" id="btnLoadStory">Cargar</button>
-          <button class="btn" id="btnSaveStory">Guardar historia</button>
-        </div>
-      </div>
-    </section>
-  </aside>
-</div>
-
-<div class="dock" id="dock" data-open="0" data-s="none">
-  <button class="dock-head" id="dockHead" aria-expanded="false">
-    <span class="dot"></span>
-    <span id="sessionText">Sin sesión abierta</span>
-    <span class="grow"></span>
-    <span class="dock-chevron">▾</span>
-  </button>
-  <div class="log" id="log"></div>
-
-      <div class="send">
-        <textarea id="sendText" spellcheck="false" disabled
-          placeholder="Abrí una sesión para escribirle a Claude. Enter envía, Shift+Enter hace salto de línea."></textarea>
-        <button class="btn lit" id="btnSend" disabled>Enviar</button>
-        <button class="btn" id="btnCloseSession" disabled title="Termina la sesión de Claude">Cerrar</button>
-      </div>
-</div>
+</dialog>
 
 <script>
 const $ = id => document.getElementById(id);
@@ -581,12 +984,59 @@ const api = async (url, opts) => {
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const hhmm = ts => new Date(ts).toTimeString().slice(0, 8);
 
-// El panel muestra lo que corresponda a lo último que clickeaste.
-const PANELS = ['paneDetail', 'paneStory'];
-const showPanel = id => PANELS.forEach(p => { $(p).dataset.active = p === id ? '1' : '0'; });
+/* ------------------------------------------------------------------ tema */
+// Arranca en el del sistema y recuerda la elección: el studio se mira muchas
+// horas seguidas y no todos los escritorios están igual de iluminados.
+const THEME_KEY = 'globant-sdlc-studio-theme';
+function setTheme(t) {
+  document.documentElement.dataset.theme = t;
+  $('themeText').textContent = t === 'dark' ? 'Claro' : 'Oscuro';
+  try { localStorage.setItem(THEME_KEY, t); } catch { /* sin storage */ }
+}
+setTheme(
+  (() => { try { return localStorage.getItem(THEME_KEY); } catch { return null; } })() ||
+  (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'),
+);
+$('btnTheme').addEventListener('click', () =>
+  setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'));
 
-// Cada fase declara qué componentes le pertenecen. Es lo que une el plugin
-// en disco con el ciclo que describe el SKILL.md.
+/* ------------------------------------------------------------ navegación */
+// Una sección por vez y siempre en el mismo lugar: la navegación no cambia de
+// forma según lo que estés haciendo.
+const VIEWS = { ciclo: 'viewCiclo', catalogo: 'viewCatalogo', historia: 'viewHistoria', config: 'viewConfig' };
+let vistaActual = 'ciclo';
+
+function showView(v) {
+  if (!VIEWS[v]) return;
+  vistaActual = v;
+  for (const [name, id] of Object.entries(VIEWS)) $(id).dataset.active = name === v ? '1' : '0';
+  document.querySelectorAll('.nav-item[data-view]').forEach(b => {
+    if (b.dataset.view === v) b.setAttribute('aria-current', 'page');
+    else b.removeAttribute('aria-current');
+  });
+  $(VIEWS[v]).scrollTop = 0;
+}
+document.querySelectorAll('.nav-item[data-view]').forEach(b =>
+  b.addEventListener('click', () => showView(b.dataset.view)));
+
+/* ---------------------------------------------------------------- avisos */
+// Un toast avisa sin mover el contenido de lugar. Lo que salió bien se va solo;
+// lo que falló se queda hasta que lo cierres, porque hay que leerlo.
+function banner(kind, text) {
+  const t = document.createElement('div');
+  t.className = `toast ${kind}`;
+  t.innerHTML = `<span class="msg">${esc(text)}</span>
+                 <button class="x" aria-label="Cerrar aviso">×</button>`;
+  t.querySelector('.x').addEventListener('click', () => t.remove());
+  $('toasts').append(t);
+  if (kind === 'ok') setTimeout(() => t.remove(), 6000);
+  while ($('toasts').children.length > 4) $('toasts').firstElementChild.remove();
+}
+
+/* ------------------------------------------------------- modelo del ciclo */
+
+// Cada fase declara qué componentes le pertenecen. Es lo que une el plugin en
+// disco con el ciclo que describe el SKILL.md.
 const PHASE_PARTS = {
   0: { scripts: ['resolve-story.sh'], skills: ['us'] },
   1: { agents: ['refinamiento'] },
@@ -597,9 +1047,9 @@ const PHASE_PARTS = {
   6: { main: true },
 };
 
-// Las fases sin subagente no estan vacias: las hace la sesion principal, la
-// misma que corre el skill. Que no figurara nada se leia como un componente
-// faltante, cuando es una decision de diseno: ningun subagente puede escribir.
+// Las fases sin subagente no están vacías: las hace la sesión principal, la
+// misma que corre el skill. Que no figurara nada se leía como un componente
+// faltante, cuando es una decisión de diseño: ningún subagente puede escribir.
 const MAIN_TAG = { 6: 'abre el PR' };
 
 // Los nombres son los de Claude Code, no etiquetas inventadas para el studio:
@@ -678,29 +1128,146 @@ async function load() {
   const [plugin, ph] = await Promise.all([api('/api/plugin'), api('/api/phases')]);
   PLUGIN = plugin; PHASES = ph.phases;
 
-  $('railMeta').textContent = `${plugin.pluginDir}  →  ${plugin.targetRepo}`;
+  $('railMeta').innerHTML =
+    `<span>${esc(plugin.pluginDir)}</span><span class="arrow">→</span><span>${esc(plugin.targetRepo)}</span>`;
   if (!$('repoDir').value) $('repoDir').value = plugin.targetRepo;
 
+  // El comando que hay que tipear es el calificado: /us solo da "Unknown command".
+  const cmd = plugin.skills[0]?.command;
+  $('cicloSub').textContent = cmd ? `se dispara con /${cmd}` : '';
+
   renderGraph();
+  renderCatalog();
 
   if (plugin.problems.length) {
-    banner('err', plugin.problems.join(' · '));
+    $('catProblems').innerHTML = `<div class="notice err"><div>
+      <b>El plugin tiene ${plugin.problems.length} problema${plugin.problems.length > 1 ? 's' : ''}:</b>
+      <ul>${plugin.problems.map(p => `<li>${esc(p)}</li>`).join('')}</ul></div></div>`;
+    banner('err', plugin.problems[0]);
+  } else {
+    $('catProblems').innerHTML = '';
   }
 }
 
-/* --------------------------------------------------- plegables del panel */
+/* -------------------------------------------------------------- catálogo */
+
+// Una sola lista con todo lo que aporta el plugin. Es la vista que responde
+// "¿qué hay acá adentro?" sin tener que recorrer el grafo nodo por nodo.
+function catalogItems() {
+  if (!PLUGIN) return [];
+  const out = [];
+
+  for (const s of PLUGIN.skills) {
+    out.push({
+      kind: 'skill', name: s.name, path: s.path, desc: s.description,
+      meta: [`/${s.command}`, `${(s.bytes / 1024).toFixed(1)} kB de contexto`],
+    });
+    for (const r of s.references) {
+      out.push({
+        kind: 'reference', name: r.name, path: r.path,
+        desc: `La abre el skill ${s.name} solo cuando la necesita.`, meta: [],
+      });
+    }
+  }
+  for (const a of PLUGIN.agents) {
+    out.push({
+      kind: 'agent', name: a.name, path: a.path, desc: a.description,
+      meta: [
+        `modelo ${a.model}`,
+        a.effort ? `esfuerzo ${a.effort}` : null,
+        a.maxTurns ? `máx ${a.maxTurns} turnos` : null,
+        a.readOnly ? 'solo lectura' : 'puede escribir',
+      ].filter(Boolean),
+      flag: a.readOnly ? null : 'escribe',
+    });
+  }
+  PLUGIN.hooks.forEach((h, i) => {
+    out.push({
+      kind: 'hook', name: h.event, path: h.path, hookIndex: i,
+      desc: h.description || (h.script ? `Ejecuta ${h.script}.` : ''),
+      meta: [`matcher ${h.matcher}`, h.script].filter(Boolean),
+    });
+  });
+  for (const s of PLUGIN.scripts) {
+    out.push({
+      kind: 'script', name: s.name, path: s.path,
+      desc: s.executable ? '' : 'Sin permiso de ejecución: el hook que lo llama no va a disparar.',
+      meta: [s.executable ? 'ejecutable' : 'NO ejecutable'],
+      bad: !s.executable,
+    });
+  }
+  for (const m of PLUGIN.mcp) {
+    out.push({
+      kind: 'mcp', name: m.name, path: '.mcp.json',
+      desc: m.target, meta: [`transporte ${m.transport}`],
+    });
+  }
+  if (PLUGIN.manifest) {
+    const d = PLUGIN.manifest.data || {};
+    out.push({
+      kind: 'manifest', name: d.name || 'plugin.json', path: PLUGIN.manifest.path,
+      desc: d.description || '', meta: [d.version ? `versión ${d.version}` : null].filter(Boolean),
+    });
+  }
+  return out;
+}
+
+const catFiltros = new Set();
+
+function renderFilters() {
+  const kinds = [...new Set(catalogItems().map(i => i.kind))];
+  $('catFilters').innerHTML = kinds.map(k =>
+    `<button class="filter" data-k="${k}" aria-pressed="${catFiltros.has(k)}">${esc(KINDS[k].label)}</button>`,
+  ).join('');
+  $('catFilters').querySelectorAll('.filter').forEach(b => b.addEventListener('click', () => {
+    const k = b.dataset.k;
+    catFiltros.has(k) ? catFiltros.delete(k) : catFiltros.add(k);
+    renderCatalog();
+  }));
+}
+
+function renderCatalog() {
+  if (!PLUGIN) return;
+  renderFilters();
+  const q = $('catSearch').value.trim().toLowerCase();
+  const items = catalogItems().filter(i =>
+    (!catFiltros.size || catFiltros.has(i.kind)) &&
+    (!q || `${i.name} ${i.path} ${i.desc}`.toLowerCase().includes(q)));
+
+  $('catCount').textContent = catalogItems().length;
+  $('catEmpty').hidden = items.length > 0;
+  $('catRows').innerHTML = items.map((i, n) => `
+    <tr data-n="${n}" data-path="${esc(i.path)}" tabindex="0" role="button"
+        aria-label="Abrir ${esc(i.name)}">
+      <td>
+        <span class="cat-name">${esc(i.name)}</span>
+        <span class="cat-path">${esc(i.path)}</span>
+      </td>
+      <td>${kindBadge(i.kind)}</td>
+      <td>
+        <div class="cat-desc">${esc(i.desc) || '<i>sin descripción</i>'}</div>
+        ${i.meta.length ? `<div class="cat-meta">${i.meta.map(m =>
+          `<span class="tag${i.bad ? ' warn' : ''}">${esc(m)}</span>`).join('')}</div>` : ''}
+      </td>
+    </tr>`).join('');
+
+  $('catRows').querySelectorAll('tr').forEach(tr => {
+    const abrir = () => open(tr.dataset.path);
+    tr.addEventListener('click', abrir);
+    tr.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); abrir(); }
+    });
+  });
+}
+$('catSearch').addEventListener('input', renderCatalog);
+
+/* ------------------------------------------------------------- consola */
 
 function abrirDock(abrir) {
   $('dock').dataset.open = abrir ? '1' : '0';
   $('dockHead').setAttribute('aria-expanded', String(!!abrir));
 }
 $('dockHead').addEventListener('click', () => abrirDock($('dock').dataset.open !== '1'));
-
-$('btnSettings').addEventListener('click', () => {
-  const abierto = !$('settings').open;
-  $('settings').open = abierto;
-  $('btnSettings').setAttribute('aria-expanded', String(abierto));
-});
 
 /* ------------------------------------------------------------- editor */
 
@@ -715,7 +1282,6 @@ const FIELD_HELP = {
   description: {
     label: 'Cuándo usarlo',
     type: 'textarea',
-    wide: true,
     help: 'Lo lee Claude para decidir si invocarlo. Escribí el disparador, no la biografía: "Usar cuando…". Si es vago, el componente no se invoca nunca o se invoca de más.',
   },
   model: {
@@ -737,7 +1303,6 @@ const FIELD_HELP = {
   },
   disallowedTools: {
     label: 'Herramientas prohibidas',
-    wide: true,
     help: 'Separadas por coma. "Write, Edit" deja al agente en modo solo lectura: puede auditar pero no tocar código. Es la separación entre quien escribe y quien evalúa.',
   },
 };
@@ -753,48 +1318,51 @@ const BODY_LABEL = {
   reference: 'Contenido',
 };
 
-/** Un campo del frontmatter, con su control y su explicación. */
+/** Un campo del frontmatter: etiqueta en criollo, clave real, control y ayuda. */
 function fmField(key, value) {
   const meta = FIELD_HELP[key] || { label: key };
   const v = Array.isArray(value) ? value.join(', ') : (value ?? '');
-  const attrs = `class="field" id="fm-${esc(key)}" data-fm="${esc(key)}"`;
+  const id = `fm-${key}`;
+  const attrs = `class="field" id="${esc(id)}" data-fm="${esc(key)}" aria-describedby="${esc(id)}-h"`;
 
   let control;
-  if (meta.type === 'select') {
+  if (meta.type === 'select' && meta.options.includes(String(v))) {
     control = `<select ${attrs}>${meta.options.map(o =>
       `<option value="${esc(o)}"${o === v ? ' selected' : ''}>${esc(o || '(heredado)')}</option>`,
     ).join('')}</select>`;
-    // Un valor fuera de la lista no se puede perder por editarlo en el studio.
-    if (!meta.options.includes(String(v))) {
-      control = `<input ${attrs} value="${esc(v)}">`;
-    }
   } else if (meta.type === 'textarea') {
-    control = `<textarea ${attrs} rows="3">${esc(v)}</textarea>`;
+    control = `<textarea ${attrs} rows="4">${esc(v)}</textarea>`;
   } else {
+    // Un valor fuera de la lista no se puede perder por editarlo en el studio.
     control = `<input ${attrs} type="${meta.type === 'number' ? 'number' : 'text'}" value="${esc(v)}">`;
   }
 
-  return `<div class="fm-field${meta.wide ? ' wide' : ''}">
-    <label class="fm-label" for="fm-${esc(key)}">${esc(meta.label)}<code>${esc(key)}</code></label>
+  return `<div class="f">
+    <label class="f-label" for="${esc(id)}">${esc(meta.label)}<code>${esc(key)}</code></label>
     ${control}
-    ${meta.help ? `<span class="fm-help">${esc(meta.help)}</span>` : ''}
+    ${meta.help ? `<span class="f-help" id="${esc(id)}-h">${esc(meta.help)}</span>` : ''}
   </div>`;
 }
 
 async function open(path) {
+  if (!path) return;
   // Comparar contra `compose()`, no contra el textarea: con frontmatter el
   // textarea tiene solo el cuerpo y `original` el archivo entero, así que
   // cualquier archivo con frontmatter parecía modificado apenas se abría.
   if (current && compose() !== original &&
       !confirm('Hay cambios sin guardar. ¿Descartarlos?')) return;
 
-  const f = await api('/api/file?path=' + encodeURIComponent(path));
+  let f;
+  try {
+    f = await api('/api/file?path=' + encodeURIComponent(path));
+  } catch (e) {
+    return banner('err', `No se pudo abrir ${path}: ${e.message}`);
+  }
   current = f; original = f.content;
 
-  document.querySelectorAll('.chip').forEach(c =>
-    c.setAttribute('aria-pressed', String(c.dataset.path === path)));
+  $('catRows').querySelectorAll('tr').forEach(tr =>
+    tr.dataset.open = tr.dataset.path === path ? '1' : '0');
 
-  $('edEmpty').hidden = true; $('edView').hidden = false;
   if (!$('dlgEditor').open) $('dlgEditor').showModal();
   $('edPath').textContent = path;
   $('edTitle').textContent = (f.frontmatter?.name) || path.split('/').pop();
@@ -805,13 +1373,11 @@ async function open(path) {
   $('edWhat').textContent = KINDS[kind]?.what || '';
 
   // El frontmatter son los campos que realmente se tocan al ajustar un agente,
-  // así que van como campos, no perdidos dentro del texto.
+  // así que van como campos con nombre y ayuda, no perdidos dentro del texto.
   const fm = f.frontmatter;
-  $('edFm').innerHTML = fm
-    ? `<summary>Configuración · ${Object.keys(fm).length} campos</summary>
-       <div class="fm-grid">${Object.entries(fm).map(([k, v]) => fmField(k, v)).join('')}</div>`
-    : '';
-  $('edFm').hidden = !fm;
+  $('edFm').innerHTML = fm ? Object.entries(fm).map(([k, v]) => fmField(k, v)).join('') : '';
+  $('edSide').hidden = !fm;
+  $('edMain').classList.toggle('no-fm', !fm);
   $('edBodyLabel').textContent = BODY_LABEL[kind] || 'Contenido';
 
   $('edText').value = fm ? f.body : f.content;
@@ -838,7 +1404,7 @@ function compose() {
 
 function markDirty() {
   const dirty = current && compose() !== original;
-  $('edDirty').textContent = dirty ? '● sin guardar' : '';
+  $('edDirty').innerHTML = dirty ? '<span class="dot" style="background:var(--warn)"></span>Sin guardar' : '';
   $('btnRevert').disabled = !dirty;
 }
 
@@ -855,13 +1421,16 @@ $('edText').addEventListener('keydown', e => {
 
 $('btnSave').addEventListener('click', save);
 $('btnCerrarEditor').addEventListener('click', () => $('dlgEditor').close());
-// Esc cierra el dialogo: si hay cambios sin guardar, se avisa antes.
+// Esc cierra el diálogo: si hay cambios sin guardar, se avisa antes.
 $('dlgEditor').addEventListener('cancel', (e) => {
   if (current && compose() !== original && !confirm('Hay cambios sin guardar. ¿Cerrar igual?')) {
     e.preventDefault();
   }
 });
-$('dlgEditor').addEventListener('close', () => { current = null; });
+$('dlgEditor').addEventListener('close', () => {
+  current = null;
+  $('catRows').querySelectorAll('tr').forEach(tr => tr.dataset.open = '0');
+});
 $('btnRevert').addEventListener('click', () => current && open(current.path));
 document.addEventListener('keydown', e => {
   if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); save(); }
@@ -909,7 +1478,7 @@ function fillStory(s) {
 /** Sin título no hay historia: es el único campo que el studio exige. */
 function requireTitle() {
   if ($('stTitle').value.trim()) return true;
-  showPanel('paneStory');
+  showView('historia');
   banner('err', 'La historia necesita un título');
   $('stTitle').focus();
   return false;
@@ -926,9 +1495,12 @@ function syncSource() {
     : manual
       ? 'ID — opcional, se deriva del título'
       : 'ID de historia — GLOB-1234, 8891, #245';
-  if (manual) showPanel('paneStory');
 }
-$('source').addEventListener('change', syncSource);
+// Elegir "escrita acá" te lleva al formulario: es lo próximo que hay que hacer.
+$('source').addEventListener('change', () => {
+  syncSource();
+  if (manualMode()) showView('historia');
+});
 
 $('btnSaveStory').addEventListener('click', async () => {
   if (!requireTitle()) return;
@@ -981,6 +1553,7 @@ async function start() {
   if (manual && !requireTitle()) return;
   if (!manual && !consola && !storyId) return $('story').focus();
 
+  showView('ciclo');
   resetPhases();
   $('log').innerHTML = '';
   runHasStory = !consola;
@@ -1010,8 +1583,8 @@ async function start() {
       if (manual) $('stId').value = r.storyId;
     }
     $('cmdHint').textContent = r.prompt
-      ? `${r.cmd}   ·   primer mensaje: ${r.prompt}   ·   cwd ${r.cwd}`
-      : `${r.cmd}   ·   cwd ${r.cwd}`;
+      ? `${r.cmd}\n\nprimer mensaje: ${r.prompt}\ncwd: ${r.cwd}`
+      : `${r.cmd}\n\ncwd: ${r.cwd}`;
     setSession('running', 'Abriendo la sesión…');
 
     es?.close();
@@ -1029,7 +1602,9 @@ async function start() {
 // que permite seguir la conversación donde la dejó el ciclo automático.
 function setSession(status, text) {
   $('dock').dataset.s = status;
+  $('runState').dataset.s = status;
   $('sessionText').textContent = text;
+  $('runStateText').textContent = text;
   // La consola se abre sola cuando hay algo que mirar.
   if (status === 'running' || status === 'idle') abrirDock(true);
 
@@ -1091,15 +1666,14 @@ function onEvent(ev) {
   // que la produjo, que es lo que se ve al clickearlo.
   if (ev.t === 'tool') {
     // Un nodo bloqueado no vuelve a "en curso": el corte manda sobre lo que
-    // pase después, igual que en la vía lateral.
+    // pase después.
     if (!esFase(ev.node) && NODE_STATE[ev.node] !== 'blocked') NODE_STATE[ev.node] = 'active';
     pushOut(ev.node, { kind: 'call', title: `llamada · ${ev.name}`, text: ev.summary || '' });
     renderGraph();
   }
   if (ev.t === 'output') {
     // Que termine UNA herramienta no termina la fase que la contiene: eso lo
-    // decide el avance de fase, y es lo que hacía que el grafo mostrara en
-    // verde una fase que la vía mostraba en curso.
+    // decide el avance de fase.
     if (!esFase(ev.node) && NODE_STATE[ev.node] !== 'blocked') NODE_STATE[ev.node] = 'done';
     pushOut(ev.node, { kind: 'result', title: 'resultado', text: ev.text || '' });
     renderGraph();
@@ -1110,7 +1684,7 @@ function onEvent(ev) {
   if (ev.t === 'ready') setSession('idle', 'Sesión abierta — escribile abajo');
   if (ev.t === 'result') {
     // El ciclo completo termina en un `result` sin bloqueo: recién ahí se
-    // encienden todas las estaciones de la vía.
+    // encienden todas las fases.
     if (ev.ok && runHasStory && !runBlocked) {
       for (const p of PHASES) PHASE_STATE[p.id] = 'done';
     }
@@ -1125,9 +1699,11 @@ function onEvent(ev) {
 // El tipo crudo del evento no le dice nada a quien no escribió el servidor.
 const EV_LABEL = {
   start: 'inicio', init: 'sesión', ready: 'lista', phase: 'fase', agent: 'subagente',
-  tool: 'herramienta', say: 'claude', ask: 'vos', artifact: 'archivo',
+  tool: 'herramienta', output: 'salida', say: 'claude', ask: 'vos', artifact: 'archivo',
   blocked: 'bloqueo', result: 'turno', end: 'fin', error: 'error', stderr: 'stderr',
 };
+
+let evCount = 0;
 
 function logEvent(ev) {
   const row = document.createElement('div');
@@ -1144,6 +1720,9 @@ function logEvent(ev) {
   $('log').append(row);
   $('log').scrollTop = $('log').scrollHeight;
 
+  evCount++;
+  $('evCount').hidden = false;
+  $('evCount').textContent = `${evCount} evento${evCount === 1 ? '' : 's'}`;
 }
 
 function finish() {
@@ -1157,10 +1736,8 @@ function finish() {
 
 function resetPhases() {
   PHASE_STATE = {}; PHASE_NOTE = {};
+  evCount = 0; $('evCount').hidden = true;
 }
-
-/* --------------------------------------------------------- misceláneo */
-
 
 /* --------------------------------------------------- grafo de ejecución */
 
@@ -1179,6 +1756,10 @@ const nodeState = id => (esFase(id)
   ? (PHASE_STATE[id.slice('phase:'.length)] || 'idle')
   : (NODE_STATE[id] || 'idle'));
 
+// El estado va escrito además de pintado: el color solo deja afuera a quien no
+// lo distingue, y en un diagrama es la información más importante.
+const STATE_WORD = { active: 'en curso', done: 'listo', blocked: 'bloqueado' };
+
 const pushOut = (node, entry) => {
   if (!node) return;
   (NODE_OUT[node] ||= []).push(entry);
@@ -1193,8 +1774,8 @@ const pushOut = (node, entry) => {
  */
 function layout() {
   // PX deja el margen izquierdo donde entra el lazo de corrección sin pisar
-  // las cajas; antes la etiqueta caía encima de la fase 03.
-  const ROW = 96, TOP = 40, PX = 54, PW = 190, CX = 292, CW = 176, GAP = 16;
+  // las cajas.
+  const ROW = 104, TOP = 44, PX = 58, PW = 206, CX = 316, CW = 194, GAP = 18;
   const nodes = [], edges = [];
 
   PHASES.forEach((p, i) => {
@@ -1202,19 +1783,17 @@ function layout() {
       id: `phase:${p.id}`, kind: 'phase', gate: p.gate,
       label: `${String(p.id).padStart(2, '0')} · ${p.label}`,
       sub: PHASE_NOTE[p.id] || (p.gate ? 'puede abortar el run' : ''),
-      x: PX, y: TOP + i * ROW, w: PW, h: 48,
+      x: PX, y: TOP + i * ROW, w: PW, h: 54,
     });
     if (i) edges.push({ a: `phase:${PHASES[i - 1].id}`, b: `phase:${p.id}`, kind: 'spine' });
   });
 
-  // Componentes por fase: los mismos que la vía lateral, más los MCP en la 0.
   const partsOf = id => {
     const p = PHASE_PARTS[id] || {};
     const out = [];
     for (const n of p.scripts || []) out.push({ kind: 'script', name: n, id: `script:${n}` });
     for (const n of p.agents || []) out.push({ kind: 'agent', name: `@${n}`, id: `agent:${n}` });
     if (p.main) out.push({ kind: 'main', name: 'sesión principal', id: `main:${id}` });
-
     return out;
   };
 
@@ -1224,7 +1803,7 @@ function layout() {
       const x = CX + k * (CW + GAP);
       maxX = Math.max(maxX, x + CW);
       nodes.push({
-        ...c, x, y: TOP + i * ROW + 2, w: CW, h: 42,
+        ...c, x, y: TOP + i * ROW + 3, w: CW, h: 48,
         sub: c.kind === 'agent' ? 'subagente'
            : c.kind === 'main' ? (MAIN_TAG[p.id] || 'corre el skill')
            : c.kind,
@@ -1233,40 +1812,36 @@ function layout() {
     });
   });
 
-  // qa y seguridad no corrigen: reportan, y la correccion vuelve a la fase 3.
+  // qa y seguridad no corrigen: reportan, y la corrección vuelve a la fase 3.
   // Sin este lazo el diagrama sugiere un flujo lineal que no es el real.
   edges.push({ a: 'phase:4', b: 'phase:3', kind: 'loop' });
 
   // Banda lateral. Ni los hooks ni los MCP cuelgan de una fase: los hooks
-  // corren sobre cualquiera y los MCP son de dónde sale la historia. Ponerlos
-  // en la columna de componentes estiraba el diagrama a lo ancho y obligaba a
-  // scrollear en horizontal para ver el ciclo.
-  const hx = maxX + 52;
+  // corren sobre cualquiera y los MCP son de dónde sale la historia.
+  const hx = maxX + 58;
   let by = TOP;
   const banda = (titulo, items) => {
     if (!items.length) return;
-    nodes.push({ id: `titulo:${titulo}`, kind: 'titulo', label: titulo, x: hx, y: by, w: 190, h: 0 });
-    by += 22;
+    nodes.push({ id: `titulo:${titulo}`, kind: 'titulo', label: titulo, x: hx, y: by, w: 206, h: 0 });
+    by += 24;
     for (const it of items) {
-      nodes.push({ ...it, x: hx, y: by, w: 190, h: 44 });
-      by += 52;
+      nodes.push({ ...it, x: hx, y: by, w: 206, h: 48 });
+      by += 56;
     }
-    by += 18;
+    by += 20;
   };
 
   banda('fuentes de historia', PLUGIN.mcp.map(m => ({
     id: `mcp:${m.name}`, kind: 'mcp', label: m.name, sub: 'MCP server',
   })));
-  banda('enclavamiento · sobre cualquier fase', PLUGIN.hooks.map((h, i) => ({
+  banda('sobre cualquier fase', PLUGIN.hooks.map((h, i) => ({
     id: `hook:${h.event}:${i}`, kind: 'hook', hook: h,
     label: h.event, sub: h.script || 'hook',
   })));
 
-  const height = Math.max(TOP + PHASES.length * ROW, by) + 20;
-  return { nodes, edges, width: hx + 190 + 20, height, hx };
+  const height = Math.max(TOP + PHASES.length * ROW, by) + 24;
+  return { nodes, edges, width: hx + 206 + 24, height, hx, TOP, ROW };
 }
-
-const TOP_Y = 40, ROW_Y = 96; // mismos valores que layout(), para las etiquetas
 
 function renderGraph() {
   if (!PLUGIN || !PHASES.length) return;
@@ -1277,37 +1852,46 @@ function renderGraph() {
     const a = byId[e.a], b = byId[e.b];
     if (!a || !b) return '';
     if (e.kind === 'spine') {
-      return `M${a.x + 22} ${a.y + a.h} L${a.x + 22} ${b.y}`;
+      return `M${a.x + 24} ${a.y + a.h} L${a.x + 24} ${b.y}`;
     }
     if (e.kind === 'loop') {
-      const lx = a.x - 28;
+      const lx = a.x - 30;
       return `M${a.x + 6} ${a.y + a.h / 2} L${lx} ${a.y + a.h / 2}`
            + ` L${lx} ${b.y + b.h / 2} L${b.x + 6} ${b.y + b.h / 2}`;
     }
     const y = b.y + b.h / 2;
-    return `M${a.x + a.w} ${a.y + a.h / 2} L${a.x + a.w + 16} ${a.y + a.h / 2}`
-         + ` L${a.x + a.w + 16} ${y} L${b.x} ${y}`;
+    return `M${a.x + a.w} ${a.y + a.h / 2} L${a.x + a.w + 18} ${a.y + a.h / 2}`
+         + ` L${a.x + a.w + 18} ${y} L${b.x} ${y}`;
   };
 
   const done = id => nodeState(id) === 'done';
+
+  const nodeSvg = n => {
+    const st = nodeState(n.id);
+    const palabra = STATE_WORD[st] || '';
+    const sub = [palabra, n.sub].filter(Boolean).join(' · ');
+    const label = n.label || n.name;
+    return `
+      <g class="gnode" data-node="${esc(n.id)}" data-kind="${esc(n.kind)}"
+         data-state="${esc(st)}" data-sel="${n.id === selectedNode ? 1 : 0}"
+         tabindex="0" role="button"
+         aria-label="${esc(label)}${palabra ? `, ${palabra}` : ''}">
+        <rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}"/>
+        <text x="${n.x + 14}" y="${n.y + (sub ? 23 : 30)}">${esc(label)}</text>
+        ${sub ? `<text class="gsub" x="${n.x + 14}" y="${n.y + 39}">${esc(sub)}</text>` : ''}
+      </g>`;
+  };
+
   const svg = [
-    `<text class="glabel" x="16" y="18">ciclo · ${esc(PLUGIN.skills[0]?.command || 'us')}</text>`,
     ...g.edges.map(e => `<path class="gedge ${e.kind}${e.kind === 'loop' ? ' dashed' : ''}${
       done(e.b) && e.kind !== 'loop' ? ' done' : ''}" d="${edgePath(e)}"/>`),
     // Vertical, sobre el lazo: horizontal se montaba encima de las fases.
-    `<text class="glabel gloop" transform="translate(20,${TOP_Y + 3.6 * ROW_Y}) rotate(-90)">corrige · hasta 3 ciclos</text>`,
+    `<text class="glabel gloop" transform="translate(22,${g.TOP + 3.6 * g.ROW}) rotate(-90)">corrige · hasta 3 ciclos</text>`,
     // Los hooks no se conectan a una fase: se marca con una línea punteada.
-    `<path class="gedge dashed" d="M${g.hx - 26} 30 L${g.hx - 26} ${g.height - 30}"/>`,
+    `<path class="gedge dashed" d="M${g.hx - 28} 34 L${g.hx - 28} ${g.height - 30}"/>`,
     ...g.nodes.filter(n => n.kind === 'titulo').map(n =>
       `<text class="glabel" x="${n.x}" y="${n.y + 12}">${esc(n.label)}</text>`),
-    ...g.nodes.filter(n => n.kind !== 'titulo').map(n => `
-      <g class="gnode" data-node="${esc(n.id)}" data-kind="${esc(n.kind)}"
-         data-state="${esc(nodeState(n.id))}"
-         data-sel="${n.id === selectedNode ? 1 : 0}" tabindex="0">
-        <rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}"/>
-        <text x="${n.x + 12}" y="${n.y + (n.sub ? 20 : 26)}">${esc(n.label || n.name)}</text>
-        ${n.sub ? `<text class="gsub" x="${n.x + 12}" y="${n.y + 34}">${esc(n.sub)}</text>` : ''}
-      </g>`),
+    ...g.nodes.filter(n => n.kind !== 'titulo').map(nodeSvg),
   ].join('');
 
   const el = $('graph');
@@ -1317,7 +1901,9 @@ function renderGraph() {
   el.innerHTML = svg;
   el.querySelectorAll('.gnode').forEach(n => {
     n.addEventListener('click', () => selectNode(n.dataset.node));
-    n.addEventListener('keydown', e => e.key === 'Enter' && selectNode(n.dataset.node));
+    n.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectNode(n.dataset.node); }
+    });
   });
 }
 
@@ -1361,44 +1947,50 @@ function renderNodeDetail() {
     : kind === 'main' ? `Sesión principal · ${faseDe(name)}`
     : name;
 
+  const estado = STATE_WORD[nodeState(id)];
+
   const cuerpo = entries.length
     ? entries.map(e => `
-        <div class="nd-out ${e.kind}">
+        <div class="out ${e.kind}">
           <header>${esc(e.title)}</header>${esc(e.text)}
         </div>`).join('')
-    : `<p class="what">Todavía no hay salida de este componente en el run actual.${
+    : `<p class="prose">Todavía no hay salida de este componente en el run actual.${
         kind === 'hook'
           ? ' Los hooks no reportan al stream: su rastro queda en <code>.claude/run/&lt;ID&gt;/timeline.log</code>.'
           : ''}</p>`;
 
   $('nodeDetail').innerHTML = `
-    <div class="nd-head">
-      ${kindBadge(NODE_KIND[kind] || 'skill')}
-      <h3 class="nd-title">${esc(title)}</h3>
-      ${file ? `<button class="btn" id="ndOpen">Abrir archivo</button>` : ''}
-      ${hookScript ? `<button class="btn" id="ndScript">Abrir el script</button>` : ''}
-    </div>
-    ${kind === 'phase' && PHASE_HELP[name] ? `<p class="what">${esc(PHASE_HELP[name])}</p>` : ''}
-    <p class="what">${kind === 'main'
-      ? 'La sesión que corre el skill, no un subagente. Orquesta el ciclo: pasa el contexto a cada agente, encadena las fases y abre el PR.'
-      : esc(KINDS[NODE_KIND[kind] || 'skill']?.what || '')}</p>
-    ${cuerpo}`;
+    <div class="detail">
+      <div class="detail-head">
+        ${kindBadge(NODE_KIND[kind] || 'skill')}
+        <h3>${esc(title)}</h3>
+        ${estado ? `<span class="tag">${esc(estado)}</span>` : ''}
+      </div>
+      ${kind === 'phase' && PHASE_HELP[name] ? `<p class="prose">${esc(PHASE_HELP[name])}</p>` : ''}
+      <p class="prose">${kind === 'main'
+        ? 'La sesión que corre el skill, no un subagente. Orquesta el ciclo: pasa el contexto a cada agente, encadena las fases y abre el PR.'
+        : esc(KINDS[NODE_KIND[kind] || 'skill']?.what || '')}</p>
+      <div class="detail-actions">
+        ${file ? '<button class="btn sm" id="ndOpen">Abrir archivo</button>' : ''}
+        ${hookScript ? '<button class="btn sm" id="ndScript">Abrir el script</button>' : ''}
+      </div>
+      ${cuerpo}
+    </div>`;
 
   if (file) $('ndOpen').addEventListener('click', () => open(file));
   if (hookScript) $('ndScript').addEventListener('click', () => open(hookScript));
-  showPanel('paneDetail');
 }
 
 /* --------------------------------------------------- repositorio y VCS */
 
 // Pegar la URL y que el studio haga el resto: clonar, listar branches y avisar
-// si falta iniciar sesión en GitHub o Azure. Sin esto habia que clonar a mano
-// desde una terminal, que es justo lo que alguien no tecnico no va a hacer.
+// si falta iniciar sesión en GitHub o Azure.
 function repoState(ok, html) {
   const el = $('repoState');
   el.hidden = false;
-  // Un problema con el repo no puede quedar escondido tras un plegable.
-  if (ok === false && !$('settings').open) $('btnSettings').click();
+  // Un problema con el repo no puede quedar escondido en otra pantalla.
+  if (ok === false) { showView('config'); $('cfgWarn').hidden = false; }
+  if (ok === true) $('cfgWarn').hidden = true;
   el.dataset.ok = ok === null ? '' : (ok ? '1' : '0');
   el.innerHTML = `<span class="dot"></span>${html}`;
 }
@@ -1409,48 +2001,54 @@ $('repoUrl').addEventListener('keydown', e => e.key === 'Enter' && prepararRepo(
 async function prepararRepo() {
   const url = $('repoUrl').value.trim();
   if (!url) return $('repoUrl').focus();
+  $('btnPrepare').dataset.busy = '1';
   repoState(null, 'Preparando el repositorio…');
 
-  // Primero: ¿hace falta iniciar sesión en el proveedor?
-  let vcs = null;
   try {
-    const r = await api('/api/repo?url=' + encodeURIComponent(url));
-    vcs = r.vcs;
-    if (vcs && vcs.soportado && !vcs.loggedIn) {
-      const falta = vcs.instalado
-        ? `No hay sesión iniciada en ${esc(vcs.nombre)}.`
-        : `Falta instalar <code>${esc(vcs.cli)}</code> para usar ${esc(vcs.nombre)}: <code>${esc(vcs.instalar)}</code>`;
-      repoState(false, `${falta}<span class="grow"></span>` +
-        (vcs.instalado ? `<button class="btn lit" id="btnVcsLogin">Iniciar sesión en ${esc(vcs.nombre)}</button>` : ''));
-      if (vcs.instalado) $('btnVcsLogin').addEventListener('click', () => vcsLogin(vcs.provider));
-      return;
+    // Primero: ¿hace falta iniciar sesión en el proveedor?
+    let vcs = null;
+    try {
+      const r = await api('/api/repo?url=' + encodeURIComponent(url));
+      vcs = r.vcs;
+      if (vcs && vcs.soportado && !vcs.loggedIn) {
+        const falta = vcs.instalado
+          ? `No hay sesión iniciada en ${esc(vcs.nombre)}.`
+          : `Falta instalar <code>${esc(vcs.cli)}</code> para usar ${esc(vcs.nombre)}: <code>${esc(vcs.instalar)}</code>`;
+        repoState(false, `${falta}<span class="grow"></span>` +
+          (vcs.instalado ? `<button class="btn sm primary" id="btnVcsLogin">Iniciar sesión en ${esc(vcs.nombre)}</button>` : ''));
+        if (vcs.instalado) $('btnVcsLogin').addEventListener('click', () => vcsLogin(vcs.provider));
+        return;
+      }
+    } catch { /* si falla el chequeo se intenta clonar igual */ }
+
+    try {
+      const r = await api('/api/repo/prepare', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+      $('repoDir').value = r.dir;
+
+      const sel = $('baseBranch');
+      sel.innerHTML = r.branches.map(b =>
+        `<option value="${esc(b)}"${b === r.porDefecto ? ' selected' : ''}>${esc(b)}</option>`,
+      ).join('') || '<option value="">(sin branches)</option>';
+      sel.disabled = !r.branches.length;
+
+      repoState(true,
+        `${r.clonado ? 'Clonado' : 'Actualizado'} en <code>${esc(r.dir)}</code>` +
+        `<span class="grow"></span><span class="tag">${r.branches.length} branches</span>` +
+        `<span class="tag">base: ${esc(r.porDefecto || '—')}</span>`);
+    } catch (e) {
+      repoState(false, esc(e.message));
     }
-  } catch (e) { /* si falla el chequeo se intenta clonar igual */ }
-
-  try {
-    const r = await api('/api/repo/prepare', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ url }),
-    });
-    $('repoDir').value = r.dir;
-
-    const sel = $('baseBranch');
-    sel.innerHTML = r.branches.map(b =>
-      `<option value="${esc(b)}"${b === r.porDefecto ? ' selected' : ''}>${esc(b)}</option>`,
-    ).join('') || '<option value="">(sin branches)</option>';
-    sel.disabled = !r.branches.length;
-
-    repoState(true,
-      `${r.clonado ? 'Clonado' : 'Actualizado'} en <code>${esc(r.dir)}</code>` +
-      `<span class="grow"></span><code>${r.branches.length} branches · base: ${esc(r.porDefecto || '—')}</code>`);
-  } catch (e) {
-    repoState(false, esc(e.message));
+  } finally {
+    delete $('btnPrepare').dataset.busy;
   }
 }
 
 async function vcsLogin(provider) {
-  repoState(null, `Abriendo el login… seguí las instrucciones de abajo.`);
+  repoState(null, 'Abriendo el login… seguí las instrucciones de acá abajo.');
   try {
     await api('/api/vcs/login', {
       method: 'POST',
@@ -1467,7 +2065,7 @@ async function vcsLogin(provider) {
     if (ev.t === 'code') code = ev.code;
     if (ev.t === 'url' || ev.t === 'code') {
       repoState(null,
-        (code ? `Copiá este código: <code style="color:var(--caution);font-size:14px">${esc(code)}</code> · ` : '') +
+        (code ? `Copiá este código: <code style="color:var(--warn);font-size:14px">${esc(code)}</code> · ` : '') +
         (url ? `<a href="${esc(url)}" target="_blank" rel="noreferrer">abrir la página de login</a>` : ''));
     }
     if (ev.t === 'error') repoState(false, esc(ev.message));
@@ -1489,7 +2087,7 @@ async function refreshAuth() {
   try {
     const a = await api('/api/auth');
     const on = !!a.loggedIn;
-    $('authChip').dataset.on = on ? '1' : '0';
+    $('authChip').dataset.s = on ? 'idle' : 'error';
     $('authText').textContent = on ? (a.authMethod || 'conectado') : 'sin sesión';
     $('authDetail').textContent = on
       ? `Conectado con ${a.authMethod || 'método desconocido'}${a.apiProvider ? ` · ${a.apiProvider}` : ''}. Los runs del studio usan esta sesión.`
@@ -1498,7 +2096,7 @@ async function refreshAuth() {
     $('btnAuthLogout').disabled = !on;
     return a;
   } catch (e) {
-    $('authChip').dataset.on = '0';
+    $('authChip').dataset.s = 'error';
     $('authText').textContent = 'sin sesión';
     $('authDetail').textContent = e.message;
   }
@@ -1564,24 +2162,16 @@ $('btnAuthLogout').addEventListener('click', async () => {
 /* ------------------------------------------------------------- glosario */
 
 $('glosList').innerHTML = Object.entries(KINDS).map(([k, v]) => `
-  <dt>${kindBadge(k)}</dt>
-  <dd>${esc(v.what)}</dd>`).join('');
+  <div class="glos-row"><div>${kindBadge(k)}</div><p>${esc(v.what)}</p></div>`).join('');
 $('btnGlosario').addEventListener('click', () => $('dlgGlosario').showModal());
 $('btnGlosClose').addEventListener('click', () => $('dlgGlosario').close());
 
-function banner(kind, text) {
-  document.querySelectorAll('.banner').forEach(b => b.remove());
-  const b = document.createElement('div');
-  b.className = `banner ${kind}`;
-  b.textContent = text;
-  // Debajo de los controles: sin pestañas, es el borde superior del área útil.
-  document.querySelector('.runbar').after(b);
-  if (kind === 'ok') setTimeout(() => b.remove(), 6000);
-}
+/* ------------------------------------------------------ acciones globales */
 
-$('btnReload').addEventListener('click', () => load());
+$('btnReload').addEventListener('click', () => load().then(() => banner('ok', 'Plugin releído del disco')));
 $('btnValidate').addEventListener('click', async () => {
   $('btnValidate').disabled = true;
+  $('btnValidate').dataset.busy = '1';
   try {
     const r = await api('/api/validate', { method: 'POST' });
     const out = (r.stdout + r.stderr).trim();
@@ -1590,6 +2180,7 @@ $('btnValidate').addEventListener('click', async () => {
     banner('err', e.message);
   } finally {
     $('btnValidate').disabled = false;
+    delete $('btnValidate').dataset.busy;
   }
 });
 

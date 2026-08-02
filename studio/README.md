@@ -25,24 +25,42 @@ que sirve un HTML, no una aplicación desplegada.
 Cero dependencias npm — solo built-ins de Node. En un entorno corporativo eso
 significa que no hay supply chain que revisar antes de que el equipo lo use.
 
-## Una sola pantalla
+## Cómo está organizado
 
-Arriba una barra con la acción primaria —elegir la historia y ejecutar—, en el
-medio el grafo con su panel contextual, abajo la consola. No hay pestañas: lo
-que se muestra en el panel depende de lo que clickeaste, no de un menú que hay
-que recorrer antes de saber qué hay adentro.
+El studio es un portal de catálogo, no una terminal. Tres capas fijas y cuatro
+secciones:
 
-**Todo lo que se configura una vez vive plegado** detrás de *Configuración*:
-repositorio, branch base, permisos, herramientas y flags. Se configura una vez y
-se ejecuta muchas, así que tenerlo desplegado siempre le robaba a la vista
-principal la mitad del alto. Si algo falla con el repositorio se abre solo: un
-problema no puede quedar escondido tras un plegable.
+| Capa | Qué tiene | Por qué está siempre visible |
+|---|---|---|
+| Barra global | plugin → repo, validar, recargar, tema, sesión de Claude | Dice contra qué estás trabajando; equivocarse de repo es el error caro |
+| Barra de ejecución | origen de la historia, ID, Ejecutar, Detener, estado del run | Es la acción primaria de la herramienta: no se esconde detrás de una sección |
+| Consola | eventos del run y el campo para escribirle a Claude | Se pliega a una línea cuando no hay nada que mirar y se abre sola al arrancar |
 
-**La consola se pliega a una línea** cuando no hay nada que mirar, y se abre
-sola al arrancar un run. Vacía se estaba comiendo un tercio de la pantalla.
+| Sección | Para qué |
+|---|---|
+| Ciclo | El mapa del skill `us` con el estado del run en vivo |
+| Catálogo | Todo lo que aporta el plugin, en una tabla filtrable |
+| Historia | Escribir una historia a mano, sin tracker |
+| Configuración | Repositorio, branch base, permisos, herramientas y flags |
 
-Con eso, en una pantalla de 820px de alto el grafo se queda con ~690, contra los
-~240 que tenía antes.
+**Antes era una sola pantalla sin navegación**, con la configuración plegada
+arriba y el formulario de historia compitiendo por el panel derecho. El costo no
+era estético: no había forma de saber qué había en el plugin sin recorrer el
+grafo nodo por nodo, y la configuración aparecía y desaparecía según el estado
+de un plegable, así que el mismo control estaba en un lugar distinto cada vez.
+Con secciones fijas, cada cosa tiene una ubicación y se llega igual siempre.
+
+**Lo que se configura una vez vive en Configuración**, no en la vista principal:
+se configura una vez y se ejecuta muchas. Si algo falla con el repositorio, el
+studio te lleva ahí y marca la sección: un problema no puede quedar escondido en
+una pantalla que no estás mirando.
+
+**Cada sección abre con su encabezado**: dónde estás, qué es esto y qué podés
+hacer acá. Es el reemplazo de tener que acordarse.
+
+**Tema claro y oscuro**, con el del sistema como default y la elección
+recordada. Y sin fuentes remotas: en una red corporativa una request a un CDN de
+tipografías es una dependencia externa que no aporta nada.
 
 El ciclo del skill `us` se dibuja como un grafo: la vía de fases a la izquierda
 y colgando de cada una los componentes que intervienen ahí. Los hooks van en una
@@ -56,6 +74,11 @@ otro. Hoy el estado de una fase vive en una sola variable y hay una sola vista.
 
 Un clic en un nodo llena el panel de la derecha con lo que dijo el modelo en ese
 componente, y ofrece abrir su archivo.
+
+**El estado de cada caja va escrito además de pintado** —"listo", "en curso",
+"bloqueado"— y hay una referencia abajo del mapa. Un diagrama donde el estado
+vive solo en el color del borde deja afuera a quien no distingue esos colores, y
+el estado es justamente lo que se viene a mirar durante un run.
 
 **Editar abre una ventana a pantalla completa**, con la configuración en una
 columna y las instrucciones en la otra. Editar es una tarea enfocada y no tiene
@@ -95,9 +118,30 @@ Las explicaciones sí están escritas para alguien que recién arranca, y viven 
 `KINDS`, dentro de `public/index.html`. Si agregás un tipo de componente,
 agregalo ahí o va a aparecer sin etiqueta.
 
+## El catálogo
+
+El grafo responde "¿cómo corre esto?". El catálogo responde "¿qué hay acá
+adentro?", que es la primera pregunta de cualquiera que abre el plugin por
+primera vez y no tiene por qué recorrer un diagrama para contestarla.
+
+Es una fila por archivo real —skills, referencias, subagentes, hooks, scripts,
+MCP servers y el manifiesto— con su tipo, qué hace y los datos que importan de
+cada uno: el modelo y el esfuerzo de un subagente, si es de solo lectura, el
+matcher de un hook, si un script tiene bit de ejecución. Se filtra por tipo y se
+busca por nombre, archivo o descripción. Un clic abre el editor.
+
+Sale entero de `/api/plugin`, que es un escaneo genérico del directorio: no hay
+que registrar nada acá al agregar un componente. Lo único que sí hay que
+registrar es el **tipo**, en `KINDS`, o la fila aparece sin etiqueta.
+
+Los problemas del escaneo —un script sin `chmod +x`, un manifest que no parsea—
+se listan arriba de la tabla. Son exactamente los que rompen el plugin en
+silencio.
+
 ## Editar
 
-Un clic en cualquier nodo del grafo abre el archivo real.
+Un clic en cualquier nodo del grafo, o en cualquier fila del catálogo, abre el
+archivo real.
 
 La configuración del componente —el frontmatter— se muestra como campos con
 nombre en criollo, la clave real al lado y una línea de qué significa. `model` y
@@ -105,8 +149,9 @@ nombre en criollo, la clave real al lado y una línea de qué significa. `model`
 `description` una caja de texto, porque es larga y es lo que Claude lee para
 decidir si invoca ese componente.
 
-El bloque es plegable a propósito: ocupaba media pantalla y empujaba fuera de
-vista las instrucciones, que son lo que uno viene a editar.
+Va en una columna a la izquierda y las instrucciones a la derecha: son dos cosas
+distintas y se editan por separado. Un archivo sin frontmatter —un `.sh`, un
+`.json`— no muestra esa columna, así que el texto se queda con todo el ancho.
 
 `Cmd/Ctrl+S` guarda. La escritura preserva el modo del archivo, así que un
 script no pierde su bit de ejecución al editarlo desde acá.
@@ -220,7 +265,8 @@ y no prompts (ver `docs/decisiones.md`, D5).
 
 ## La consola
 
-El panel Ejecución muestra el stream y abajo tiene un campo para escribirle a
+La consola vive abajo de todo, en todas las secciones: es el estado de la
+sesión, no de una pantalla. Muestra el stream y tiene un campo para escribirle a
 Claude. Dos cosas que antes no se veían:
 
 - **Cada herramienta que usa**, a medida que la usa: `Bash echo hola`,
