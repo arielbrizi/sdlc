@@ -32,7 +32,7 @@ secciones:
 
 | Capa | Qué tiene | Por qué está siempre visible |
 |---|---|---|
-| Barra global | plugin → repo, validar, recargar, tema, sesión de Claude | Dice contra qué estás trabajando; equivocarse de repo es el error caro |
+| Barra global | plugin → repo, tema, sesión de Claude | Dice contra qué estás trabajando; equivocarse de repo es el error caro |
 | Barra de ejecución | origen de la historia, ID, Ejecutar, Detener, estado del run | Es la acción primaria de la herramienta: no se esconde detrás de una sección |
 | Consola | eventos del run y el campo para escribirle a Claude | Se pliega a una línea cuando no hay nada que mirar y se abre sola al arrancar |
 
@@ -64,6 +64,14 @@ Con secciones fijas, cada cosa tiene una ubicación y se llega igual siempre.
 se configura una vez y se ejecuta muchas. Si algo falla con el repositorio, el
 studio te lleva ahí y marca la sección: un problema no puede quedar escondido en
 una pantalla que no estás mirando.
+
+**Reiniciar Studio** está disponible tanto en Inicio como en Configuración. La
+acción limpia la historia, el run visible, el chat, el mapa, el costo y los
+campos temporales. Si una sesión quedó esperando mensajes, primero la cierra;
+si Claude todavía trabaja, pide detenerla. No borra código, evidencias en
+`.claude/run` ni la configuración compartida de Figma y Storybook. Las acciones
+técnicas “Validar plugin” y “Recargar” no se muestran en la interfaz cotidiana:
+la validación sigue formando parte del script y de CI.
 
 **Cada sección abre con su encabezado en una línea**: el título dice dónde
 estás y al lado va qué es esto. Apilado —y con un breadcrumb arriba que repetía

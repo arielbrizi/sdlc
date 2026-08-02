@@ -694,8 +694,6 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
     cargando…
   </div>
   <div class="top-actions">
-    <button class="btn sm" id="btnValidate">Validar plugin</button>
-    <button class="btn sm ghost" id="btnReload" title="Volver a leer el plugin del disco">Recargar</button>
     <button class="btn sm ghost" id="btnTheme" aria-label="Cambiar entre tema claro y oscuro">
       <span id="themeText">Oscuro</span>
     </button>
@@ -790,6 +788,7 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
         <p>El recorrido que hace una historia de punta a punta: a la izquierda el orden
            de las fases, y colgando de cada una los componentes que intervienen ahí.
            Clickeá cualquiera para ver su detalle.</p>
+        <button class="btn sm ghost" id="btnResetHome">Reiniciar Studio</button>
       </div>
       <div class="page-body">
         <div class="ciclo-grid" id="cicloGrid">
@@ -907,6 +906,7 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
         <h1 id="tConfig">Configuración del run</h1>
         <p>Acá preparás el repositorio y las herramientas del ciclo. El link de Figma
            puede cambiar con cada feature y también se abre desde el mapa.</p>
+        <button class="btn sm ghost" id="btnResetConfig">Reiniciar Studio</button>
       </div>
       <div class="page-body">
 
@@ -1103,6 +1103,21 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
     <button class="btn" id="btnActionConsole">Ver conversación</button><span class="grow"></span>
     <button class="btn ghost" id="btnActionLater">Resolver después</button>
     <button class="btn primary" id="btnResolveAction">Responder y continuar</button>
+  </div>
+</dialog>
+
+<dialog id="dlgReset" aria-labelledby="dlgResetTitle">
+  <div class="dlg-head"><h2 id="dlgResetTitle">Reiniciar Studio</h2></div>
+  <div class="dlg-body">
+    <p class="prose">Vas a volver a una pantalla limpia para empezar otra historia.</p>
+    <div class="notice">
+      <span>Se limpian la historia, el chat, el mapa, el costo y los campos temporales.<br>
+        Se conservan el código, las evidencias y la configuración de Figma/Storybook.</span>
+    </div>
+  </div>
+  <div class="dlg-foot"><span class="grow"></span>
+    <button class="btn ghost" id="btnResetCancel">Cancelar</button>
+    <button class="btn primary" id="btnResetConfirm">Sí, reiniciar</button>
   </div>
 </dialog>
 
@@ -2833,24 +2848,6 @@ $('glosList').innerHTML = Object.entries(KINDS).map(([k, v]) => `
 $('btnGlosario').addEventListener('click', () => $('dlgGlosario').showModal());
 $('btnGlosClose').addEventListener('click', () => $('dlgGlosario').close());
 
-/* ------------------------------------------------------ acciones globales */
-
-$('btnReload').addEventListener('click', () => load().then(() => banner('ok', 'Plugin releído del disco')));
-$('btnValidate').addEventListener('click', async () => {
-  $('btnValidate').disabled = true;
-  $('btnValidate').dataset.busy = '1';
-  try {
-    const r = await api('/api/validate', { method: 'POST' });
-    const out = (r.stdout + r.stderr).trim();
-    banner(r.code === 0 ? 'ok' : 'err', out || (r.code === 0 ? 'Plugin válido' : 'Validación falló'));
-  } catch (e) {
-    banner('err', e.message);
-  } finally {
-    $('btnValidate').disabled = false;
-    delete $('btnValidate').dataset.busy;
-  }
-});
-
 /* ------------------------------------------ recuperar el estado al recargar */
 
 // Un F5 no debería perder el run en curso. El servidor ya guarda todos los
@@ -2859,6 +2856,62 @@ $('btnValidate').addEventListener('click', async () => {
 const LS = 'globant-sdlc-studio';
 const CAMPOS = ['source', 'story', 'repoUrl', 'repoDir', 'baseBranch',
                 'permMode', 'allowedTools', 'extraFlags', 'stTitle', 'stDesc', 'stAc'];
+
+function requestReset() {
+  if (RUN_MODEL.status === 'running') {
+    abrirDock(true);
+    banner('err', 'Claude sigue trabajando. Detené la ejecución antes de reiniciar el Studio.');
+    return;
+  }
+  if (!$('dlgReset').open) $('dlgReset').showModal();
+}
+
+async function resetStudio() {
+  if (RUN_MODEL.status === 'running') return requestReset();
+  $('dlgReset').close();
+
+  // Una sesión que terminó su turno sigue viva esperando mensajes. Se cierra
+  // antes de olvidar su id para no dejar un proceso invisible en segundo plano.
+  es?.close(); es = null;
+  if (run && (RUN_MODEL.status === 'idle' || RUN_MODEL.blocked || RUN_MODEL.complete)) {
+    await api(`/api/run/${run}/close`, { method: 'POST' }).catch(() => {});
+  }
+
+  run = null;
+  try {
+    localStorage.removeItem(LS);
+    localStorage.removeItem(DOCK_HEIGHT_LS);
+  } catch { /* sin storage */ }
+
+  $('source').selectedIndex = 0;
+  for (const id of ['story', 'repoUrl', 'permMode', 'allowedTools', 'extraFlags',
+                    'stTitle', 'stDesc', 'stAc', 'sendText']) $(id).value = '';
+  $('repoDir').value = PLUGIN?.targetRepo || '';
+  $('baseBranch').innerHTML = '<option value="">—</option>';
+  $('baseBranch').disabled = true;
+  $('cmdHint').textContent = 'Todavía no se ejecutó ningún run en esta sesión del studio.';
+  $('cfgStatus').textContent = '';
+  $('log').innerHTML = '';
+  if ($('dlgAction').open) $('dlgAction').close();
+
+  RUN_MODEL = { status: 'none', phase: null, blocked: null, complete: false, cost: 0, actions: {} };
+  NODE_OUT = {}; NODE_STATE = {}; selectedNode = null;
+  $('detailCard').hidden = true;
+  resetPhases();
+  syncSource();
+  setSession('none', 'Sin sesión abierta');
+  abrirDock(false);
+  renderGraph();
+  showView('ciclo');
+  medirDock();
+  await loadConfig();
+  banner('ok', 'Studio reiniciado. Ya podés comenzar una historia nueva.');
+}
+
+$('btnResetHome').addEventListener('click', requestReset);
+$('btnResetConfig').addEventListener('click', requestReset);
+$('btnResetCancel').addEventListener('click', () => $('dlgReset').close());
+$('btnResetConfirm').addEventListener('click', resetStudio);
 
 function guardar() {
   const datos = { run };
