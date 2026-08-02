@@ -36,9 +36,17 @@ inventar.
 3. Si el proyecto publica un `stories.json` o un Storybook estatico, usalo: es
    mas confiable que inferir del codigo.
 
-**Figma** — es la fuente de la intencion. Con el MCP de Figma habilitado, leé el
-archivo y el nodo que indique la config. De ahi salen medidas, tokens, estados y
-copys, no una impresion general.
+**Figma** — es la fuente de la intencion. Con el MCP remoto de Figma habilitado,
+leé el link exacto que indique `figma.url`. No le pidas al dev que separe
+`file_key` y `node_id`: el studio ya los deriva del link y los deja solo por
+compatibilidad. Del frame salen estructura, tokens, estados, comportamiento y
+copys; la navegacion cuenta solo cuando esta dibujada o anotada, no se infiere.
+
+Para un frame grande, usa primero `get_metadata` y recorta al nodo relevante.
+Antes de cerrar el contrato obtene `get_design_context`, `get_variable_defs` y
+`get_screenshot`. Si hay Code Connect, consulta su mapeo y prioriza esos
+componentes sobre equivalentes inventados. El screenshot valida la lectura
+estructurada; no reemplaza los datos de variables y componentes.
 
 **El repo, siempre** — tokens, tema, utilidades de estilo, componentes sin story
 y las reglas de `CLAUDE.md` y `.claude/rules/`. Aunque las dos integraciones
@@ -85,6 +93,7 @@ resuelto en el sistema. El diseno propio no es un hallazgo.
   "sources": {
     "storybook": "usado | no disponible | deshabilitado",
     "figma": "usado | no disponible | deshabilitado",
+    "figma_url": "https://www.figma.com/design/...?...node-id=...",
     "repo": "usado"
   },
   "reuse": [

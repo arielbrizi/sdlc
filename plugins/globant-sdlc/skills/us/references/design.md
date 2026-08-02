@@ -26,8 +26,7 @@ En el repo objetivo, `.claude/globant-sdlc.json`:
   },
   "figma": {
     "enabled": true,
-    "file_key": "AbCdEf123456",
-    "node_id": "1234:5678"
+    "url": "https://www.figma.com/design/AbCdEf123456/Producto?node-id=1234-5678"
   },
   "storybook": {
     "enabled": true,
@@ -40,15 +39,17 @@ En el repo objetivo, `.claude/globant-sdlc.json`:
 | Clave | Qué es | Default |
 |---|---|---|
 | `agents.ux` | Si la fase 3 corre | `false` |
-| `figma.enabled` | Si el agente consulta Figma | `false` |
-| `figma.file_key` | El `file_key` del archivo, de la URL de Figma | vacío |
-| `figma.node_id` | Nodo raíz del feature, si el archivo es grande | vacío |
+| `figma.enabled` | Si el agente consulta Figma; el studio lo activa al pegar un link | `false` |
+| `figma.url` | Link al frame concreto de la feature | vacío |
+| `figma.file_key` | Derivado de la URL, solo por compatibilidad | vacío |
+| `figma.node_id` | Derivado de la URL, solo por compatibilidad | vacío |
 | `storybook.enabled` | Si el agente lee el catálogo | `false` |
 | `storybook.dir` | Directorio de configuración | `.storybook` |
 | `storybook.url` | Storybook publicado, si lo hay | vacío |
 
-El `file_key` sale de la URL: `figma.com/design/<file_key>/<nombre>`. El
-`node_id` sale del parámetro `node-id` cuando seleccionás un frame.
+En el studio no hay que completar esos campos técnicos. Seleccioná el frame en
+Figma, usá **Copy link to selection**, pegá el link completo y guardá. El studio
+extrae el archivo y el nodo, habilita Figma y prende `@ux`.
 
 ## Storybook
 
@@ -67,19 +68,17 @@ caso que justifica tener design system.
 
 ## Figma
 
-Requiere el MCP `figma`, declarado en el `.mcp.json` del plugin. Es el servidor
-de Dev Mode que expone Figma Desktop en `http://127.0.0.1:3845/mcp`: corre en la
-máquina del developer, con la sesión de Figma que ya tiene abierta, así que el
-plugin no maneja tokens de Figma.
+Requiere el MCP remoto `figma`, declarado en el `.mcp.json` del plugin, contra
+`https://mcp.figma.com/mcp`. No requiere Figma Desktop abierto. Cada developer
+autoriza su cuenta por OAuth desde `/mcp`; el plugin no guarda tokens.
 
 Consecuencias que hay que tener presentes:
 
-- **Sin Figma Desktop abierto no hay MCP.** El agente lo va a reportar como
-  `no disponible`, no como error del run. Con `storybook` habilitado el trabajo
-  se hace igual, con menos precisión sobre la intención del diseño.
-- **En CI no hay Figma.** Un run automático en un runner no tiene sesión ni app
-  de escritorio. Ahí conviene dejar `figma.enabled` en `false` y apoyarse en
-  Storybook, que sí es del repo.
+- **Sin autorización o sin permiso sobre el archivo no hay contexto.** El agente
+  lo reporta como `no disponible`, no inventa el diseño.
+- **En CI no asumas una sesión OAuth.** Hasta que el equipo defina una identidad
+  y política de autenticación no interactiva, dejá `figma.enabled` en `false` y
+  apoyate en Storybook y el repo.
 
 ## Qué produce la fase
 

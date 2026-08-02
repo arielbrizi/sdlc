@@ -38,9 +38,17 @@ ciclo:
 {
   "agents": { "ux": true },
   "storybook": { "enabled": true, "dir": ".storybook" },
-  "figma": { "enabled": true, "file_key": "AbCdEf123456" }
+  "figma": {
+    "enabled": true,
+    "url": "https://www.figma.com/design/AbCdEf123456/Producto?node-id=1234-5678"
+  }
 }
 ```
+
+En el studio alcanza con seleccionar el frame de la feature en Figma, usar
+**Copy link to selection**, pegar la URL y guardar. El studio deriva los datos
+técnicos y habilita `@ux`. Storybook es opcional: cataloga los componentes que
+ya existen en código; no define por sí solo el estilo ni la navegación.
 
 Desde el studio se hace con un interruptor por agente en el catálogo, y las
 integraciones de diseño en Configuración.

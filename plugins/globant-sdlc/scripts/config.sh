@@ -98,8 +98,9 @@ imprimir_json() {
     first=0
   done
   printf '\n  },\n'
-  printf '  "figma": { "enabled": %s, "file_key": "%s", "node_id": "%s" },\n' \
+  printf '  "figma": { "enabled": %s, "url": "%s", "file_key": "%s", "node_id": "%s" },\n' \
     "$(leer_bool figma enabled "$(default_design)")" \
+    "$(leer_str figma url '')" \
     "$(leer_str figma file_key '')" \
     "$(leer_str figma node_id '')"
   printf '  "storybook": { "enabled": %s, "dir": "%s", "url": "%s" }\n}\n' \

@@ -102,6 +102,11 @@ Delegá en `ux`, pasándole `story.json`, `plan.md` y la sección de diseño de
 el contenido que devuelve en `design_md`— con qué componentes del design system
 reusar, qué falta, tokens, estados y criterios visuales verificables.
 
+Para Figma, la entrada principal es `figma.url`: apunta al frame concreto de la
+feature y el MCP remoto lo abre directamente. `file_key` y `node_id` son campos
+derivados para compatibilidad; no se los pidas al dev ni prefieras esos campos
+sobre la URL.
+
 Corre **antes** de implementar y no después: el costo caro de no tener diseño en
 el ciclo no es una pantalla fea, es un componente nuevo escrito desde cero
 cuando ya existía uno equivalente.

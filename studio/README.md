@@ -162,8 +162,11 @@ apagado se sigue viendo, punteado y con la palabra "deshabilitado": sacarlo del
 diagrama haría creer que el plugin no tiene esa fase.
 
 Las fuentes de la fase de diseño —Storybook y Figma— se configuran en
-Configuración, porque además del interruptor llevan datos: el directorio del
-catálogo, la URL publicada, el `file_key` del archivo de Figma.
+Configuración y también se llega desde el encabezado del mapa o el detalle de
+la fase 3. Para Figma se pega un único link al frame: el studio deriva
+`file_key` y `node_id`, habilita el MCP remoto y prende `@ux`. Storybook queda
+como opción separada porque responde otra pregunta: qué componentes ya existen
+en código. Sus campos técnicos están plegados como opciones avanzadas.
 
 ## Editar
 

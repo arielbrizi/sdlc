@@ -335,12 +335,36 @@ async function writeProjectConfig(repoDir, body) {
     if (conocidos.has(nombre)) agents[nombre] = !!valor;
   }
 
+  const figmaUrl = texto(body.figma?.url);
+  let figmaFileKey = texto(body.figma?.file_key);
+  let figmaNodeId = texto(body.figma?.node_id);
+  if (figmaUrl) {
+    let parsed;
+    try { parsed = new URL(figmaUrl); }
+    catch {
+      throw Object.assign(new Error('El link de Figma no es válido. Copiá el link del frame seleccionado y pegalo completo.'), { code: 400 });
+    }
+    if (!/(^|\.)figma\.com$/i.test(parsed.hostname)) {
+      throw Object.assign(new Error('El link debe ser de figma.com.'), { code: 400 });
+    }
+    const match = parsed.pathname.match(/^\/(?:design|file|proto)\/([^/]+)/i);
+    if (!match) {
+      throw Object.assign(new Error('No pude encontrar el archivo en ese link de Figma.'), { code: 400 });
+    }
+    figmaFileKey = match[1];
+    figmaNodeId = texto(parsed.searchParams.get('node-id')).replace(/-/g, ':');
+    if (!figmaNodeId) {
+      throw Object.assign(new Error('El link no apunta a un frame. En Figma seleccioná la pantalla, elegí “Copy link to selection” y pegá ese link.'), { code: 400 });
+    }
+  }
+
   const cfg = {
     agents,
     figma: {
-      enabled: !!body.figma?.enabled,
-      file_key: texto(body.figma?.file_key),
-      node_id: texto(body.figma?.node_id),
+      enabled: !!figmaUrl || !!body.figma?.enabled,
+      url: figmaUrl,
+      file_key: figmaFileKey,
+      node_id: figmaNodeId,
     },
     storybook: {
       enabled: !!body.storybook?.enabled,

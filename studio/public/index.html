@@ -323,6 +323,26 @@ input.mono,.field.mono{font-family:var(--mono);font-size:12.5px}
 .prose{font-size:13px;color:var(--muted);line-height:1.6;max-width:78ch;margin:0}
 .prose+.prose{margin-top:10px}
 
+/* La configuración de diseño habla en términos de decisiones, no de la forma
+   interna del JSON. Los datos técnicos quedan disponibles, pero no son el
+   primer obstáculo para alguien que solo necesita pegar un link. */
+.source-guide{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;
+  margin-bottom:18px;max-width:1080px}
+.source-guide article{padding:13px 14px;border:1px solid var(--border);
+  border-radius:var(--r-md);background:var(--surface-2)}
+.source-guide strong{display:block;font-size:13px;margin-bottom:3px}
+.source-guide p{margin:0;color:var(--muted);font-size:12.5px;line-height:1.5}
+.setup-step{display:flex;flex-direction:row;align-items:flex-start;gap:10px;max-width:1080px}
+.step-num{display:grid;place-items:center;flex:0 0 24px;height:24px;border-radius:999px;
+  color:var(--accent-fg);background:var(--accent);font-size:12px;font-weight:700}
+.input-state{display:flex;align-items:center;gap:6px;min-height:18px;font-size:12px;color:var(--muted)}
+.input-state[data-ok="1"]{color:var(--ok)}
+.input-state[data-ok="0"]{color:var(--danger)}
+.advanced{max-width:1080px;border-top:1px solid var(--border);padding-top:12px;margin-top:14px}
+.advanced summary{cursor:pointer;color:var(--muted);font-size:12.5px;font-weight:600}
+.advanced[open] summary{margin-bottom:14px}
+@media (max-width:760px){.source-guide{grid-template-columns:1fr}}
+
 /* ------------------------------------------------------------- catálogo */
 .cat-tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:14px 16px;
   border-bottom:1px solid var(--border)}
@@ -729,6 +749,7 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
               <h2 id="cicloCmd">Mapa del ciclo</h2>
               <span class="sub" id="cicloSub"></span>
               <span class="grow"></span>
+              <button class="btn sm" id="btnCycleDesign">Configurar diseño</button>
               <div class="legend">
                 <span><i></i> sin correr</span>
                 <span><i class="active"></i> en curso</span>
@@ -850,8 +871,8 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
     <section class="view" id="viewConfig" aria-labelledby="tConfig">
       <div class="page-head">
         <h1 id="tConfig">Configuración del run</h1>
-        <p>Se configura una vez y se ejecuta muchas. Nada de esto cambia entre historias,
-           por eso vive acá y no en la barra de ejecución.</p>
+        <p>Acá preparás el repositorio y las herramientas del ciclo. El link de Figma
+           puede cambiar con cada feature y también se abre desde el mapa.</p>
       </div>
       <div class="page-body">
 
@@ -918,56 +939,65 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
           </div>
         </div>
 
-        <div class="card">
+        <div class="card" id="designConfig">
           <div class="card-head"><h2>Diseño de interfaz</h2>
-            <span class="sub">fuentes de la fase 3</span></div>
+            <span class="sub">qué construir y qué reutilizar en la fase 3</span></div>
           <div class="card-body">
-            <p class="prose" style="margin-bottom:16px">
-              Las dos vienen apagadas: el plugin corre también en repos de backend, donde
-              un agente de diseño no tiene con qué trabajar. Se encienden por separado
-              porque son independientes — hay equipos con design system en Storybook y sin
-              Figma, y al revés. El agente <code>@ux</code> se habilita en el
-              <a href="#" id="linkCatalogo">catálogo</a>.
-            </p>
-            <div class="form-grid">
-              <div class="f">
-                <span class="f-label">Storybook <code>storybook.enabled</code></span>
-                <button class="switch" id="swStorybook" aria-pressed="false">
-                  <span class="track"></span><span class="lbl">deshabilitado</span>
-                </button>
-                <span class="f-help">La fuente de verdad de qué componentes ya existen.</span>
+            <div class="source-guide">
+              <article>
+                <strong>Figma dice qué construir</strong>
+                <p>La pantalla o flujo esperado: estructura, contenido, estados y comportamiento. La navegación solo cuenta si está dibujada o anotada.</p>
+              </article>
+              <article>
+                <strong>Storybook dice qué ya existe</strong>
+                <p>Es el catálogo de componentes implementados —botones, campos y variantes— para reutilizarlos en vez de crear otros.</p>
+              </article>
+            </div>
+
+            <div class="form-grid one">
+              <div class="f f-wide setup-step">
+                <span class="step-num" aria-hidden="true">1</span>
+                <div class="f" style="flex:1">
+                  <label class="f-label" for="fgUrl">Pegá el link de la pantalla de Figma</label>
+                  <input class="field mono" id="fgUrl" type="url" aria-describedby="hFgUrl fgUrlState"
+                         placeholder="https://www.figma.com/design/...?...node-id=..." autocomplete="off">
+                  <span class="f-help" id="hFgUrl">En Figma seleccioná el frame de la feature, elegí <b>Copy link to selection</b> y pegalo completo. Al guardar se habilitan Figma y <code>@ux</code>.</span>
+                  <span class="input-state" id="fgUrlState" aria-live="polite">Sin link: Figma no participa del ciclo.</span>
+                </div>
               </div>
-              <div class="f">
-                <span class="f-label">Figma <code>figma.enabled</code></span>
-                <button class="switch" id="swFigma" aria-pressed="false">
-                  <span class="track"></span><span class="lbl">deshabilitado</span>
-                </button>
-                <span class="f-help">Necesita Figma Desktop abierto en esta máquina.</span>
-              </div>
-              <div class="f">
-                <label class="f-label" for="sbDir">Directorio de Storybook <code>storybook.dir</code></label>
-                <input class="field mono" id="sbDir" placeholder=".storybook">
-              </div>
-              <div class="f">
-                <label class="f-label" for="sbUrl">Storybook publicado <code>storybook.url</code></label>
-                <input class="field mono" id="sbUrl" placeholder="https://storybook.interno/ui">
-              </div>
-              <div class="f">
-                <label class="f-label" for="fgKey">Archivo de Figma <code>figma.file_key</code></label>
-                <input class="field mono" id="fgKey" aria-describedby="hFgKey" placeholder="AbCdEf123456">
-                <span class="f-help" id="hFgKey">De la URL: figma.com/design/<b>&lt;file_key&gt;</b>/nombre.</span>
-              </div>
-              <div class="f">
-                <label class="f-label" for="fgNode">Nodo raíz <code>figma.node_id</code></label>
-                <input class="field mono" id="fgNode" aria-describedby="hFgNode" placeholder="1234:5678">
-                <span class="f-help" id="hFgNode">Opcional. El parámetro <code>node-id</code> del frame.</span>
+
+              <div class="f f-wide setup-step">
+                <span class="step-num" aria-hidden="true">2</span>
+                <div class="f" style="flex:1">
+                  <span class="f-label">¿El proyecto ya tiene Storybook?</span>
+                  <button class="switch" id="swStorybook" aria-pressed="false">
+                    <span class="track"></span><span class="lbl">No / no sé</span>
+                  </button>
+                  <span class="f-help">Si no sabés, dejalo apagado. El agente igual revisa los componentes del repositorio.</span>
+                </div>
               </div>
             </div>
+
+            <details class="advanced">
+              <summary>Opciones avanzadas de Storybook</summary>
+              <div class="form-grid">
+                <div class="f">
+                  <label class="f-label" for="sbDir">Directorio</label>
+                  <input class="field mono" id="sbDir" placeholder=".storybook">
+                  <span class="f-help">Normalmente no hace falta cambiarlo.</span>
+                </div>
+                <div class="f">
+                  <label class="f-label" for="sbUrl">URL publicada <span class="tag">opcional</span></label>
+                  <input class="field mono" id="sbUrl" placeholder="https://storybook.interno/ui">
+                  <span class="f-help">Solo si el equipo publica el catálogo en una web.</span>
+                </div>
+              </div>
+            </details>
           </div>
           <div class="card-foot">
             <span class="dirty" id="cfgStatus"></span>
             <span class="grow"></span>
-            <button class="btn primary" id="btnSaveDesign">Guardar</button>
+            <button class="btn primary" id="btnSaveDesign">Guardar diseño</button>
           </div>
         </div>
 
@@ -1120,6 +1150,12 @@ function showView(v) {
 }
 document.querySelectorAll('.nav-item[data-view]').forEach(b =>
   b.addEventListener('click', () => showView(b.dataset.view)));
+
+function openDesignConfig() {
+  showView('config');
+  requestAnimationFrame(() => $('designConfig').scrollIntoView({ behavior: 'smooth', block: 'start' }));
+}
+$('btnCycleDesign').addEventListener('click', openDesignConfig);
 
 /* ---------------------------------------------------------------- avisos */
 // Un toast avisa sin mover el contenido de lugar. Lo que salió bien se va solo;
@@ -1347,11 +1383,36 @@ function pintarSwitch(el, on) {
 function pintarDesign() {
   if (!CONFIG) return;
   pintarSwitch($('swStorybook'), CONFIG.storybook?.enabled);
-  pintarSwitch($('swFigma'), CONFIG.figma?.enabled);
+  $('swStorybook').querySelector('.lbl').textContent = CONFIG.storybook?.enabled ? 'Sí, usarlo' : 'No / no sé';
   $('sbDir').value = CONFIG.storybook?.dir || '';
   $('sbUrl').value = CONFIG.storybook?.url || '';
-  $('fgKey').value = CONFIG.figma?.file_key || '';
-  $('fgNode').value = CONFIG.figma?.node_id || '';
+  const legacyUrl = CONFIG.figma?.file_key
+    ? `https://www.figma.com/design/${CONFIG.figma.file_key}/feature${CONFIG.figma.node_id
+      ? `?node-id=${CONFIG.figma.node_id.replace(/:/g, '-')}` : ''}`
+    : '';
+  $('fgUrl').value = CONFIG.figma?.url || legacyUrl;
+  pintarEstadoFigma();
+}
+
+function validarFigmaUrl(valor) {
+  if (!valor.trim()) return { empty: true, message: 'Sin link: Figma no participa del ciclo.' };
+  try {
+    const u = new URL(valor.trim());
+    if (!/(^|\.)figma\.com$/i.test(u.hostname)) return { ok: false, message: 'Tiene que ser un link de figma.com.' };
+    if (!/^\/(design|file|proto)\/[^/]+/i.test(u.pathname)) return { ok: false, message: 'No encuentro el archivo de Figma en este link.' };
+    if (!u.searchParams.get('node-id')) return { ok: false, message: 'Falta la pantalla. Seleccioná el frame y usá “Copy link to selection”.' };
+    return { ok: true, message: 'Listo: este frame será el diseño de referencia de la feature.' };
+  } catch {
+    return { ok: false, message: 'El link no parece completo.' };
+  }
+}
+
+function pintarEstadoFigma() {
+  const estado = validarFigmaUrl($('fgUrl').value);
+  $('fgUrlState').dataset.ok = estado.empty ? '' : (estado.ok ? '1' : '0');
+  $('fgUrlState').textContent = estado.message;
+  $('fgUrl').setAttribute('aria-invalid', String(estado.ok === false));
+  return estado;
 }
 
 /** Manda la config entera: el servidor devuelve lo efectivo, que es lo que vale. */
@@ -1361,9 +1422,10 @@ async function guardarConfig(cambios = {}) {
     repoDir: $('repoDir').value.trim(),
     agents: { ...base.agents, ...(cambios.agents || {}) },
     figma: {
-      enabled: $('swFigma').getAttribute('aria-pressed') === 'true',
-      file_key: $('fgKey').value.trim(),
-      node_id: $('fgNode').value.trim(),
+      enabled: !!$('fgUrl').value.trim(),
+      url: $('fgUrl').value.trim(),
+      file_key: base.figma?.file_key || '',
+      node_id: base.figma?.node_id || '',
       ...(cambios.figma || {}),
     },
     storybook: {
@@ -1406,21 +1468,37 @@ async function toggleAgente(nombre, nuevoEstado) {
 // justo cuando alguien está navegando sin mouse. Se recuerda cuál era.
 let focoAgente = null;
 
-for (const [id, seccion] of [['swStorybook', 'storybook'], ['swFigma', 'figma']]) {
-  $(id).addEventListener('click', () => {
-    pintarSwitch($(id), $(id).getAttribute('aria-pressed') !== 'true');
-    $('cfgStatus').textContent = 'sin guardar';
-  });
-  // el nombre de la sección se usa al guardar; queda acá para no perder el par
-  void seccion;
-}
+$('swStorybook').addEventListener('click', () => {
+  pintarSwitch($('swStorybook'), $('swStorybook').getAttribute('aria-pressed') !== 'true');
+  $('swStorybook').querySelector('.lbl').textContent = $('swStorybook').getAttribute('aria-pressed') === 'true'
+    ? 'Sí, usarlo' : 'No / no sé';
+  $('cfgStatus').textContent = 'sin guardar';
+});
+
+$('fgUrl').addEventListener('input', () => {
+  pintarEstadoFigma();
+  $('cfgStatus').textContent = 'sin guardar';
+});
+for (const id of ['sbDir', 'sbUrl']) $(id).addEventListener('input', () => {
+  $('cfgStatus').textContent = 'sin guardar';
+});
 
 $('btnSaveDesign').addEventListener('click', async () => {
+  const estado = pintarEstadoFigma();
+  if (estado.ok === false) {
+    $('fgUrl').focus();
+    banner('err', estado.message);
+    return;
+  }
   $('btnSaveDesign').dataset.busy = '1';
   try {
-    const r = await guardarConfig();
+    const r = await guardarConfig({
+      agents: $('fgUrl').value.trim() ? { ux: true } : {},
+    });
     $('cfgStatus').textContent = '';
-    banner('ok', `Guardado en ${r.path}`);
+    banner('ok', $('fgUrl').value.trim()
+      ? 'Diseño guardado. Figma y @ux quedaron habilitados para este repo.'
+      : `Configuración guardada en ${r.path}`);
   } catch (e) {
     banner('err', `No se pudo guardar: ${e.message}`);
   } finally {
@@ -1428,7 +1506,6 @@ $('btnSaveDesign').addEventListener('click', async () => {
   }
 });
 
-$('linkCatalogo').addEventListener('click', e => { e.preventDefault(); showView('catalogo'); });
 $('repoDir').addEventListener('change', loadConfig);
 
 const catFiltros = new Set();
@@ -2250,6 +2327,7 @@ function renderNodeDetail() {
     : name;
 
   const estado = STATE_WORD[nodeState(id)];
+  const esDiseno = (kind === 'phase' && name === '3') || (kind === 'agent' && name === 'ux');
 
   const cuerpo = entries.length
     ? entries.map(e => `
@@ -2282,6 +2360,7 @@ function renderNodeDetail() {
           <span class="f-help">En este repo. Se guarda al tocarlo.</span>
         </div>` : ''}
       <div class="detail-actions">
+        ${esDiseno ? '<button class="btn sm primary" id="ndDesignConfig">Configurar diseño</button>' : ''}
         ${file ? '<button class="btn sm" id="ndOpen">Abrir archivo</button>' : ''}
         ${hookScript ? '<button class="btn sm" id="ndScript">Abrir el script</button>' : ''}
       </div>
@@ -2289,6 +2368,7 @@ function renderNodeDetail() {
     </div>`;
 
   if (file) $('ndOpen').addEventListener('click', () => open(file));
+  if (esDiseno) $('ndDesignConfig').addEventListener('click', openDesignConfig);
   if (hookScript) $('ndScript').addEventListener('click', () => open(hookScript));
   if (kind === 'agent') {
     $('ndToggle').addEventListener('click', async () => {
