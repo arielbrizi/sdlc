@@ -36,6 +36,11 @@ secciones:
 | Barra de ejecución | origen de la historia, ID, Ejecutar, Detener, estado del run | Es la acción primaria de la herramienta: no se esconde detrás de una sección |
 | Consola | eventos del run y el campo para escribirle a Claude | Se pliega a una línea cuando no hay nada que mirar y se abre sola al arrancar |
 
+La consola se puede agrandar arrastrando su borde superior. El botón
+**Ampliar** alterna entre el tamaño normal y casi toda la ventana, y la altura
+elegida queda recordada. El separador también acepta `↑`, `↓`, `Home` y `End`
+para ajustar la altura con teclado.
+
 | Sección | Para qué |
 |---|---|
 | Ciclo | El mapa del skill `us` con el estado del run en vivo |

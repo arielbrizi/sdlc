@@ -502,14 +502,23 @@ table.cat tbody tr[data-open="1"]{background:color-mix(in srgb,var(--accent) 9%,
 /* ---------------------------------------------------------------- consola */
 .dock{display:flex;flex-direction:column;flex-shrink:0;
   border-top:1px solid var(--border);background:var(--surface)}
-.dock[data-open="1"]{height:34vh;min-height:220px}
+.dock[data-open="1"]{height:clamp(220px,var(--dock-size,34vh),calc(100vh - 120px));min-height:220px}
+.dock-resize{height:8px;margin-top:-4px;flex:0 0 8px;cursor:ns-resize;touch-action:none;position:relative;z-index:2}
+.dock-resize::after{content:"";position:absolute;left:calc(50% - 28px);top:3px;width:56px;height:3px;
+  border-radius:3px;background:var(--border-strong);transition:background .12s,width .12s,left .12s}
+.dock-resize:hover::after,.dock-resize:focus-visible::after{left:calc(50% - 40px);width:80px;background:var(--accent)}
+.dock-resize:focus-visible{outline:none}
+.dock[data-open="0"] .dock-resize{display:none}
+body.dock-resizing{cursor:ns-resize;user-select:none}
 .dock-head{
-  display:flex;align-items:center;gap:10px;width:100%;padding:10px 16px;
-  background:none;border:none;cursor:pointer;text-align:left;font-size:13px;color:var(--muted);
+  display:flex;align-items:center;width:100%;padding-right:10px;
+  background:none;border:none;font-size:13px;color:var(--muted);
 }
-.dock-head:hover{background:var(--surface-2);color:var(--text)}
-.dock-head .grow{flex:1}
-.dock-head .chev{transition:transform .15s;color:var(--subtle);font-size:11px}
+.dock-toggle{display:flex;align-items:center;gap:10px;flex:1;min-width:0;padding:10px 16px;
+  background:none;border:none;cursor:pointer;text-align:left;font:inherit;color:inherit}
+.dock-toggle:hover{background:var(--surface-2);color:var(--text)}
+.dock-toggle .grow{flex:1}
+.dock-toggle .chev{transition:transform .15s;color:var(--subtle);font-size:11px}
 .dock[data-open="1"] .dock-head .chev{transform:rotate(180deg)}
 .dock[data-open="0"] .log,.dock[data-open="0"] .send{display:none}
 .dock[data-open="0"] .console-summary{display:none}
@@ -1031,13 +1040,20 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
 
     <!-- ------------------------------------------------------------- consola -->
     <div class="dock" id="dock" data-open="0" data-s="none">
-      <button class="dock-head" id="dockHead" aria-expanded="false" aria-controls="log">
-        <span class="dot"></span>
-        <span id="sessionText">Sin sesión abierta</span>
-        <span class="grow"></span>
-        <span class="tag" id="evCount" hidden>0 eventos</span>
-        <span class="chev">▾</span>
-      </button>
+      <div class="dock-resize" id="dockResize" role="separator" tabindex="0"
+           aria-label="Cambiar altura de la consola" aria-orientation="horizontal"
+           aria-valuemin="220"></div>
+      <div class="dock-head">
+        <button class="dock-toggle" id="dockHead" aria-expanded="false" aria-controls="log">
+          <span class="dot"></span>
+          <span id="sessionText">Sin sesión abierta</span>
+          <span class="grow"></span>
+          <span class="tag" id="evCount" hidden>0 eventos</span>
+          <span class="chev">▾</span>
+        </button>
+        <button class="btn sm ghost" id="btnDockSize" aria-pressed="false"
+                title="Mostrar más conversación">Ampliar</button>
+      </div>
       <div class="console-summary" id="consoleSummary">
         <span class="dot"></span><b id="consoleStatus">Sin ejecución</b>
         <span id="consolePhase">Todavía no comenzó ninguna fase</span><span class="grow"></span>
@@ -1666,9 +1682,37 @@ $('catSearch').addEventListener('input', renderCatalog);
 
 /* ------------------------------------------------------------- consola */
 
+const DOCK_HEIGHT_LS = 'globant-sdlc-studio-dock-height';
+let dockBeforeLarge = null;
+
+const dockLimits = () => ({ min: 220, max: Math.max(220, innerHeight - 120) });
+
+function setDockHeight(height, remember = true) {
+  const { min, max } = dockLimits();
+  const px = Math.round(Math.min(max, Math.max(min, Number(height) || min)));
+  $('dock').style.setProperty('--dock-size', `${px}px`);
+  $('dockResize').setAttribute('aria-valuemax', String(max));
+  $('dockResize').setAttribute('aria-valuenow', String(px));
+  const large = $('dock').dataset.open === '1' && px >= innerHeight * .6;
+  $('btnDockSize').textContent = large ? 'Reducir' : 'Ampliar';
+  $('btnDockSize').setAttribute('aria-pressed', String(large));
+  $('btnDockSize').title = large ? 'Volver al tamaño anterior' : 'Mostrar más conversación';
+  if (remember) try { localStorage.setItem(DOCK_HEIGHT_LS, String(px)); } catch { /* sin storage */ }
+  medirDock();
+}
+
+try {
+  const remembered = Number(localStorage.getItem(DOCK_HEIGHT_LS));
+  if (remembered) setDockHeight(remembered, false);
+} catch { /* sin storage */ }
+
 function abrirDock(abrir) {
   $('dock').dataset.open = abrir ? '1' : '0';
   $('dockHead').setAttribute('aria-expanded', String(!!abrir));
+  const large = abrir && $('dock').offsetHeight >= innerHeight * .6;
+  $('btnDockSize').textContent = large ? 'Reducir' : 'Ampliar';
+  $('btnDockSize').setAttribute('aria-pressed', String(large));
+  $('btnDockSize').title = large ? 'Volver al tamaño anterior' : 'Mostrar más conversación';
   medirDock();
 }
 
@@ -1676,8 +1720,59 @@ function abrirDock(abrir) {
 function medirDock() {
   document.documentElement.style.setProperty('--dock-h', `${$('dock').offsetHeight}px`);
 }
-addEventListener('resize', medirDock);
+addEventListener('resize', () => {
+  const current = parseFloat(getComputedStyle($('dock')).getPropertyValue('--dock-size'));
+  if (current) setDockHeight(current, false);
+  else medirDock();
+});
 $('dockHead').addEventListener('click', () => abrirDock($('dock').dataset.open !== '1'));
+
+$('btnDockSize').addEventListener('click', () => {
+  const wasOpen = $('dock').dataset.open === '1';
+  abrirDock(true);
+  const current = $('dock').offsetHeight;
+  const large = current >= innerHeight * .6;
+  if (!wasOpen) {
+    if (large) return;
+    dockBeforeLarge = current;
+    return setDockHeight(dockLimits().max);
+  }
+  if (large) {
+    setDockHeight(dockBeforeLarge || innerHeight * .34);
+    dockBeforeLarge = null;
+  } else {
+    dockBeforeLarge = current;
+    setDockHeight(dockLimits().max);
+  }
+});
+
+let dockDrag = null;
+$('dockResize').addEventListener('pointerdown', e => {
+  if (e.button !== 0) return;
+  abrirDock(true);
+  dockDrag = { y: e.clientY, height: $('dock').offsetHeight };
+  document.body.classList.add('dock-resizing');
+  e.preventDefault();
+});
+addEventListener('pointermove', e => {
+  if (!dockDrag) return;
+  setDockHeight(dockDrag.height + dockDrag.y - e.clientY, false);
+});
+addEventListener('pointerup', () => {
+  if (!dockDrag) return;
+  dockDrag = null;
+  document.body.classList.remove('dock-resizing');
+  setDockHeight($('dock').offsetHeight);
+});
+$('dockResize').addEventListener('keydown', e => {
+  const delta = e.key === 'ArrowUp' ? 40 : e.key === 'ArrowDown' ? -40 : 0;
+  if (!delta && e.key !== 'Home' && e.key !== 'End') return;
+  e.preventDefault();
+  abrirDock(true);
+  const { min, max } = dockLimits();
+  setDockHeight(e.key === 'Home' ? min : e.key === 'End' ? max : $('dock').offsetHeight + delta);
+});
+$('dockResize').addEventListener('dblclick', () => $('btnDockSize').click());
 
 /* ------------------------------------------------------------- editor */
 
