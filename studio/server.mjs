@@ -816,6 +816,54 @@ function blockText(b) {
   return '';
 }
 
+/** Extrae la primera respuesta JSON de un subagente, incluso si vino en un fence. */
+function agentJson(text) {
+  const raw = String(text || '').replace(/```(?:json)?\s*/gi, '').replace(/```/g, '').trim();
+  try { return JSON.parse(raw); } catch { /* puede venir acompañada de prosa */ }
+  const start = raw.indexOf('{');
+  if (start === -1) return null;
+  let depth = 0, quoted = false, escaped = false;
+  for (let i = start; i < raw.length; i++) {
+    const c = raw[i];
+    if (quoted) {
+      if (escaped) escaped = false;
+      else if (c === '\\') escaped = true;
+      else if (c === '"') quoted = false;
+      continue;
+    }
+    if (c === '"') quoted = true;
+    else if (c === '{') depth++;
+    else if (c === '}' && --depth === 0) {
+      try { return JSON.parse(raw.slice(start, i + 1)); } catch { return null; }
+    }
+  }
+  return null;
+}
+
+const BLOCK_REASON = {
+  refinamiento: 'La historia necesita más definición',
+  arquitectura: 'La arquitectura requiere una decisión humana',
+  ux: 'El diseño de interfaz necesita más definición',
+  desarrollador: 'La implementación necesita una decisión',
+  qa: 'QA encontró problemas que hay que resolver',
+  seguridad: 'Seguridad encontró problemas que hay que resolver',
+  reviewer: 'La revisión pidió cambios',
+};
+
+function blockRun(run, { phase, agent, reason, questions = [], sourceId = null }) {
+  if (run.blocked) return;
+  const action = {
+    id: sourceId ? `action:${sourceId}` : `action:${randomUUID()}`,
+    phase, agent: agent || null, reason,
+    questions: questions.filter(Boolean).map(String),
+    status: 'open', createdAt: Date.now(),
+  };
+  run.actions.set(action.id, action);
+  run.blocked = { phase, agent: agent || null, reason, actionId: action.id };
+  emit(run, { t: 'action', ...action, at: action.createdAt });
+  emit(run, { t: 'blocked', ...run.blocked, questions: action.questions, at: Date.now() });
+}
+
 /** Deriva la fase actual a partir de un evento del stream. Es inferencia. */
 function inferPhase(run, msg) {
   const blocks = msg?.message?.content;
@@ -828,7 +876,13 @@ function inferPhase(run, msg) {
 
       // El nodo se recuerda por id para poder colgarle el resultado cuando llegue.
       const node = nodeFor(run, name, input);
-      if (b.id) run.pending.set(b.id, node);
+      const agent = name === 'Task'
+        ? unqualify(String(input.subagent_type || input.agent || '').toLowerCase())
+        : null;
+      const isPr = name === 'Bash' && /\b(gh pr create|az repos pr create|glab mr create)\b/.test(String(input.command || ''));
+      if (b.id) run.pending.set(b.id, {
+        node, name, agent, isPr, phase: agent ? AGENT_PHASE[agent] : run.phase,
+      });
       emit(run, {
         t: 'tool', name, node, id: b.id || null,
         summary: toolSummary(name, input).slice(0, 400), at: Date.now(),
@@ -836,7 +890,6 @@ function inferPhase(run, msg) {
 
       if (name === 'Task') {
         // Los subagentes de un plugin llegan calificados: `globant-sdlc:qa`.
-        const agent = unqualify(String(input.subagent_type || input.agent || '').toLowerCase());
         const phase = AGENT_PHASE[agent];
         if (phase !== undefined) {
           setPhase(run, phase, `@${agent}`);
@@ -871,22 +924,38 @@ function inferPhase(run, msg) {
       // El resultado se le cuelga al nodo que hizo la llamada: es lo que se ve
       // al clickear ese componente en el grafo.
       if (b.type === 'tool_result' && b.tool_use_id) {
-        const node = run.pending.get(b.tool_use_id);
-        if (node) {
+        const pending = run.pending.get(b.tool_use_id);
+        if (pending) {
           run.pending.delete(b.tool_use_id);
           emit(run, {
-            t: 'output', node, id: b.tool_use_id,
+            t: 'output', node: pending.node, id: b.tool_use_id,
             text: text.slice(0, 6000), at: Date.now(),
           });
-        }
-      }
 
-      if (/"verdict"\s*:\s*"BLOCKED"/.test(text)) {
-        run.blocked = { phase: 1, reason: 'La historia no pasó refinamiento' };
-        emit(run, { t: 'blocked', ...run.blocked, at: Date.now() });
-      } else if (/blast_radius\s*:?\s*"?high/i.test(text)) {
-        run.blocked = { phase: 2, reason: 'blast_radius alto — requiere revisión humana' };
-        emit(run, { t: 'blocked', ...run.blocked, at: Date.now() });
+          if (pending.isPr && !b.is_error && !run.blocked && !run.cycleComplete) {
+            run.cycleComplete = true;
+            emit(run, { t: 'cycle_complete', phase: PHASE_PR, at: Date.now() });
+          }
+
+          const answer = pending.agent ? agentJson(text) : null;
+          if (answer?.verdict === 'BLOCKED') {
+            blockRun(run, {
+              phase: pending.phase ?? 1,
+              agent: pending.agent,
+              reason: BLOCK_REASON[pending.agent] || 'El ciclo necesita una decisión humana',
+              questions: Array.isArray(answer.blocking_questions) ? answer.blocking_questions : [],
+              sourceId: b.tool_use_id,
+            });
+          } else if (pending.agent === 'arquitectura' && /blast_radius\s*:?\s*"?high/i.test(text)) {
+            blockRun(run, {
+              phase: pending.phase ?? 2,
+              agent: pending.agent,
+              reason: 'El cambio tiene blast radius alto y requiere revisión humana',
+              questions: ['¿Aprobás continuar con el alcance y los riesgos propuestos por arquitectura?'],
+              sourceId: b.tool_use_id,
+            });
+          }
+        }
       }
     }
   }
@@ -908,8 +977,8 @@ async function pollArtifacts(run) {
   if (!run.storyId) return; // sesión de consola: no hay run de historia que auditar
   const dir = path.join(TARGET_REPO, '.claude/run', run.storyId);
   const map = [
-    ['story.json', 0], ['plan.md', 2], ['qa.json', 4],
-    ['security.json', 4], ['review.json', 5],
+    ['story.json', 0], ['plan.md', 2], ['qa.json', 5],
+    ['security.json', 5], ['review.json', 6],
   ];
   for (const [file, phase] of map) {
     if (run.artifacts[file]) continue;
@@ -975,9 +1044,10 @@ function startRun({ storyId, repoDir, manual, baseBranch, permissionMode, allowe
   const run = {
     id, storyId, prompt, args, cwd: repoDir,
     startedAt: Date.now(), status: 'running',
-    phase: null, phaseHistory: [], blocked: null,
+    phase: null, phaseHistory: [], blocked: null, cycleComplete: false,
     artifacts: {}, events: [], clients: new Set(), child: null, stdinClosed: false,
-    pending: new Map(), // tool_use_id -> nodo del grafo, para atribuir resultados
+    pending: new Map(), // tool_use_id -> herramienta/agente/nodo, para atribuir resultados
+    actions: new Map(),
   };
   runs.set(id, run);
 
@@ -1300,6 +1370,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, {
         id: run.id, storyId: run.storyId, status: run.status, phase: run.phase,
         blocked: run.blocked, cost: run.cost ?? null, turns: run.turns ?? null,
+        actions: [...run.actions.values()], cycleComplete: run.cycleComplete,
         cwd: run.cwd, prompt: run.prompt, vivo: !!run.child,
       });
     }
@@ -1314,6 +1385,9 @@ const server = http.createServer(async (req, res) => {
         connection: 'keep-alive',
       });
       for (const ev of run.events) res.write(`data: ${JSON.stringify(ev)}\n\n`);
+      // Marca el fin del replay para que el front no abra diálogos una vez por
+      // cada evento histórico; el estado ya quedó reconstruido en ese punto.
+      res.write(`data: ${JSON.stringify({ t: 'snapshot', at: Date.now() })}\n\n`);
       // Mientras el proceso viva la sesión sigue: `idle` es esperando input, no fin.
       if (run.child) {
         run.clients.add(res);
@@ -1331,6 +1405,31 @@ const server = http.createServer(async (req, res) => {
       const { text } = JSON.parse(await readBody(req));
       if (!String(text || '').trim()) return json(res, 400, { error: 'mensaje vacío' });
       sendToRun(run, String(text));
+      return json(res, 200, { ok: true });
+    }
+
+    m = p.match(/^\/api\/run\/([\w-]+)\/action$/);
+    if (m && req.method === 'POST') {
+      const run = runs.get(m[1]);
+      if (!run) return json(res, 404, { error: 'run no encontrado' });
+      const { actionId, text } = JSON.parse(await readBody(req));
+      const action = run.actions.get(String(actionId || ''));
+      if (!action || action.status !== 'open') {
+        return json(res, 409, { error: 'la acción ya no está pendiente' });
+      }
+      if (!String(text || '').trim()) return json(res, 400, { error: 'escribí una respuesta' });
+      if (!run.child || run.stdinClosed) {
+        return json(res, 409, { error: 'la sesión ya está cerrada; iniciá un nuevo ciclo con esta decisión en la historia' });
+      }
+
+      action.status = 'resolved';
+      action.resolvedAt = Date.now();
+      run.blocked = null;
+      emit(run, { t: 'action_resolved', id: action.id, phase: action.phase, at: action.resolvedAt });
+      sendToRun(run,
+        `Respuesta humana para resolver el bloqueo de ${action.agent ? `@${action.agent}` : `la fase ${action.phase}`}\n\n` +
+        `${String(text).trim()}\n\nRetomá el ciclo desde esa fase usando esta decisión.`,
+      );
       return json(res, 200, { ok: true });
     }
 

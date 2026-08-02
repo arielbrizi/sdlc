@@ -91,6 +91,20 @@ vacía a la derecha. Un diagrama donde el estado
 vive solo en el color del borde deja afuera a quien no distingue esos colores, y
 el estado es justamente lo que se viene a mirar durante un run.
 
+**Mapa, barra de ejecución y consola reducen el mismo stream de eventos.** La
+consola tiene un resumen fijo con el estado y la fase actuales: el log de abajo
+es historial y no se usa como una segunda fuente de verdad. Terminar un turno de
+Claude deja la sesión esperando; solo llegar efectivamente a Pull Request marca
+el ciclo entero como completo. Un error o una detención deja la fase como
+interrumpida, no como lista.
+
+**Un bloqueo abre una acción, no solo un mensaje.** El studio identifica qué
+subagente bloqueó, marca su fase real y muestra sus `blocking_questions` en un
+diálogo que se abre solo. Si se cierra, queda una franja roja persistente arriba
+y un botón dentro de la consola. Al responder, la decisión entra en la misma
+sesión, se libera el bloqueo y mapa y consola pasan juntos a “retomando”. La
+acción también sobrevive a un F5 porque se reconstruye desde el replay.
+
 **Editar abre una ventana a pantalla completa**, con la configuración en una
 columna y las instrucciones en la otra. Editar es una tarea enfocada y no tiene
 por qué pelear por el ancho de un panel lateral: en el modal el texto arranca con

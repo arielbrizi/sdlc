@@ -432,6 +432,7 @@ table.cat tbody tr[data-open="1"]{background:color-mix(in srgb,var(--accent) 9%,
 .gnode[data-state="active"] rect{stroke:var(--warn);stroke-width:2}
 .gnode[data-state="done"] rect{stroke:var(--ok)}
 .gnode[data-state="blocked"] rect{stroke:var(--danger);stroke-width:2}
+.gnode[data-state="error"] rect{stroke:var(--danger);stroke-width:2;stroke-dasharray:4 3}
 .gnode[data-kind="phase"] rect{fill:var(--surface)}
 .gnode[data-kind="agent"] rect{fill:color-mix(in srgb,var(--k-agent) 11%,var(--surface))}
 .gnode[data-kind="hook"] rect{fill:color-mix(in srgb,var(--k-hook) 11%,var(--surface))}
@@ -509,6 +510,11 @@ table.cat tbody tr[data-open="1"]{background:color-mix(in srgb,var(--accent) 9%,
 .dock-head .chev{transition:transform .15s;color:var(--subtle);font-size:11px}
 .dock[data-open="1"] .dock-head .chev{transform:rotate(180deg)}
 .dock[data-open="0"] .log,.dock[data-open="0"] .send{display:none}
+.dock[data-open="0"] .console-summary{display:none}
+.console-summary{display:flex;align-items:center;gap:9px;padding:8px 16px;
+  border-bottom:1px solid var(--border);background:var(--surface);font-size:12px;color:var(--muted)}
+.console-summary b{color:var(--text)}
+.console-summary .grow{flex:1}
 .log{flex:1;overflow-y:auto;padding:8px 16px 12px;font-family:var(--mono);font-size:12px;
   background:var(--surface-2)}
 .ev{display:flex;gap:12px;padding:4px 0;border-bottom:1px solid var(--border)}
@@ -521,6 +527,7 @@ table.cat tbody tr[data-open="1"]{background:color-mix(in srgb,var(--accent) 9%,
 .ev[data-k="result"] .ev-k,.ev[data-k="artifact"] .ev-k{color:var(--ok);font-weight:600}
 .ev[data-k="tool"] .ev-k{color:var(--k-script)}
 .ev[data-k="ask"] .ev-k{color:var(--k-skill)}
+.ev[data-k="action"] .ev-k,.ev[data-k="action_resolved"] .ev-k{color:var(--danger);font-weight:700}
 .ev-tool b{font-weight:600;color:var(--k-script)}
 .send{display:flex;gap:8px;padding:10px 16px;border-top:1px solid var(--border);
   background:var(--surface);flex-shrink:0}
@@ -542,6 +549,17 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
 .dlg-foot{display:flex;gap:8px;align-items:center;padding:13px 20px;
   border-top:1px solid var(--border);background:var(--surface-2)}
 .dlg-foot .grow{flex:1}
+.action-strip{display:flex;align-items:center;gap:12px;padding:11px 16px;
+  color:#fff;background:var(--danger);box-shadow:0 5px 18px color-mix(in srgb,var(--danger) 35%,transparent)}
+.action-strip[hidden]{display:none}
+.action-strip strong{font-size:13px}.action-strip span{font-size:12.5px;opacity:.92}
+.action-strip .grow{flex:1}
+.action-strip .btn{background:#fff;color:#7d1720;border-color:#fff;font-weight:750}
+.action-dialog{border-color:var(--danger);box-shadow:0 18px 55px rgba(0,0,0,.42)}
+.action-dialog .dlg-head{background:color-mix(in srgb,var(--danger) 13%,var(--surface))}
+.action-dialog .dlg-head h2{color:var(--danger)}
+.action-questions{margin:0;padding-left:22px;display:grid;gap:8px;line-height:1.5}
+.action-dialog textarea{min-height:110px;resize:vertical}
 .auth-out{
   background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-md);
   padding:10px 12px;font-family:var(--mono);font-size:11.5px;
@@ -685,6 +703,12 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
   <span class="run-state" id="runState" data-s="none">
     <span class="dot"></span><span id="runStateText">Sin sesión abierta</span>
   </span>
+</div>
+
+<div class="action-strip" id="actionStrip" role="alert" hidden>
+  <strong>Acción requerida</strong>
+  <span id="actionStripText"></span><span class="grow"></span>
+  <button class="btn sm" id="btnOpenAction">Resolver ahora</button>
 </div>
 
 <div class="shell">
@@ -1029,6 +1053,11 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
         <span class="tag" id="evCount" hidden>0 eventos</span>
         <span class="chev">▾</span>
       </button>
+      <div class="console-summary" id="consoleSummary">
+        <span class="dot"></span><b id="consoleStatus">Sin ejecución</b>
+        <span id="consolePhase">Todavía no comenzó ninguna fase</span><span class="grow"></span>
+        <button class="btn sm danger" id="btnConsoleAction" hidden>Resolver acción</button>
+      </div>
       <div class="log" id="log" role="log" aria-label="Eventos de la sesión"></div>
       <div class="send">
         <textarea class="field" id="sendText" spellcheck="false" disabled aria-label="Mensaje para Claude"
@@ -1042,6 +1071,30 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
 </div>
 
 <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+
+<dialog class="action-dialog" id="dlgAction" aria-labelledby="dlgActionTitle">
+  <div class="dlg-head">
+    <h2 id="dlgActionTitle">Necesitamos una decisión tuya</h2><span class="grow"></span>
+    <span class="tag" id="actionPhase"></span>
+  </div>
+  <div class="dlg-body">
+    <p class="prose" id="actionReason"></p>
+    <div id="actionQuestionsWrap">
+      <p class="f-label">Respondé esto para continuar</p>
+      <ol class="action-questions" id="actionQuestions"></ol>
+    </div>
+    <div class="f">
+      <label class="f-label" for="actionAnswer">Tu respuesta</label>
+      <textarea class="field" id="actionAnswer" placeholder="Escribí la decisión o la información que falta…"></textarea>
+      <span class="f-help">Se envía a la misma sesión y el ciclo retoma desde la fase bloqueada.</span>
+    </div>
+  </div>
+  <div class="dlg-foot">
+    <button class="btn" id="btnActionConsole">Ver conversación</button><span class="grow"></span>
+    <button class="btn ghost" id="btnActionLater">Resolver después</button>
+    <button class="btn primary" id="btnResolveAction">Responder y continuar</button>
+  </div>
+</dialog>
 
 <!-- ------------------------------------------------- sesión de Claude Code -->
 <dialog id="dlgAuth" aria-labelledby="dlgAuthTitle">
@@ -1268,7 +1321,45 @@ function kindOf(path) {
 const kindBadge = k => (KINDS[k] ? `<span class="kind" data-k="${k}">${esc(KINDS[k].label)}</span>` : '');
 
 let PLUGIN = null, PHASES = [], current = null, original = '', run = null, es = null;
-let runHasStory = false, runBlocked = false, authES = null;
+let authES = null, isReplaying = false;
+let RUN_MODEL = { status: 'none', phase: null, blocked: null, complete: false, actions: {} };
+
+const openAction = () => Object.values(RUN_MODEL.actions).find(a => a.status === 'open');
+const phaseName = id => PHASES.find(p => Number(p.id) === Number(id))?.label || `Fase ${id}`;
+
+// Barra superior, resumen de consola y mapa leen este mismo modelo. Así el
+// estado visible no depende de qué vista esté abierta ni de un texto del log.
+function renderRunSurfaces() {
+  const action = openAction();
+  $('actionStrip').hidden = !action;
+  $('btnConsoleAction').hidden = !action;
+  if (action) $('actionStripText').textContent = `${phaseName(action.phase)} · ${action.reason}`;
+
+  const status = RUN_MODEL.blocked ? 'Bloqueado'
+    : RUN_MODEL.complete ? 'Ciclo completo'
+    : RUN_MODEL.status === 'running' ? 'En ejecución'
+    : RUN_MODEL.status === 'idle' ? 'Esperando tu mensaje'
+    : RUN_MODEL.status === 'error' ? 'Terminó con error'
+    : RUN_MODEL.status === 'stopped' ? 'Detenido'
+    : RUN_MODEL.status === 'done' ? 'Sesión cerrada'
+    : 'Sin ejecución';
+  $('consoleSummary').dataset.s = RUN_MODEL.blocked ? 'error' : RUN_MODEL.status;
+  $('consoleStatus').textContent = status;
+  $('consolePhase').textContent = RUN_MODEL.phase == null
+    ? 'Todavía no comenzó ninguna fase'
+    : `${String(RUN_MODEL.phase).padStart(2, '0')} · ${phaseName(RUN_MODEL.phase)}`;
+
+  if (RUN_MODEL.blocked) {
+    const blockedText = `Bloqueado en ${String(RUN_MODEL.phase).padStart(2, '0')} · ${phaseName(RUN_MODEL.phase)}`;
+    $('runState').dataset.s = 'error';
+    $('dock').dataset.s = 'error';
+    $('runStateText').textContent = blockedText;
+    $('sessionText').textContent = `${blockedText} — acción requerida`;
+  } else if (RUN_MODEL.complete) {
+    $('runStateText').textContent = 'Ciclo completo';
+    $('sessionText').textContent = 'Ciclo completo — sesión abierta';
+  }
+}
 
 /* ------------------------------------------------------ carga del plugin */
 
@@ -1889,8 +1980,8 @@ async function start() {
   showView('ciclo');
   resetPhases();
   $('log').innerHTML = '';
-  runHasStory = !consola;
-  runBlocked = false;
+  RUN_MODEL = { status: 'running', phase: null, blocked: null, complete: false, actions: {} };
+  renderRunSurfaces();
   NODE_OUT = {}; NODE_STATE = {}; renderGraph();
 
   try {
@@ -1921,9 +2012,13 @@ async function start() {
     setSession('running', 'Abriendo la sesión…');
 
     es?.close();
+    isReplaying = true;
     es = new EventSource(`/api/run/${run}/stream`);
     es.onmessage = e => onEvent(JSON.parse(e.data));
-    es.onerror = () => { es.close(); finish(); };
+    es.onerror = () => {
+      es.close();
+      if (RUN_MODEL.status === 'running' || RUN_MODEL.status === 'idle') finish('error');
+    };
   } catch (e) {
     banner('err', e.message);
   }
@@ -1934,6 +2029,7 @@ async function start() {
 // La sesión de Claude no termina cuando responde: queda esperando. Eso es lo
 // que permite seguir la conversación donde la dejó el ciclo automático.
 function setSession(status, text) {
+  RUN_MODEL.status = status;
   $('dock').dataset.s = status;
   $('runState').dataset.s = status;
   $('sessionText').textContent = text;
@@ -1942,12 +2038,13 @@ function setSession(status, text) {
   if (status === 'running' || status === 'idle') abrirDock(true);
 
   const alive = status === 'running' || status === 'idle';
-  const canType = status === 'idle';
+  const canType = status === 'idle' && !RUN_MODEL.blocked;
   $('sendText').disabled = !canType;
   $('btnSend').disabled = !canType;
   $('btnCloseSession').disabled = !alive;
   $('btnStop').disabled = !alive;
   $('btnRun').disabled = alive;
+  renderRunSurfaces();
 }
 
 async function send() {
@@ -1975,24 +2072,79 @@ $('btnCloseSession').addEventListener('click', async () => {
   if (run) await api(`/api/run/${run}/close`, { method: 'POST' }).catch(() => {});
 });
 
+function showAction() {
+  const action = openAction();
+  if (!action) return;
+  $('actionPhase').textContent = `${String(action.phase).padStart(2, '0')} · ${phaseName(action.phase)}`;
+  $('actionReason').textContent = action.reason;
+  const questions = action.questions || [];
+  $('actionQuestionsWrap').hidden = !questions.length;
+  $('actionQuestions').innerHTML = questions.map(q => `<li>${esc(q)}</li>`).join('');
+  $('actionAnswer').value = '';
+  if (!$('dlgAction').open) $('dlgAction').showModal();
+  requestAnimationFrame(() => $('actionAnswer').focus());
+}
+
+$('btnOpenAction').addEventListener('click', showAction);
+$('btnConsoleAction').addEventListener('click', showAction);
+$('btnActionLater').addEventListener('click', () => $('dlgAction').close());
+$('btnActionConsole').addEventListener('click', () => {
+  $('dlgAction').close();
+  abrirDock(true);
+});
+$('btnResolveAction').addEventListener('click', async () => {
+  const action = openAction(), text = $('actionAnswer').value.trim();
+  if (!action || !text) return $('actionAnswer').focus();
+  $('btnResolveAction').disabled = true;
+  $('btnResolveAction').dataset.busy = '1';
+  try {
+    await api(`/api/run/${run}/action`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ actionId: action.id, text }),
+    });
+  } catch (e) {
+    banner('err', e.message);
+  } finally {
+    $('btnResolveAction').disabled = false;
+    delete $('btnResolveAction').dataset.busy;
+  }
+});
+
 function onEvent(ev) {
-  logEvent(ev);
+  // Este es el único reducer del stream. Consola, barra de ejecución, acciones
+  // y mapa se renderizan recién después de aplicar el mismo evento.
   // Después de un bloqueo el ciclo no avanza más, pase lo que pase en el stream.
   const marcar = (i, estado) => { if (PHASE_STATE[i] !== 'blocked') PHASE_STATE[i] = estado; };
 
   if (ev.t === 'phase' || ev.t === 'agent') {
-    if (runBlocked) return;
-    for (let k = 0; k < ev.phase; k++) marcar(k, 'done');
-    marcar(ev.phase, 'active');
-    PHASE_NOTE[ev.phase] = ev.detail || ev.agent || '';
+    if (!RUN_MODEL.blocked) {
+      RUN_MODEL.phase = ev.phase;
+      for (let k = 0; k < ev.phase; k++) marcar(k, 'done');
+      marcar(ev.phase, 'active');
+      PHASE_NOTE[ev.phase] = ev.detail || ev.agent || '';
+    }
+  }
+  if (ev.t === 'action') {
+    RUN_MODEL.actions[ev.id] = { ...ev, status: 'open' };
   }
   if (ev.t === 'blocked') {
-    runBlocked = true;
+    RUN_MODEL.blocked = ev;
+    RUN_MODEL.phase = ev.phase;
     PHASE_STATE[ev.phase] = 'blocked';
     PHASE_NOTE[ev.phase] = 'detenido';
-    banner('err', `Run detenido en fase ${ev.phase}: ${ev.reason}`);
+    if (ev.agent) NODE_STATE[`agent:${ev.agent}`] = 'blocked';
+    if (!isReplaying) showAction();
   }
-  if (ev.t === 'artifact' && !runBlocked && !PHASE_STATE[ev.phase]) {
+  if (ev.t === 'action_resolved') {
+    if (RUN_MODEL.actions[ev.id]) RUN_MODEL.actions[ev.id].status = 'resolved';
+    RUN_MODEL.blocked = null;
+    PHASE_STATE[ev.phase] = 'active';
+    PHASE_NOTE[ev.phase] = 'retomando con tu respuesta';
+    const action = RUN_MODEL.actions[ev.id];
+    if (action?.agent) NODE_STATE[`agent:${action.agent}`] = 'active';
+    if ($('dlgAction').open) $('dlgAction').close();
+  }
+  if (ev.t === 'artifact' && !RUN_MODEL.blocked && !PHASE_STATE[ev.phase]) {
     PHASE_STATE[ev.phase] = 'done';
   }
   // El grafo se alimenta del mismo stream: cada salida queda pegada al nodo
@@ -2012,21 +2164,31 @@ function onEvent(ev) {
     renderGraph();
   }
   if (ev.t === 'say') pushOut(ev.node, { kind: 'say', title: 'claude', text: ev.text || '' });
-  if (ev.t === 'phase' || ev.t === 'agent' || ev.t === 'blocked') renderGraph();
+  if (ev.t === 'cycle_complete') {
+    RUN_MODEL.complete = true;
+    RUN_MODEL.phase = ev.phase;
+    for (const p of PHASES) PHASE_STATE[p.id] = 'done';
+  }
+  if (ev.t === 'snapshot') {
+    isReplaying = false;
+    if (openAction()) showAction();
+  }
+  if (ev.t === 'phase' || ev.t === 'agent' || ev.t === 'blocked' ||
+      ev.t === 'action_resolved' || ev.t === 'cycle_complete') renderGraph();
 
   if (ev.t === 'ready') setSession('idle', 'Sesión abierta — escribile abajo');
+  if (ev.t === 'ask') setSession('running', 'Claude está trabajando…');
   if (ev.t === 'result') {
-    // El ciclo completo termina en un `result` sin bloqueo: recién ahí se
-    // encienden todas las fases.
-    if (ev.ok && runHasStory && !runBlocked) {
-      for (const p of PHASES) PHASE_STATE[p.id] = 'done';
-    }
     const bits = [ev.turns != null ? `${ev.turns} turnos` : null,
                   ev.cost != null ? `US$ ${ev.cost.toFixed(4)}` : null].filter(Boolean);
     if (bits.length) banner(ev.ok ? 'ok' : 'err', bits.join(' · '));
     if (ev.status === 'idle') setSession('idle', 'Sesión abierta — escribile abajo');
   }
-  if (ev.t === 'end' || ev.t === 'error') finish();
+  if (ev.t === 'error') finish('error');
+  if (ev.t === 'end') finish(ev.status || (ev.code === 0 ? 'done' : 'error'));
+
+  renderRunSurfaces();
+  if (ev.t !== 'snapshot') logEvent(ev);
 }
 
 // El tipo crudo del evento no le dice nada a quien no escribió el servidor.
@@ -2034,6 +2196,7 @@ const EV_LABEL = {
   start: 'inicio', init: 'sesión', ready: 'lista', phase: 'fase', agent: 'subagente',
   tool: 'herramienta', output: 'salida', say: 'claude', ask: 'vos', artifact: 'archivo',
   blocked: 'bloqueo', result: 'turno', end: 'fin', error: 'error', stderr: 'stderr',
+  action: 'acción', action_resolved: 'resuelta', cycle_complete: 'ciclo',
 };
 
 let evCount = 0;
@@ -2058,10 +2221,13 @@ function logEvent(ev) {
   $('evCount').textContent = `${evCount} evento${evCount === 1 ? '' : 's'}`;
 }
 
-function finish() {
-  setSession('none', 'Sesión cerrada');
-  if (!runBlocked) {
-    for (const [i, st] of Object.entries(PHASE_STATE)) if (st === 'active') PHASE_STATE[i] = 'done';
+function finish(status = 'done') {
+  setSession(status, status === 'error' ? 'Sesión cerrada con error'
+    : status === 'stopped' ? 'Sesión detenida' : 'Sesión cerrada');
+  // Cerrar el proceso no prueba que una fase terminó bien. Si falló o fue
+  // detenido, la fase activa conserva ese estado explícito en el mapa.
+  if (status === 'error' || status === 'stopped') {
+    for (const [i, st] of Object.entries(PHASE_STATE)) if (st === 'active') PHASE_STATE[i] = 'error';
   }
   renderGraph();
   es?.close(); es = null;
@@ -2091,7 +2257,7 @@ const nodeState = id => (esFase(id)
 
 // El estado va escrito además de pintado: el color solo deja afuera a quien no
 // lo distingue, y en un diagrama es la información más importante.
-const STATE_WORD = { active: 'en curso', done: 'listo', blocked: 'bloqueado' };
+const STATE_WORD = { active: 'en curso', done: 'listo', blocked: 'bloqueado', error: 'interrumpido' };
 
 const pushOut = (node, entry) => {
   if (!node) return;
@@ -2640,16 +2806,23 @@ async function restaurar() {
   try { info = await api(`/api/run/${datos.run}`); } catch { return guardar(run = null); }
 
   run = datos.run;
-  runHasStory = !!info.storyId;
-  runBlocked = !!info.blocked;
+  RUN_MODEL = {
+    status: info.status || 'none', phase: info.phase ?? null,
+    blocked: info.blocked || null, complete: !!info.cycleComplete,
+    actions: Object.fromEntries((info.actions || []).map(a => [a.id, a])),
+  };
   NODE_OUT = {}; NODE_STATE = {}; PHASE_STATE = {}; PHASE_NOTE = {};
   $('log').innerHTML = '';
   setSession(info.vivo ? 'running' : 'none', 'Recuperando el run…');
 
   es?.close();
+  isReplaying = true;
   es = new EventSource(`/api/run/${run}/stream`);
   es.onmessage = e => onEvent(JSON.parse(e.data));
-  es.onerror = () => { es.close(); finish(); };
+  es.onerror = () => {
+    es.close();
+    if (RUN_MODEL.status === 'running' || RUN_MODEL.status === 'idle') finish('error');
+  };
   banner('ok', `Run recuperado${info.storyId ? `: ${info.storyId}` : ''}`);
 }
 
