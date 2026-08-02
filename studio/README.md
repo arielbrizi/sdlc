@@ -41,6 +41,11 @@ La consola se puede agrandar arrastrando su borde superior. El botón
 elegida queda recordada. El separador también acepta `↑`, `↓`, `Home` y `End`
 para ajustar la altura con teclado.
 
+El costo acumulado de la sesión está siempre visible en la barra de ejecución y
+se repite en el encabezado de la consola. Empieza en `US$ 0.0000`, suma el
+`total_cost_usd` que Claude Code informa al cerrar cada turno y se reconstruye
+al recuperar un run después de recargar la página.
+
 | Sección | Para qué |
 |---|---|
 | Ciclo | El mapa del skill `us` con el estado del run en vivo |
