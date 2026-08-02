@@ -415,6 +415,7 @@ table.cat tbody tr[data-open="1"]{background:color-mix(in srgb,var(--accent) 9%,
   display:inline-block}
 .legend i.done{border-color:var(--ok)}
 .legend i.active{border-color:var(--warn)}
+.legend i.paused{border-color:var(--accent)}
 .legend i.blocked{border-color:var(--danger)}
 
 /* Nodos del grafo. El estado se marca con color y además con una palabra en el
@@ -430,6 +431,7 @@ table.cat tbody tr[data-open="1"]{background:color-mix(in srgb,var(--accent) 9%,
 .gnode[data-sel="1"] rect{stroke:var(--accent);stroke-width:2.5;
   fill:color-mix(in srgb,var(--accent) 10%,var(--surface-2))}
 .gnode[data-state="active"] rect{stroke:var(--warn);stroke-width:2}
+.gnode[data-state="paused"] rect{stroke:var(--accent);stroke-width:2;stroke-dasharray:4 3}
 .gnode[data-state="done"] rect{stroke:var(--ok)}
 .gnode[data-state="blocked"] rect{stroke:var(--danger);stroke-width:2}
 .gnode[data-state="error"] rect{stroke:var(--danger);stroke-width:2;stroke-dasharray:4 3}
@@ -693,7 +695,7 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
 <div class="runbar" role="region" aria-label="Ejecutar una historia">
   <select class="field" id="source" aria-label="Origen de la historia">
     <option value="tracker">Historia: desde el tracker</option>
-    <option value="manual">Historia: escrita acá</option>
+    <option value="manual">Historia: escribir acá</option>
     <option value="console">Solo consola, sin historia</option>
   </select>
   <input class="field" id="story" aria-label="ID de la historia"
@@ -785,6 +787,7 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
               <div class="legend">
                 <span><i></i> sin correr</span>
                 <span><i class="active"></i> en curso</span>
+                <span><i class="paused"></i> en pausa</span>
                 <span><i class="done"></i> listo</span>
                 <span><i class="blocked"></i> bloqueado</span>
               </div>
@@ -838,10 +841,9 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
     <!-- ============================================================= historia -->
     <section class="view" id="viewHistoria" aria-labelledby="tHistoria">
       <div class="page-head">
-        <h1 id="tHistoria">Historia escrita acá</h1>
-        <p>Para equipos que no integran con ningún tracker. Se guarda como
-           <code>.claude/run/&lt;ID&gt;/story.json</code>, el mismo formato normalizado que
-           produce Jira o ADO: de la fase 1 en adelante el ciclo no distingue de dónde vino.</p>
+        <h1 id="tHistoria">Escribir historia</h1>
+        <p>Completá estos datos y ejecutá. No hace falta guardar, cargar ni inventar un ID:
+           el studio prepara todo automáticamente al iniciar el ciclo.</p>
       </div>
       <div class="page-body">
         <div class="card">
@@ -854,13 +856,6 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
                        aria-describedby="hTitle"
                        placeholder="Permitir exportar el reporte de consumo a CSV">
                 <span class="f-help" id="hTitle">Es el único campo obligatorio.</span>
-              </div>
-
-              <div class="f f-wide">
-                <label class="f-label" for="stId">ID</label>
-                <input class="field mono" id="stId" autocomplete="off" aria-describedby="hId"
-                       placeholder="opcional">
-                <span class="f-help" id="hId">Si lo dejás vacío se deriva del título: <code>LOCAL-exportar-csv</code>.</span>
               </div>
 
               <div class="f f-wide">
@@ -878,22 +873,12 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
                   historia acá no saltea ese control.</span>
               </div>
 
-              <div class="f">
-                <label class="f-label" for="stPoints">Puntos</label>
-                <input class="field" id="stPoints" type="number" min="1" max="100" placeholder="opcional">
-              </div>
-
-              <div class="f">
-                <label class="f-label" for="stLabels">Labels</label>
-                <input class="field" id="stLabels" autocomplete="off" placeholder="separados por coma">
-              </div>
             </div>
           </div>
           <div class="card-foot">
-            <span class="dirty" id="stStatus"></span>
+            <span class="sub">Se crea automáticamente al ejecutar.</span>
             <span class="grow"></span>
-            <button class="btn" id="btnLoadStory" title="Trae del disco una historia ya escrita">Cargar</button>
-            <button class="btn primary" id="btnSaveStory">Guardar historia</button>
+            <button class="btn primary" id="btnRunManual">Ejecutar esta historia</button>
           </div>
         </div>
       </div>
@@ -1061,7 +1046,7 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
       <div class="log" id="log" role="log" aria-label="Eventos de la sesión"></div>
       <div class="send">
         <textarea class="field" id="sendText" spellcheck="false" disabled aria-label="Mensaje para Claude"
-          placeholder="Abrí una sesión para escribirle a Claude. Enter envía, Shift+Enter hace salto de línea."></textarea>
+          placeholder="Mensaje opcional para Claude. Enter envía, Shift+Enter hace salto de línea."></textarea>
         <button class="btn primary" id="btnSend" disabled>Enviar</button>
         <button class="btn" id="btnCloseSession" disabled title="Termina la sesión de Claude">Cerrar sesión</button>
       </div>
@@ -1338,7 +1323,7 @@ function renderRunSurfaces() {
   const status = RUN_MODEL.blocked ? 'Bloqueado'
     : RUN_MODEL.complete ? 'Ciclo completo'
     : RUN_MODEL.status === 'running' ? 'En ejecución'
-    : RUN_MODEL.status === 'idle' ? 'Esperando tu mensaje'
+    : RUN_MODEL.status === 'idle' ? 'Sin acciones pendientes'
     : RUN_MODEL.status === 'error' ? 'Terminó con error'
     : RUN_MODEL.status === 'stopped' ? 'Detenido'
     : RUN_MODEL.status === 'done' ? 'Sesión cerrada'
@@ -1347,7 +1332,8 @@ function renderRunSurfaces() {
   $('consoleStatus').textContent = status;
   $('consolePhase').textContent = RUN_MODEL.phase == null
     ? 'Todavía no comenzó ninguna fase'
-    : `${String(RUN_MODEL.phase).padStart(2, '0')} · ${phaseName(RUN_MODEL.phase)}`;
+    : `${String(RUN_MODEL.phase).padStart(2, '0')} · ${phaseName(RUN_MODEL.phase)} · ${
+        STATE_WORD[PHASE_STATE[RUN_MODEL.phase]] || 'sin correr'}`;
 
   if (RUN_MODEL.blocked) {
     const blockedText = `Bloqueado en ${String(RUN_MODEL.phase).padStart(2, '0')} · ${phaseName(RUN_MODEL.phase)}`;
@@ -1882,22 +1868,13 @@ async function save() {
 // El studio la persiste como story.json antes de arrancar; el resolver la
 // encuentra en la fase 0 y no consulta ningún tracker.
 const storyPayload = () => ({
-  id: $('stId').value.trim(),
+  id: '',
   title: $('stTitle').value.trim(),
   description: $('stDesc').value,
   acceptanceCriteria: $('stAc').value,
-  storyPoints: $('stPoints').value,
-  labels: $('stLabels').value,
+  storyPoints: '',
+  labels: '',
 });
-
-function fillStory(s) {
-  $('stId').value = s.id || '';
-  $('stTitle').value = s.title || '';
-  $('stDesc').value = s.description || '';
-  $('stAc').value = (s.acceptance_criteria || []).join('\n');
-  $('stPoints').value = s.story_points ?? '';
-  $('stLabels').value = (s.labels || []).join(', ');
-}
 
 /** Sin título no hay historia: es el único campo que el studio exige. */
 function requireTitle() {
@@ -1914,11 +1891,11 @@ const consoleMode = () => $('source').value === 'console';
 function syncSource() {
   const manual = manualMode(), consola = consoleMode();
   $('story').disabled = consola;
+  $('story').hidden = manual || consola;
   $('story').placeholder = consola
     ? 'sin historia — la sesión se abre vacía y le escribís vos'
-    : manual
-      ? 'ID — opcional, se deriva del título'
-      : 'ID de historia — GLOB-1234, 8891, #245';
+    : 'ID de historia — GLOB-1234, 8891, #245';
+  $('btnRun').textContent = manual ? 'Ejecutar esta historia' : consola ? 'Abrir consola' : 'Ejecutar ciclo';
 }
 // Elegir "escrita acá" te lleva al formulario: es lo próximo que hay que hacer.
 $('source').addEventListener('change', () => {
@@ -1926,45 +1903,10 @@ $('source').addEventListener('change', () => {
   if (manualMode()) showView('historia');
 });
 
-$('btnSaveStory').addEventListener('click', async () => {
-  if (!requireTitle()) return;
-  try {
-    const r = await api('/api/story', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ ...storyPayload(), repoDir: $('repoDir').value.trim() }),
-    });
-    $('stId').value = r.id;
-    $('story').value = r.id;
-    $('source').value = 'manual';
-    syncSource();
-    $('stStatus').textContent = `guardada como ${r.id}`;
-    banner('ok', `Historia guardada en ${r.path}`);
-  } catch (e) {
-    banner('err', `No se pudo guardar: ${e.message}`);
-  }
-});
-
-// Releer una historia ya escrita: el caso real es corregir los criterios
-// después de que refinamiento bloqueó el run y volver a tirarlo.
-$('btnLoadStory').addEventListener('click', async () => {
-  const id = ($('stId').value.trim() || $('story').value.trim());
-  if (!id) { banner('err', 'Poné el ID de la historia que querés cargar'); return $('stId').focus(); }
-  try {
-    const q = new URLSearchParams({ storyId: id, repoDir: $('repoDir').value.trim() });
-    const r = await api('/api/story?' + q);
-    fillStory(r.story);
-    $('source').value = 'manual';
-    syncSource();
-    $('stStatus').textContent = `cargada de ${r.path}`;
-  } catch (e) {
-    banner('err', e.message);
-  }
-});
-
 /* --------------------------------------------------------------- run */
 
 $('btnRun').addEventListener('click', start);
+$('btnRunManual').addEventListener('click', start);
 $('story').addEventListener('keydown', e => e.key === 'Enter' && start());
 $('btnStop').addEventListener('click', async () => {
   if (run) await api(`/api/run/${run}/stop`, { method: 'POST' }).catch(() => {});
@@ -1972,7 +1914,7 @@ $('btnStop').addEventListener('click', async () => {
 
 async function start() {
   const manual = manualMode(), consola = consoleMode();
-  const storyId = $('story').value.trim();
+  const storyId = manual ? '' : $('story').value.trim();
 
   if (manual && !requireTitle()) return;
   if (!manual && !consola && !storyId) return $('story').focus();
@@ -2003,8 +1945,7 @@ async function start() {
     guardar();
     // Con ID derivado del título, es la primera vez que el dev lo ve.
     if (r.storyId) {
-      $('story').value = r.storyId;
-      if (manual) $('stId').value = r.storyId;
+      if (!manual) $('story').value = r.storyId;
     }
     $('cmdHint').textContent = r.prompt
       ? `${r.cmd}\n\nprimer mensaje: ${r.prompt}\ncwd: ${r.cwd}`
@@ -2044,6 +1985,7 @@ function setSession(status, text) {
   $('btnCloseSession').disabled = !alive;
   $('btnStop').disabled = !alive;
   $('btnRun').disabled = alive;
+  $('btnRunManual').disabled = alive;
   renderRunSurfaces();
 }
 
@@ -2060,7 +2002,7 @@ async function send() {
     });
   } catch (e) {
     banner('err', e.message);
-    setSession('idle', 'Sesión abierta — escribile abajo');
+    setSession('idle', 'Sin acciones pendientes · chat opcional');
   }
 }
 
@@ -2141,7 +2083,7 @@ function onEvent(ev) {
     PHASE_STATE[ev.phase] = 'active';
     PHASE_NOTE[ev.phase] = 'retomando con tu respuesta';
     const action = RUN_MODEL.actions[ev.id];
-    if (action?.agent) NODE_STATE[`agent:${action.agent}`] = 'active';
+    if (action?.agent) NODE_STATE[`agent:${action.agent}`] = 'idle';
     if ($('dlgAction').open) $('dlgAction').close();
   }
   if (ev.t === 'artifact' && !RUN_MODEL.blocked && !PHASE_STATE[ev.phase]) {
@@ -2176,13 +2118,28 @@ function onEvent(ev) {
   if (ev.t === 'phase' || ev.t === 'agent' || ev.t === 'blocked' ||
       ev.t === 'action_resolved' || ev.t === 'cycle_complete') renderGraph();
 
-  if (ev.t === 'ready') setSession('idle', 'Sesión abierta — escribile abajo');
-  if (ev.t === 'ask') setSession('running', 'Claude está trabajando…');
+  if (ev.t === 'ready') setSession('idle', 'Sin acciones pendientes · chat opcional');
+  if (ev.t === 'ask') {
+    if (RUN_MODEL.phase != null && PHASE_STATE[RUN_MODEL.phase] === 'paused') {
+      PHASE_STATE[RUN_MODEL.phase] = 'active';
+      renderGraph();
+    }
+    setSession('running', 'Claude está trabajando…');
+  }
   if (ev.t === 'result') {
+    for (const [node, state] of Object.entries(NODE_STATE)) {
+      if (state === 'active') NODE_STATE[node] = 'paused';
+    }
+    if (!RUN_MODEL.blocked && !RUN_MODEL.complete && RUN_MODEL.phase != null &&
+        PHASE_STATE[RUN_MODEL.phase] === 'active') {
+      PHASE_STATE[RUN_MODEL.phase] = 'paused';
+      PHASE_NOTE[RUN_MODEL.phase] = 'turno terminado';
+    }
+    renderGraph();
     const bits = [ev.turns != null ? `${ev.turns} turnos` : null,
                   ev.cost != null ? `US$ ${ev.cost.toFixed(4)}` : null].filter(Boolean);
     if (bits.length) banner(ev.ok ? 'ok' : 'err', bits.join(' · '));
-    if (ev.status === 'idle') setSession('idle', 'Sesión abierta — escribile abajo');
+    if (ev.status === 'idle') setSession('idle', 'Sin acciones pendientes · chat opcional');
   }
   if (ev.t === 'error') finish('error');
   if (ev.t === 'end') finish(ev.status || (ev.code === 0 ? 'done' : 'error'));
@@ -2257,7 +2214,10 @@ const nodeState = id => (esFase(id)
 
 // El estado va escrito además de pintado: el color solo deja afuera a quien no
 // lo distingue, y en un diagrama es la información más importante.
-const STATE_WORD = { active: 'en curso', done: 'listo', blocked: 'bloqueado', error: 'interrumpido' };
+const STATE_WORD = {
+  active: 'en curso', paused: 'en pausa', done: 'listo',
+  blocked: 'bloqueado', error: 'interrumpido',
+};
 
 const pushOut = (node, entry) => {
   if (!node) return;
@@ -2775,7 +2735,7 @@ $('btnValidate').addEventListener('click', async () => {
 // volver a engancharse: el replay reconstruye fases, grafo, log y sesión.
 const LS = 'globant-sdlc-studio';
 const CAMPOS = ['source', 'story', 'repoUrl', 'repoDir', 'baseBranch',
-                'permMode', 'allowedTools', 'extraFlags'];
+                'permMode', 'allowedTools', 'extraFlags', 'stTitle', 'stDesc', 'stAc'];
 
 function guardar() {
   const datos = { run };

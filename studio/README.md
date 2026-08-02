@@ -103,7 +103,12 @@ subagente bloqueó, marca su fase real y muestra sus `blocking_questions` en un
 diálogo que se abre solo. Si se cierra, queda una franja roja persistente arriba
 y un botón dentro de la consola. Al responder, la decisión entra en la misma
 sesión, se libera el bloqueo y mapa y consola pasan juntos a “retomando”. La
-acción también sobrevive a un F5 porque se reconstruye desde el replay.
+acción también sobrevive a un F5 porque se reconstruye desde el replay. El
+studio espera a que termine el turno actual antes de publicar esa acción: nunca
+muestra “acción requerida” mientras Claude todavía está ejecutando herramientas.
+Cuando el turno termina sin bloqueo dice explícitamente “Sin acciones
+pendientes · chat opcional”; tener el chat habilitado no significa que el ciclo
+esté esperando una respuesta.
 
 **Editar abre una ventana a pantalla completa**, con la configuración en una
 columna y las instrucciones en la otra. Editar es una tarea enfocada y no tiene
@@ -212,8 +217,9 @@ script no pierde su bit de ejecución al editarlo desde acá.
 ## Escribir la historia acá, sin tracker
 
 El selector de historia tiene tres modos. En `tracker`, pasás un ID y
-la historia la lee el agente por MCP. En `escrita acá`, la escribís en el panel
-de la derecha: título, descripción y criterios de aceptación, uno por línea.
+la historia la lee el agente por MCP. En `escribir acá`, el selector abre
+directamente un formulario mínimo: título, descripción y criterios de
+aceptación. Desde ahí se ejecuta con un solo botón.
 
 Al ejecutar, el studio la guarda en `.claude/run/<ID>/story.json` con el esquema
 canónico —el mismo que produce Jira— y recién ahí lanza el run. El resolver la
@@ -221,12 +227,14 @@ encuentra en disco en la fase 0 y no consulta ningún MCP. De la fase 1 en
 adelante nada distingue una historia escrita a mano de una que vino de un
 tracker, así que no hubo que tocar ningún agente para soportarlo.
 
-El ID es opcional: si no lo ponés se deriva del título (`LOCAL-exportar-csv`).
+No hay biblioteca de historias, botones Guardar/Cargar ni campo de ID. Al
+ejecutar se deriva automáticamente del título (`LOCAL-exportar-csv`) y se crea
+el archivo técnico que consume el ciclo.
 
 **No saltea el refinamiento.** `@refinamiento` la evalúa igual que a cualquier
 otra y bloquea si los criterios faltan o no son verificables. Cuando eso pasa,
-las preguntas quedan en `.claude/run/<ID>/blocked.md`; el botón **Cargar** trae
-la historia de vuelta al formulario para corregirla y volver a tirar el run.
+las preguntas aparecen en el centro de acciones para responderlas dentro de la
+misma sesión.
 
 Como no hay ticket al que escribirle, el PR es el único registro: en este modo la
 descripción lleva los criterios completos en vez de un link.

@@ -864,6 +864,16 @@ function blockRun(run, { phase, agent, reason, questions = [], sourceId = null }
   emit(run, { t: 'blocked', ...run.blocked, questions: action.questions, at: Date.now() });
 }
 
+/**
+ * Un subagente puede declarar BLOCKED mientras el turno principal todavía está
+ * procesando su resultado. La acción humana recién se publica cuando llega el
+ * `result`: antes de eso Claude sigue trabajando y decir "te estamos esperando"
+ * sería falso. Desde este punto sí congelamos la fase para que el mapa no avance.
+ */
+function queueBlock(run, block) {
+  if (!run.pendingBlock && !run.blocked) run.pendingBlock = block;
+}
+
 /** Deriva la fase actual a partir de un evento del stream. Es inferencia. */
 function inferPhase(run, msg) {
   const blocks = msg?.message?.content;
@@ -892,8 +902,9 @@ function inferPhase(run, msg) {
         // Los subagentes de un plugin llegan calificados: `globant-sdlc:qa`.
         const phase = AGENT_PHASE[agent];
         if (phase !== undefined) {
-          setPhase(run, phase, `@${agent}`);
-          emit(run, { t: 'agent', agent, phase, at: Date.now() });
+          if (setPhase(run, phase, `@${agent}`)) {
+            emit(run, { t: 'agent', agent, phase, at: Date.now() });
+          }
         }
         continue;
       }
@@ -932,14 +943,14 @@ function inferPhase(run, msg) {
             text: text.slice(0, 6000), at: Date.now(),
           });
 
-          if (pending.isPr && !b.is_error && !run.blocked && !run.cycleComplete) {
+          if (pending.isPr && !b.is_error && !run.blocked && !run.pendingBlock && !run.cycleComplete) {
             run.cycleComplete = true;
             emit(run, { t: 'cycle_complete', phase: PHASE_PR, at: Date.now() });
           }
 
           const answer = pending.agent ? agentJson(text) : null;
           if (answer?.verdict === 'BLOCKED') {
-            blockRun(run, {
+            queueBlock(run, {
               phase: pending.phase ?? 1,
               agent: pending.agent,
               reason: BLOCK_REASON[pending.agent] || 'El ciclo necesita una decisión humana',
@@ -947,7 +958,7 @@ function inferPhase(run, msg) {
               sourceId: b.tool_use_id,
             });
           } else if (pending.agent === 'arquitectura' && /blast_radius\s*:?\s*"?high/i.test(text)) {
-            blockRun(run, {
+            queueBlock(run, {
               phase: pending.phase ?? 2,
               agent: pending.agent,
               reason: 'El cambio tiene blast radius alto y requiere revisión humana',
@@ -962,14 +973,15 @@ function inferPhase(run, msg) {
 }
 
 function setPhase(run, phase, detail) {
-  if (run.phase === phase) return;
   // Un run bloqueado no avanza más. El corte es terminal por diseño (D2), y
   // mostrar la vía progresando después de un bloqueo comunica exactamente lo
   // contrario de lo que hizo el circuit breaker.
-  if (run.blocked) return;
+  if (run.blocked || run.pendingBlock) return false;
+  if (run.phase === phase) return true;
   run.phase = phase;
   run.phaseHistory.push({ phase, detail, at: Date.now() });
   emit(run, { t: 'phase', phase, detail, at: Date.now() });
+  return true;
 }
 
 /** Confirma el avance leyendo los artefactos que el flujo deja en disco. */
@@ -1044,7 +1056,7 @@ function startRun({ storyId, repoDir, manual, baseBranch, permissionMode, allowe
   const run = {
     id, storyId, prompt, args, cwd: repoDir,
     startedAt: Date.now(), status: 'running',
-    phase: null, phaseHistory: [], blocked: null, cycleComplete: false,
+    phase: null, phaseHistory: [], blocked: null, pendingBlock: null, cycleComplete: false,
     artifacts: {}, events: [], clients: new Set(), child: null, stdinClosed: false,
     pending: new Map(), // tool_use_id -> herramienta/agente/nodo, para atribuir resultados
     actions: new Map(),
@@ -1115,6 +1127,11 @@ function startRun({ storyId, repoDir, manual, baseBranch, permissionMode, allowe
         run.turns = msg.num_turns ?? null;
         // Terminó el turno, no la sesión: queda esperando el próximo mensaje.
         run.status = run.stdinClosed ? 'done' : 'idle';
+        if (run.pendingBlock) {
+          const pendingBlock = run.pendingBlock;
+          run.pendingBlock = null;
+          blockRun(run, pendingBlock);
+        }
         emit(run, {
           t: 'result',
           ok: !msg.is_error,
@@ -1274,29 +1291,6 @@ const server = http.createServer(async (req, res) => {
         res.end();
       }
       return;
-    }
-
-    if (p === '/api/story' && req.method === 'POST') {
-      const body = JSON.parse(await readBody(req));
-      const repoDir = path.resolve(body.repoDir || TARGET_REPO);
-      if (!fs.existsSync(repoDir)) {
-        return json(res, 400, { error: `El directorio no existe: ${repoDir}` });
-      }
-      const { id, file, story } = await writeManualStory(repoDir, body);
-      return json(res, 200, { id, path: file, story });
-    }
-
-    if (p === '/api/story' && req.method === 'GET') {
-      const repoDir = path.resolve(url.searchParams.get('repoDir') || TARGET_REPO);
-      const file = path.join(
-        runDirFor(repoDir, String(url.searchParams.get('storyId') || '').trim()),
-        'story.json',
-      );
-      try {
-        return json(res, 200, { path: file, story: JSON.parse(await fsp.readFile(file, 'utf8')) });
-      } catch {
-        return json(res, 404, { error: 'No hay historia escrita para ese ID' });
-      }
     }
 
     if (p === '/api/config' && req.method === 'GET') {
