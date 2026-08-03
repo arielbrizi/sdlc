@@ -30,6 +30,10 @@ test('prepara monorepo, confirma contexto y ejecuta en worktree aislado', { time
   fs.writeFileSync(path.join(repo, 'apps/web/package.json'), JSON.stringify({ scripts: { test: 'vitest' } }));
   fs.writeFileSync(path.join(bin, 'claude'), `#!/bin/sh
 case "$*" in
+  *"auth status --json"*)
+    printf '%s\n' '{"loggedIn":true,"authMethod":"claude.ai","apiProvider":"firstParty"}'
+    exit 0
+    ;;
   *"mcp get plugin:globant-sdlc:figma"*)
     printf '%s\n' 'plugin:globant-sdlc:figma:' '  Status: ✓ Connected'
     exit 0
@@ -45,6 +49,7 @@ printf '%s\n' '{"tool_input":{"command":"git status"}}' \\
 printf '%s\n' '{"type":"system","subtype":"init","session_id":"session-test"}'
 printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"tool-1","name":"ToolSearch","input":{"query":"+bash shell command git"}}]}}'
 printf '%s\n' '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"tool-1","content":[]}]}}'
+printf '%s\n' '{"type":"assistant","message":{"id":"msg-usage","usage":{"input_tokens":120,"output_tokens":30,"cache_read_input_tokens":400},"content":[{"type":"text","text":"Listo"}]}}'
 printf '%s\n' '{"type":"result","is_error":false,"result":"Turno terminado","num_turns":1,"total_cost_usd":0}'
 `, { mode: 0o755 });
   git(repo, 'init', '-q');
@@ -137,6 +142,8 @@ printf '%s\n' '{"type":"result","is_error":false,"result":"Turno terminado","num
     assert.match(stream, /"progress":"Buscando una herramienta para ejecutar comandos del repositorio y trabajar con Git"/);
     assert.match(stream, /"success":"Búsqueda completada; Claude Code recibió una respuesta y puede continuar"/);
     assert.match(stream, /"isError":false/);
+    assert.match(stream, /"tokenUsage":\{"input":120,"output":30,"cacheRead":400,"cacheWrite":0\}/);
+    assert.match(stream, /"usagePlan":\{"kind":"subscription","label":"Crédito mensual SDK"\}/);
   } finally {
     const closed = new Promise(resolve => server.once('close', resolve));
     server.kill('SIGTERM');

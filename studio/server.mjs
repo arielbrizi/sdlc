@@ -22,6 +22,8 @@ import os from 'node:os';
 import {
   MAX_CORRECTION_ROUNDS,
   RECOVERY_PROMPT,
+  EMPTY_TOKEN_USAGE,
+  addTokenUsage,
   auditCorrection,
   correctionRoundForTransition,
   correctionSourceForTransition,
@@ -30,6 +32,7 @@ import {
   prCommand,
   prTool,
   technicalToolInterruption,
+  usagePlan,
 } from './run-signals.mjs';
 import {
   discoverWorkspaces,
@@ -897,13 +900,15 @@ function startMcpLogin(server) {
 async function authStatus() {
   const { code, stdout, stderr } = await runClaude(['auth', 'status', '--json']);
   try {
-    return { ok: true, ...JSON.parse(stdout) };
+    const status = JSON.parse(stdout);
+    return { ok: true, ...status, usagePlan: usagePlan(status, process.env) };
   } catch {
-    return {
+    const status = {
       ok: false,
       loggedIn: false,
       error: (stderr || stdout || `exit ${code}`).trim().slice(0, 400),
     };
+    return { ...status, usagePlan: usagePlan(status, process.env) };
   }
 }
 
@@ -1328,7 +1333,7 @@ function markRunActive(run) {
   emit(run, { t: 'activity', phase: run.phase, at: Date.now() });
 }
 
-function startRun({ storyId, repoDir, sourceRepo, manual, baseBranch, permissionMode, allowedTools, extraFlags, workspaceInfo, branchStrategy }) {
+function startRun({ storyId, repoDir, sourceRepo, manual, baseBranch, permissionMode, allowedTools, extraFlags, workspaceInfo, branchStrategy, accountUsagePlan }) {
   const id = randomUUID();
   // El tracker va explícito: story.json ya dice `manual`, pero decirlo también en
   // la invocación evita que el resolver tenga que adivinar por la forma del ID.
@@ -1360,7 +1365,8 @@ function startRun({ storyId, repoDir, sourceRepo, manual, baseBranch, permission
     startedAt, status: 'running', elapsedMs: 0,
     activeStartedAt: prompt ? startedAt : null,
     phase: null, phaseHistory: [], blocked: null, pendingBlock: null, cycleComplete: false,
-    cost: 0, costReports: 0,
+    cost: 0, costReports: 0, accountUsagePlan,
+    tokenUsage: { ...EMPTY_TOKEN_USAGE }, seenMessageIds: new Set(), turnSawUsage: false,
     artifacts: {}, events: [], clients: new Set(), child: null, stdinClosed: false,
     pending: new Map(), // tool_use_id -> herramienta/agente/nodo, para atribuir resultados
     actions: new Map(), autoRecoveryCount: 0, prConfirmed: false,
@@ -1390,7 +1396,10 @@ function startRun({ storyId, repoDir, sourceRepo, manual, baseBranch, permission
   run.child = child;
   child.stdin.on('error', () => { /* la sesión se cerró del otro lado */ });
 
-  emit(run, { t: 'start', storyId, cwd: repoDir, cmd: `claude ${args.join(' ')}`, at: Date.now() });
+  emit(run, {
+    t: 'start', storyId, cwd: repoDir, cmd: `claude ${args.join(' ')}`,
+    usagePlan: run.accountUsagePlan, at: Date.now(),
+  });
 
   if (prompt) sendToRun(run, prompt);
   else {
@@ -1425,6 +1434,12 @@ function startRun({ storyId, repoDir, sourceRepo, manual, baseBranch, permission
         emit(run, { t: 'init', sessionId: run.sessionId, at: Date.now() });
       } else if (msg.type === 'assistant') {
         markRunActive(run);
+        const messageId = msg.message?.id;
+        if (messageId && !run.seenMessageIds.has(messageId)) {
+          run.seenMessageIds.add(messageId);
+          run.tokenUsage = addTokenUsage(run.tokenUsage, msg.message?.usage);
+          run.turnSawUsage = true;
+        }
         inferPhase(run, msg);
         const text = (msg.message?.content || [])
           .filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
@@ -1440,9 +1455,14 @@ function startRun({ storyId, repoDir, sourceRepo, manual, baseBranch, permission
         markRunActive(run);
         inferPhase(run, msg);
       } else if (msg.type === 'result') {
-        // Claude informa el costo de cada turno terminado. El Studio mantiene
-        // el acumulado de toda la sesión para que continuar el chat no vuelva
-        // a mostrar solamente el último importe.
+        // Versiones del CLI que no adjuntan usage a los mensajes lo dejan en
+        // result. Es fallback por turno: nunca se suma junto con ambos.
+        if (!run.turnSawUsage && msg.usage) {
+          run.tokenUsage = addTokenUsage(run.tokenUsage, msg.usage);
+        }
+        run.turnSawUsage = false;
+        // Claude informa una estimación local por consulta. Solo se conserva
+        // para cuentas API por uso; suscripciones y proveedores muestran tokens.
         const turnCost = Number(msg.total_cost_usd);
         if (Number.isFinite(turnCost) && turnCost >= 0) {
           run.cost += turnCost;
@@ -1480,6 +1500,8 @@ function startRun({ storyId, repoDir, sourceRepo, manual, baseBranch, permission
           cost: run.cost,
           costReported: Number.isFinite(turnCost) && turnCost >= 0,
           costReports: run.costReports,
+          usagePlan: run.accountUsagePlan,
+          tokenUsage: run.tokenUsage,
           elapsedMs: run.elapsedMs,
           turnCost: Number.isFinite(turnCost) ? turnCost : null,
           turns: run.turns,
@@ -1787,6 +1809,7 @@ const server = http.createServer(async (req, res) => {
         }, null, 2)}\n`, 'utf8');
       }
 
+      const account = await authStatus();
       const run = startRun({
         storyId,
         repoDir,
@@ -1798,6 +1821,7 @@ const server = http.createServer(async (req, res) => {
         extraFlags: body.extraFlags || '',
         workspaceInfo,
         branchStrategy: body.branchStrategy || 'resume',
+        accountUsagePlan: account.usagePlan,
       });
       return json(res, 200, {
         runId: run.id,
@@ -1825,6 +1849,7 @@ const server = http.createServer(async (req, res) => {
         actions: [...run.actions.values()], cycleComplete: run.cycleComplete,
         correctionRound: run.correctionRound, maxCorrectionRounds: MAX_CORRECTION_ROUNDS,
         correctionCounts: run.correctionCounts,
+        usagePlan: run.accountUsagePlan, tokenUsage: run.tokenUsage,
         cwd: run.cwd, sourceRepo: run.sourceRepo, workspaceInfo: run.workspaceInfo,
         prompt: run.prompt, vivo: !!run.child,
       });
@@ -1847,6 +1872,7 @@ const server = http.createServer(async (req, res) => {
         connection: run.sessionId && run.child ? 'connected' : (run.child ? 'starting' : 'closed'),
         correctionRound: run.correctionRound, maxCorrectionRounds: MAX_CORRECTION_ROUNDS,
         correctionCounts: run.correctionCounts,
+        usagePlan: run.accountUsagePlan, tokenUsage: run.tokenUsage,
         at: Date.now(),
       })}\n\n`);
       // Mientras el proceso viva la sesión sigue: `idle` es esperando input, no fin.

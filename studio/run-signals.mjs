@@ -2,6 +2,50 @@
 
 export const MAX_CORRECTION_ROUNDS = 3;
 
+export const EMPTY_TOKEN_USAGE = Object.freeze({
+  input: 0, output: 0, cacheRead: 0, cacheWrite: 0,
+});
+
+/** Normaliza el uso que Claude adjunta a cada mensaje, sin contar dos veces. */
+export function addTokenUsage(total = EMPTY_TOKEN_USAGE, usage = {}) {
+  const cacheCreation = usage.cache_creation || {};
+  return {
+    input: Math.max(0, Number(total.input) || 0) + Math.max(0, Number(usage.input_tokens) || 0),
+    output: Math.max(0, Number(total.output) || 0) + Math.max(0, Number(usage.output_tokens) || 0),
+    cacheRead: Math.max(0, Number(total.cacheRead) || 0) + Math.max(0, Number(usage.cache_read_input_tokens) || 0),
+    cacheWrite: Math.max(0, Number(total.cacheWrite) || 0)
+      + Math.max(0, Number(usage.cache_creation_input_tokens) || 0)
+      + Math.max(0, Number(cacheCreation.ephemeral_5m_input_tokens) || 0)
+      + Math.max(0, Number(cacheCreation.ephemeral_1h_input_tokens) || 0),
+  };
+}
+
+/** Decide qué significa "consumo" según la credencial que realmente gana. */
+export function usagePlan(auth = {}, env = {}) {
+  const method = String(auth.authMethod || '').toLowerCase();
+  const provider = String(auth.apiProvider || '').toLowerCase();
+  if (env.CLAUDE_CODE_USE_BEDROCK || provider.includes('bedrock')) {
+    return { kind: 'provider', label: 'Amazon Bedrock' };
+  }
+  if (env.CLAUDE_CODE_USE_VERTEX || provider.includes('vertex')) {
+    return { kind: 'provider', label: 'Google Vertex AI' };
+  }
+  if (env.CLAUDE_CODE_USE_FOUNDRY || provider.includes('foundry')) {
+    return { kind: 'provider', label: 'Microsoft Foundry' };
+  }
+  if (env.CLAUDE_CODE_USE_ANTHROPIC_AWS || provider.includes('anthropicaws')) {
+    return { kind: 'provider', label: 'Claude Platform on AWS' };
+  }
+  if (env.ANTHROPIC_AUTH_TOKEN) return { kind: 'provider', label: 'Gateway externo' };
+  if (env.ANTHROPIC_API_KEY || /api.?key|console/.test(method)) {
+    return { kind: 'api', label: 'API por uso' };
+  }
+  if (env.CLAUDE_CODE_OAUTH_TOKEN || /oauth|claude.?ai|subscription|sso/.test(method)) {
+    return { kind: 'subscription', label: 'Crédito mensual SDK' };
+  }
+  return { kind: 'unknown', label: auth.loggedIn ? 'Cuenta no identificada' : 'Sin sesión' };
+}
+
 /**
  * Una ronda correctiva empieza cuando el desarrollador vuelve a intervenir
  * después de QA/seguridad o reviewer. La implementación inicial no cuenta.

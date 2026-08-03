@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   MAX_CORRECTION_ROUNDS,
   RECOVERY_PROMPT,
+  addTokenUsage,
   auditCorrection,
   correctionRoundForTransition,
   correctionSourceForTransition,
@@ -12,7 +13,23 @@ import {
   prCommand,
   prTool,
   technicalToolInterruption,
+  usagePlan,
 } from './run-signals.mjs';
+
+test('clasifica consumo por suscripción, API o proveedor externo', () => {
+  assert.equal(usagePlan({ loggedIn: true, authMethod: 'claude.ai' }).kind, 'subscription');
+  assert.equal(usagePlan({ loggedIn: true, authMethod: 'console' }).kind, 'api');
+  assert.equal(usagePlan({}, { ANTHROPIC_API_KEY: 'presente' }).kind, 'api');
+  assert.equal(usagePlan({}, { CLAUDE_CODE_USE_BEDROCK: '1' }).label, 'Amazon Bedrock');
+});
+
+test('suma tokens y separa lectura y escritura de caché', () => {
+  const usage = addTokenUsage(undefined, {
+    input_tokens: 10, output_tokens: 4, cache_read_input_tokens: 20,
+    cache_creation: { ephemeral_5m_input_tokens: 6, ephemeral_1h_input_tokens: 2 },
+  });
+  assert.deepEqual(usage, { input: 10, output: 4, cacheRead: 20, cacheWrite: 8 });
+});
 
 test('cuenta sólo regresos reales a implementación', () => {
   assert.equal(MAX_CORRECTION_ROUNDS, 3);

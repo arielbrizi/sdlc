@@ -762,8 +762,8 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
   <span class="run-state" id="runState" data-s="none">
     <span class="dot"></span><span id="runStateText">Sin sesión abierta</span>
   </span>
-  <span class="cost-chip" id="costChip" title="Costo acumulado informado por Claude Code">
-    <small>Consumo</small><strong id="costValue" aria-live="polite">US$ 0.0000</strong>
+  <span class="cost-chip" id="costChip" title="Consumo de este run">
+    <small id="usageLabel">Uso</small><strong id="costValue" aria-live="polite">—</strong>
   </span>
   <span class="cost-chip" id="timeChip" title="Tiempo acumulado con Claude trabajando">
     <small>Tiempo</small><strong id="timeValue">00:00:00</strong>
@@ -1130,7 +1130,7 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
           <span class="dot"></span>
           <span id="sessionText">Sin sesión abierta</span>
           <span class="grow"></span>
-          <span class="tag mono" id="dockCost">US$ 0.0000</span>
+          <span class="tag mono" id="dockCost">—</span>
           <span class="tag" id="evCount" hidden>0 eventos</span>
           <span class="chev">▾</span>
         </button>
@@ -1459,6 +1459,8 @@ let RUN_MODEL = {
   status: 'none', phase: null, blocked: null, complete: false,
   connection: 'closed', sessionReady: false,
   cost: 0, costReported: false, turns: null,
+  usagePlan: { kind: 'unknown', label: 'Cuenta no identificada' },
+  tokenUsage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
   elapsedMs: 0, activeSince: null, actions: {},
   correctionRound: 0, maxCorrectionRounds: 3,
   correctionCounts: { verification: 0, reviewer: 0 },
@@ -1471,6 +1473,37 @@ const usd = value => {
   const n = Number(value) || 0;
   return `US$ ${n > 0 && n < .01 ? n.toFixed(6) : n.toFixed(4)}`;
 };
+const tokenTotal = usage => ['input', 'output', 'cacheRead', 'cacheWrite']
+  .reduce((sum, key) => sum + Math.max(0, Number(usage?.[key]) || 0), 0);
+const compactNumber = value => {
+  const n = Math.max(0, Number(value) || 0);
+  if (n >= 1e6) return `${(n / 1e6).toFixed(n >= 1e7 ? 1 : 2)} M`;
+  if (n >= 1e3) return `${(n / 1e3).toFixed(n >= 1e4 ? 1 : 2)} k`;
+  return String(n);
+};
+function usageDisplay(calculating = false) {
+  const plan = RUN_MODEL.usagePlan || { kind: 'unknown', label: 'Cuenta no identificada' };
+  const tokens = tokenTotal(RUN_MODEL.tokenUsage);
+  const pending = calculating ? ' + calculando…' : '';
+  const breakdown = `Entrada ${compactNumber(RUN_MODEL.tokenUsage?.input)} · salida ${compactNumber(RUN_MODEL.tokenUsage?.output)} · caché leída ${compactNumber(RUN_MODEL.tokenUsage?.cacheRead)} · caché creada ${compactNumber(RUN_MODEL.tokenUsage?.cacheWrite)}`;
+  if (plan.kind === 'api') return {
+    label: 'Estimación API',
+    value: RUN_MODEL.costReported ? `${usd(RUN_MODEL.cost)} est.${pending}` : `—${calculating ? ' calculando…' : ''}`,
+    title: `API por uso. Es una estimación local, no la factura. ${breakdown}.`,
+  };
+  const label = plan.kind === 'subscription' ? 'Crédito SDK'
+    : plan.kind === 'provider' ? 'Uso externo' : 'Tokens';
+  const context = plan.kind === 'subscription'
+    ? 'Este run descuenta del crédito mensual de Agent SDK de la suscripción; no es un cargo en dólares. Claude Code no expone acá el saldo restante del plan.'
+    : plan.kind === 'provider'
+      ? `La facturación corresponde a ${plan.label}; el Studio muestra tokens, no costo.`
+      : 'No se pudo identificar el tipo de cuenta; se muestran únicamente tokens.';
+  return {
+    label,
+    value: tokens ? `${compactNumber(tokens)} tokens${pending}` : `—${calculating ? ' calculando…' : ''}`,
+    title: `${context} ${breakdown}.`,
+  };
+}
 const duration = value => {
   const total = Math.max(0, Math.floor((Number(value) || 0) / 1000));
   const hours = Math.floor(total / 3600);
@@ -1498,17 +1531,13 @@ function syncClientElapsed(value, running = false) {
 function renderRunSurfaces() {
   const action = openAction();
   const calculating = RUN_MODEL.status === 'running';
-  const cost = calculating
-    ? (RUN_MODEL.costReported ? `${usd(RUN_MODEL.cost)} + calculando…` : 'US$ — calculando…')
-    : (!RUN_MODEL.costReported && RUN_MODEL.turns != null ? 'US$ — no informado' : usd(RUN_MODEL.cost));
-  $('costValue').textContent = cost;
-  $('dockCost').textContent = cost;
+  const usage = usageDisplay(calculating);
+  $('usageLabel').textContent = usage.label;
+  $('costValue').textContent = usage.value;
+  $('dockCost').textContent = usage.value;
   $('costChip').dataset.pending = calculating ? '1' : '0';
-  const costTitle = calculating
-    ? 'Claude Code informa el costo exacto cuando termina el turno actual.'
-    : 'Costo acumulado informado por Claude Code al terminar cada turno.';
-  $('costChip').title = costTitle;
-  $('dockCost').title = costTitle;
+  $('costChip').title = usage.title;
+  $('dockCost').title = usage.title;
   renderElapsed();
   $('actionStrip').hidden = !action;
   $('btnConsoleAction').hidden = !action;
@@ -2298,7 +2327,7 @@ async function start() {
     const figmaAccess = await refreshMcpStatus('figma');
     if (figmaAccess?.status !== 'connected') {
       showView('config');
-      openMcpAuth('figma');
+      connectMcp('figma');
       banner('err', 'Conectá Figma antes de ejecutar: el OAuth no puede completarse dentro del ciclo.');
       return;
     }
@@ -2330,6 +2359,8 @@ async function start() {
     status: 'running', phase: null, blocked: null, complete: false,
     connection: 'starting', sessionReady: false,
     cost: 0, costReported: false, turns: null,
+    usagePlan: RUN_MODEL.usagePlan || { kind: 'unknown', label: 'Cuenta no identificada' },
+    tokenUsage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     elapsedMs: 0, activeSince: consola ? null : Date.now(), actions: {},
     correctionRound: 0, maxCorrectionRounds: 3,
     correctionCounts: { verification: 0, reviewer: 0 },
@@ -2582,6 +2613,8 @@ function onEvent(ev) {
   }
   if (ev.t === 'snapshot') {
     if (ev.connection) RUN_MODEL.connection = ev.connection;
+    if (ev.usagePlan) RUN_MODEL.usagePlan = ev.usagePlan;
+    if (ev.tokenUsage) RUN_MODEL.tokenUsage = ev.tokenUsage;
     RUN_MODEL.correctionRound = Math.max(0, Number(ev.correctionRound) || RUN_MODEL.correctionRound || 0);
     RUN_MODEL.maxCorrectionRounds = Math.max(1, Number(ev.maxCorrectionRounds) || RUN_MODEL.maxCorrectionRounds || 3);
     if (ev.correctionCounts) {
@@ -2591,6 +2624,7 @@ function onEvent(ev) {
       };
     }
     syncClientElapsed(ev.elapsedMs, ev.status === 'running');
+    renderRunSurfaces();
     isReplaying = false;
     if (openAction()) showAction();
   }
@@ -2598,7 +2632,10 @@ function onEvent(ev) {
       ev.t === 'action_resolved' || ev.t === 'cycle_complete' ||
       ev.t === 'correction_round' || ev.t === 'audit_verdict') renderGraph();
 
-  if (ev.t === 'start') setSession('running', 'Claude Code iniciado · esperando confirmación de conexión…');
+  if (ev.t === 'start') {
+    if (ev.usagePlan) RUN_MODEL.usagePlan = ev.usagePlan;
+    setSession('running', 'Claude Code iniciado · esperando confirmación de conexión…');
+  }
   if (ev.t === 'init') {
     RUN_MODEL.connection = 'connected';
     setSession(RUN_MODEL.sessionReady ? 'idle' : 'running', RUN_MODEL.sessionReady
@@ -2645,6 +2682,8 @@ function onEvent(ev) {
     syncClientElapsed(ev.elapsedMs, false);
     RUN_MODEL.cost = Number(ev.cost) || 0;
     RUN_MODEL.costReported = RUN_MODEL.costReported || !!ev.costReported;
+    if (ev.usagePlan) RUN_MODEL.usagePlan = ev.usagePlan;
+    if (ev.tokenUsage) RUN_MODEL.tokenUsage = ev.tokenUsage;
     RUN_MODEL.turns = ev.turns ?? RUN_MODEL.turns;
     for (const [node, state] of Object.entries(NODE_STATE)) {
       if (state === 'active' && !ev.recovering) NODE_STATE[node] = 'paused';
@@ -2656,7 +2695,7 @@ function onEvent(ev) {
     }
     renderGraph();
     const bits = [ev.turns != null ? `${ev.turns} turnos` : null,
-                  ev.cost != null ? `${usd(ev.cost)} acumulados` : null].filter(Boolean);
+                  tokenTotal(ev.tokenUsage) ? `${compactNumber(tokenTotal(ev.tokenUsage))} tokens procesados` : null].filter(Boolean);
     if (bits.length && !ev.recovering) banner(ev.ok ? 'ok' : 'err', bits.join(' · '));
     if (ev.status === 'idle') setSession('idle', 'Sin acciones pendientes · chat opcional');
   }
@@ -3345,6 +3384,10 @@ $('btnFigmaMcpConnect').addEventListener('click', () => connectMcp('figma'));
 async function refreshAuth() {
   try {
     const a = await api('/api/auth');
+    if (!run && a.usagePlan) {
+      RUN_MODEL.usagePlan = a.usagePlan;
+      renderRunSurfaces();
+    }
     const on = !!a.loggedIn;
     $('authChip').dataset.s = on ? 'idle' : 'error';
     $('authText').textContent = on ? (a.authMethod || 'conectado') : 'sin sesión';
@@ -3445,6 +3488,7 @@ function requestReset() {
 
 async function resetStudio() {
   if (RUN_MODEL.status === 'running') return requestReset();
+  const accountUsagePlan = RUN_MODEL.usagePlan || { kind: 'unknown', label: 'Cuenta no identificada' };
   $('dlgReset').close();
 
   // Una sesión que terminó su turno sigue viva esperando mensajes. Se cierra
@@ -3479,6 +3523,8 @@ async function resetStudio() {
     status: 'none', phase: null, blocked: null, complete: false,
     connection: 'closed', sessionReady: false,
     cost: 0, costReported: false, turns: null,
+    usagePlan: accountUsagePlan,
+    tokenUsage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     elapsedMs: 0, activeSince: null, actions: {},
     correctionRound: 0, maxCorrectionRounds: 3,
     correctionCounts: { verification: 0, reviewer: 0 },
@@ -3539,6 +3585,8 @@ async function restaurar() {
     blocked: info.blocked || null, complete: !!info.cycleComplete,
     connection: info.vivo ? 'starting' : 'closed', sessionReady: false,
     cost: Number(info.cost) || 0, costReported: Number(info.costReports) > 0,
+    usagePlan: info.usagePlan || { kind: 'unknown', label: 'Cuenta no identificada' },
+    tokenUsage: info.tokenUsage || { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     turns: info.turns ?? null, elapsedMs: Number(info.elapsedMs) || 0,
     activeSince: info.status === 'running' ? Date.now() : null,
     actions: Object.fromEntries((info.actions || []).map(a => [a.id, a])),

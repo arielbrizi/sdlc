@@ -45,16 +45,23 @@ La consola se puede agrandar arrastrando su borde superior. El botón
 elegida queda recordada. El separador también acepta `↑`, `↓`, `Home` y `End`
 para ajustar la altura con teclado.
 
-El costo acumulado de la sesión está siempre visible en la barra de ejecución y
-se repite en el encabezado de la consola. Empieza en `US$ 0.0000`, suma el
-`total_cost_usd` que Claude Code informa al cerrar cada turno y se reconstruye
-al recuperar un run después de recargar la página.
+El consumo de la sesión está siempre visible en la barra de ejecución y se
+repite en el encabezado de la consola. El Studio consulta el método de
+autenticación que usa realmente Claude Code y evita presentar una estimación
+como si fuera una factura:
 
-Claude Code no informa un total durante los mensajes intermedios: el campo llega
-en el evento final `result`. Mientras el primer turno está activo el Studio dice
-`US$ — calculando…`; en turnos posteriores conserva el acumulado confirmado y
-agrega `+ calculando…`. Si el resultado no incluye costo, muestra `no informado`
-en vez de presentar un cero engañoso.
+- con una suscripción OAuth muestra **Crédito SDK** y los tokens procesados por
+  este run; `claude -p` descuenta del crédito mensual de Agent SDK;
+- con una API key o una cuenta Console muestra **Estimación API** en dólares,
+  marcada explícitamente como estimación local;
+- con Bedrock, Vertex, Foundry o un gateway muestra **Uso externo** en tokens,
+  porque el costo autoritativo vive en ese proveedor;
+- si no puede identificar la cuenta, muestra tokens y no inventa dólares.
+
+Los tokens se cuentan desde cada mensaje único de Claude —entrada, salida,
+lectura y escritura de caché— para no duplicarlos cuando una respuesta contiene
+varios bloques. Tanto el tipo de consumo como los totales se reconstruyen al
+recuperar un run después de recargar la página.
 
 Al lado del consumo se muestra un reloj `HH:MM:SS`. Cuenta únicamente el tiempo
 en que Claude está ejecutando un turno: se pausa cuando la sesión queda esperando
