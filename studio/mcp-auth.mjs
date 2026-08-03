@@ -25,3 +25,22 @@ export function parseMcpStatus(stdout, stderr = '', code = 0) {
 
 export const pluginMcpName = (pluginName, server) =>
   pluginName ? `plugin:${pluginName}:${server}` : server;
+
+/**
+ * `claude mcp login` necesita una terminal interactiva aunque el OAuth se
+ * complete en el navegador. Si Studio no heredó una, macOS puede darle una
+ * pseudo-terminal con `script` sin exponer el callback ni las credenciales.
+ */
+export function mcpLoginCommand(args, { platform, stdinIsTTY }) {
+  if (stdinIsTTY) {
+    return { command: 'claude', args, stdin: 'inherit' };
+  }
+  if (platform === 'darwin') {
+    return {
+      command: '/usr/bin/script',
+      args: ['-q', '/dev/null', 'claude', ...args],
+      stdin: 'ignore',
+    };
+  }
+  return { command: 'claude', args, stdin: 'ignore' };
+}

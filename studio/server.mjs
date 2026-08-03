@@ -44,7 +44,7 @@ import {
 } from './repository.mjs';
 import { hookEventsSince } from './hook-events.mjs';
 import { toolActivity } from './tool-activity.mjs';
-import { parseMcpStatus, pluginMcpName } from './mcp-auth.mjs';
+import { mcpLoginCommand, parseMcpStatus, pluginMcpName } from './mcp-auth.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..');
@@ -866,7 +866,14 @@ function startMcpLogin(server) {
   mcpLogin.status = 'running';
   push(mcpLogin, { t: 'start', server, at: Date.now() });
 
-  const child = spawn('claude', args, { cwd: REPO_ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
+  const launch = mcpLoginCommand(args, {
+    platform: process.platform,
+    stdinIsTTY: !!process.stdin.isTTY,
+  });
+  const child = spawn(launch.command, launch.args, {
+    cwd: REPO_ROOT,
+    stdio: [launch.stdin, 'pipe', 'pipe'],
+  });
   mcpLogin.child = child;
   const scan = (text) => {
     push(mcpLogin, { t: 'out', text: text.slice(0, 2000), at: Date.now() });
