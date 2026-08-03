@@ -547,6 +547,7 @@ body.dock-resizing{cursor:ns-resize;user-select:none}
 .ev[data-k="tool"] .ev-k{color:var(--k-script)}
 .ev[data-k="ask"] .ev-k{color:var(--k-skill)}
 .ev[data-k="action"] .ev-k,.ev[data-k="action_resolved"] .ev-k{color:var(--danger);font-weight:700}
+.ev[data-k="recovery"] .ev-k{color:var(--warn);font-weight:700}
 .ev-tool b{font-weight:600;color:var(--k-script)}
 .ev[data-agent="1"] .ev-k,.ev[data-agent="1"] .ev-o{color:var(--k-agent)}
 .send{display:flex;gap:8px;padding:10px 16px;border-top:1px solid var(--border);
@@ -2312,15 +2313,24 @@ function onEvent(ev) {
     }
     setSession('running', 'Claude está trabajando…');
   }
+  if (ev.t === 'recovery') {
+    beginClientWork();
+    if (RUN_MODEL.phase != null) {
+      PHASE_STATE[RUN_MODEL.phase] = 'active';
+      PHASE_NOTE[RUN_MODEL.phase] = 'Interrupción técnica · reintentando automáticamente';
+      renderGraph();
+    }
+    setSession('running', 'Interrupción técnica · Claude está retomando automáticamente…');
+  }
   if (ev.t === 'result') {
     syncClientElapsed(ev.elapsedMs, false);
     RUN_MODEL.cost = Number(ev.cost) || 0;
     RUN_MODEL.costReported = RUN_MODEL.costReported || !!ev.costReported;
     RUN_MODEL.turns = ev.turns ?? RUN_MODEL.turns;
     for (const [node, state] of Object.entries(NODE_STATE)) {
-      if (state === 'active') NODE_STATE[node] = 'paused';
+      if (state === 'active' && !ev.recovering) NODE_STATE[node] = 'paused';
     }
-    if (!RUN_MODEL.blocked && !RUN_MODEL.complete && RUN_MODEL.phase != null &&
+    if (!ev.recovering && !RUN_MODEL.blocked && !RUN_MODEL.complete && RUN_MODEL.phase != null &&
         PHASE_STATE[RUN_MODEL.phase] === 'active') {
       PHASE_STATE[RUN_MODEL.phase] = 'paused';
       PHASE_NOTE[RUN_MODEL.phase] = 'turno terminado';
@@ -2328,7 +2338,7 @@ function onEvent(ev) {
     renderGraph();
     const bits = [ev.turns != null ? `${ev.turns} turnos` : null,
                   ev.cost != null ? `${usd(ev.cost)} acumulados` : null].filter(Boolean);
-    if (bits.length) banner(ev.ok ? 'ok' : 'err', bits.join(' · '));
+    if (bits.length && !ev.recovering) banner(ev.ok ? 'ok' : 'err', bits.join(' · '));
     if (ev.status === 'idle') setSession('idle', 'Sin acciones pendientes · chat opcional');
   }
   if (ev.t === 'error') finish('error');
@@ -2344,7 +2354,7 @@ function onEvent(ev) {
 // El tipo crudo del evento no le dice nada a quien no escribió el servidor.
 const EV_LABEL = {
   start: 'inicio', init: 'sesión', ready: 'lista', phase: 'fase', agent: 'subagente',
-  activity: 'actividad',
+  activity: 'actividad', recovery: 'recuperación',
   tool: 'herramienta', output: 'salida', say: 'claude', ask: 'vos', artifact: 'archivo',
   blocked: 'bloqueo', result: 'turno', end: 'fin', error: 'error', stderr: 'stderr',
   action: 'acción', action_resolved: 'resuelta', cycle_complete: 'ciclo',

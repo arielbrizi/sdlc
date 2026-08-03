@@ -149,6 +149,12 @@ Cuando el turno termina sin bloqueo dice explícitamente “Sin acciones
 pendientes · chat opcional”; tener el chat habilitado no significa que el ciclo
 esté esperando una respuesta.
 
+Si Claude Code devuelve el marcador técnico `Request interrupted by user for
+tool use`, el Studio no lo trata como una decisión humana: retoma el mismo ciclo
+automáticamente y deja una línea **recuperación** visible en la consola. Reintenta
+hasta tres veces consecutivas para no entrar en un bucle; solo si las tres fallan
+expone el problema como acción.
+
 **Editar abre una ventana a pantalla completa**, con la configuración en una
 columna y las instrucciones en la otra. Editar es una tarea enfocada y no tiene
 por qué pelear por el ancho de un panel lateral: en el modal el texto arranca con

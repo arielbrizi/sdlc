@@ -905,6 +905,16 @@ function humanInputRequest(text) {
   };
 }
 
+/**
+ * Claude Code puede cerrar un turno con este marcador cuando una llamada de
+ * herramienta se interrumpe dentro del runtime. No es una decisión del dev y
+ * no debe dejar el ciclo esperando un "continuar" escrito a mano.
+ */
+function technicalToolInterruption(text) {
+  const clean = String(text || '').trim();
+  return /^\[?request interrupted by user(?: for tool use)?\]?$/i.test(clean);
+}
+
 /** Deriva la fase actual a partir de un evento del stream. Es inferencia. */
 function inferPhase(run, msg) {
   const blocks = msg?.message?.content;
@@ -1062,7 +1072,7 @@ const runElapsed = (run, at = Date.now()) => run.elapsedMs + (
   run.activeStartedAt == null ? 0 : Math.max(0, at - run.activeStartedAt)
 );
 
-function sendToRun(run, text) {
+function sendToRun(run, text, { event = 'ask', displayText = text } = {}) {
   if (!run.child || run.stdinClosed) {
     throw Object.assign(new Error('la sesión ya está cerrada'), { code: 409 });
   }
@@ -1071,7 +1081,7 @@ function sendToRun(run, text) {
     message: { role: 'user', content: [{ type: 'text', text }] },
   }) + '\n');
   beginRunWork(run);
-  emit(run, { t: 'ask', text: text.slice(0, 2000), at: Date.now() });
+  emit(run, { t: event, text: String(displayText).slice(0, 2000), at: Date.now() });
 }
 
 /**
@@ -1122,7 +1132,7 @@ function startRun({ storyId, repoDir, manual, baseBranch, permissionMode, allowe
     cost: 0, costReports: 0,
     artifacts: {}, events: [], clients: new Set(), child: null, stdinClosed: false,
     pending: new Map(), // tool_use_id -> herramienta/agente/nodo, para atribuir resultados
-    actions: new Map(),
+    actions: new Map(), autoRecoveryCount: 0,
   };
   runs.set(id, run);
 
@@ -1206,7 +1216,9 @@ function startRun({ storyId, repoDir, manual, baseBranch, permissionMode, allowe
         pauseRunWork(run);
         run.status = run.stdinClosed ? 'done' : 'idle';
         const resultText = typeof msg.result === 'string' ? msg.result.trim() : '';
-        if (!msg.is_error && !run.pendingBlock && !run.blocked && !run.cycleComplete) {
+        const interrupted = technicalToolInterruption(resultText);
+        if (!interrupted) run.autoRecoveryCount = 0;
+        if (!msg.is_error && !interrupted && !run.pendingBlock && !run.blocked && !run.cycleComplete) {
           const request = humanInputRequest(resultText);
           if (request) queueBlock(run, {
             phase: run.phase ?? 0,
@@ -1231,8 +1243,31 @@ function startRun({ storyId, repoDir, manual, baseBranch, permissionMode, allowe
           turnCost: Number.isFinite(turnCost) ? turnCost : null,
           turns: run.turns,
           text: resultText ? resultText.slice(0, 4000) : null,
+          recovering: interrupted && run.autoRecoveryCount < 3,
           at: Date.now(),
         });
+        if (interrupted && !run.blocked && !run.cycleComplete && !run.stdinClosed) {
+          if (run.autoRecoveryCount < 3) {
+            run.autoRecoveryCount++;
+            // El tool_use anterior no va a recibir tool_result después de un
+            // `result`; olvidarlo evita que quede como trabajo fantasma.
+            run.pending.clear();
+            sendToRun(run,
+              'La llamada de herramienta anterior fue interrumpida por el runtime, no por una decisión del usuario. Retomá automáticamente desde el punto exacto donde quedó el ciclo y reintentá la herramienta. No pidas confirmación para continuar.',
+              {
+                event: 'recovery',
+                displayText: `Interrupción técnica detectada · reintentando automáticamente (${run.autoRecoveryCount}/3)`,
+              },
+            );
+          } else {
+            blockRun(run, {
+              phase: run.phase ?? 0,
+              agent: null,
+              reason: 'Claude Code interrumpió tres veces seguidas una herramienta y no pudo recuperarse solo',
+              questions: ['Revisá el detalle técnico y reiniciá la ejecución.'],
+            });
+          }
+        }
       }
     }
     await pollArtifacts(run);
