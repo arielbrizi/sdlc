@@ -1453,7 +1453,7 @@ function kindOf(path) {
 const kindBadge = k => (KINDS[k] ? `<span class="kind" data-k="${k}">${esc(KINDS[k].label)}</span>` : '');
 
 let PLUGIN = null, PHASES = [], current = null, original = '', run = null, es = null;
-let authES = null, mcpAuthES = null, isReplaying = false;
+let authES = null, mcpAuthES = null, mcpAuthWindow = null, mcpPendingUrl = '', isReplaying = false;
 let MCP_STATUS = {};
 let RUN_MODEL = {
   status: 'none', phase: null, blocked: null, complete: false,
@@ -3314,6 +3314,31 @@ const MCP_COPY = {
   unknown: ['No se pudo confirmar el acceso', 'Volvé a comprobar o iniciá la autenticación.'],
 };
 
+function mcpAuthUrl(server, raw) {
+  try {
+    const url = new URL(raw);
+    if (server === 'figma' && url.protocol === 'https:' && url.hostname === 'www.figma.com') {
+      return url.href;
+    }
+  } catch {}
+  return '';
+}
+
+function closeMcpAuthWindow() {
+  try { if (mcpAuthWindow && !mcpAuthWindow.closed) mcpAuthWindow.close(); } catch {}
+  mcpAuthWindow = null;
+}
+
+function navigateMcpAuthWindow(url) {
+  try {
+    if (!mcpAuthWindow || mcpAuthWindow.closed) return false;
+    mcpAuthWindow.location.replace(url);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function renderMcpStatus(server, state) {
   if (server !== 'figma') return;
   MCP_STATUS[server] = state;
@@ -3345,6 +3370,14 @@ async function refreshMcpStatus(server = 'figma') {
 $('btnFigmaMcpCheck').addEventListener('click', () => refreshMcpStatus('figma'));
 
 async function connectMcp(server = 'figma') {
+  mcpPendingUrl = '';
+  closeMcpAuthWindow();
+  // Se abre durante el click para que el bloqueador del navegador no impida
+  // navegarla cuando el CLI entregue la URL OAuth unos segundos después.
+  mcpAuthWindow = window.open('about:blank', `flow360-${server}-oauth`);
+  try {
+    if (mcpAuthWindow?.document) mcpAuthWindow.document.title = 'Conectando con Figma…';
+  } catch {}
   renderMcpStatus(server, { status: 'authorizing' });
   try {
     await api('/api/mcp/login', {
@@ -3352,6 +3385,7 @@ async function connectMcp(server = 'figma') {
       body: JSON.stringify({ server }),
     });
   } catch (e) {
+    closeMcpAuthWindow();
     renderMcpStatus(server, { status: 'unavailable', detail: e.message });
     return banner('err', `No se pudo abrir Figma: ${e.message}`);
   }
@@ -3360,9 +3394,26 @@ async function connectMcp(server = 'figma') {
   mcpAuthES = new EventSource('/api/mcp/stream');
   mcpAuthES.onmessage = (e) => {
     const ev = JSON.parse(e.data);
-    if (ev.t === 'error') {
+    if (ev.t === 'url') {
+      const url = mcpAuthUrl(server, ev.url);
+      if (!url) return;
+      if (!navigateMcpAuthWindow(url)) {
+        mcpPendingUrl = url;
+        $('btnFigmaMcpConnect').disabled = false;
+        $('btnFigmaMcpConnect').textContent = 'Abrir Figma';
+        $('figmaMcpDetail').textContent = 'El navegador bloqueó la pestaña. Presioná Abrir Figma para continuar.';
+      }
+    } else if (ev.t === 'error') {
+      closeMcpAuthWindow();
       renderMcpStatus(server, { status: 'unavailable', detail: ev.message });
+    } else if (ev.t === 'timeout') {
+      closeMcpAuthWindow();
+      renderMcpStatus(server, {
+        status: 'auth_required',
+        detail: 'La autorización venció después de 5 minutos. Volvé a intentarlo.',
+      });
     } else if (ev.t === 'end') {
+      closeMcpAuthWindow();
       mcpAuthES.close(); mcpAuthES = null;
       renderMcpStatus(server, ev.auth || { status: 'unknown' });
       const ok = ev.auth?.status === 'connected';
@@ -3372,12 +3423,22 @@ async function connectMcp(server = 'figma') {
     }
   };
   mcpAuthES.onerror = async () => {
+    closeMcpAuthWindow();
     mcpAuthES?.close(); mcpAuthES = null;
     await refreshMcpStatus(server);
   };
 }
 
-$('btnFigmaMcpConnect').addEventListener('click', () => connectMcp('figma'));
+$('btnFigmaMcpConnect').addEventListener('click', () => {
+  if (mcpPendingUrl) {
+    const url = mcpPendingUrl;
+    mcpPendingUrl = '';
+    mcpAuthWindow = window.open(url, 'flow360-figma-oauth');
+    renderMcpStatus('figma', { status: 'authorizing' });
+    return;
+  }
+  connectMcp('figma');
+});
 
 // El studio no guarda credenciales: pregunta y delega en el CLI, que es donde
 // ya viven. Todo lo que hace es mostrar el estado y levantar el flujo de login.

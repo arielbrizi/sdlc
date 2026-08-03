@@ -838,8 +838,9 @@ function push(channel, event, cap = 3000) {
 const login = { child: null, status: 'idle', events: [], clients: new Set() };
 
 const OAUTH_MCP = new Set(['figma', 'jira']);
+const MCP_LOGIN_TIMEOUT_MS = 5 * 60_000;
 const mcpLogin = {
-  child: null, server: null, status: 'idle', events: [], clients: new Set(),
+  child: null, server: null, status: 'idle', events: [], clients: new Set(), timeout: null,
 };
 
 const mcpServerName = server => pluginMcpName(PLUGIN_NAME, server);
@@ -875,6 +876,13 @@ function startMcpLogin(server) {
     stdio: [launch.stdin, 'pipe', 'pipe'],
   });
   mcpLogin.child = child;
+  mcpLogin.timeout = setTimeout(() => {
+    if (mcpLogin.child !== child) return;
+    mcpLogin.status = 'timeout';
+    push(mcpLogin, { t: 'timeout', server, at: Date.now() });
+    child.kill('SIGTERM');
+  }, MCP_LOGIN_TIMEOUT_MS);
+  mcpLogin.timeout.unref();
   const scan = (text) => {
     push(mcpLogin, { t: 'out', text: text.slice(0, 2000), at: Date.now() });
     for (const raw of text.match(/https?:\/\/[^\s'"<>]+/g) || []) {
@@ -892,11 +900,21 @@ function startMcpLogin(server) {
     });
   });
   child.on('close', async (code) => {
+    clearTimeout(mcpLogin.timeout);
+    mcpLogin.timeout = null;
+    const timedOut = mcpLogin.status === 'timeout';
     mcpLogin.child = null;
     mcpLogin.status = code === 0 ? 'done' : 'error';
     let auth;
     try { auth = await mcpAuthStatus(server); }
     catch (e) { auth = { server, status: 'unavailable', detail: e.message }; }
+    if (timedOut && auth.status !== 'connected') {
+      auth = {
+        server,
+        status: 'auth_required',
+        detail: 'La autorización venció después de 5 minutos. Volvé a intentarlo.',
+      };
+    }
     push(mcpLogin, { t: 'end', server, code, status: mcpLogin.status, auth, at: Date.now() });
     for (const res of mcpLogin.clients) res.end();
     mcpLogin.clients.clear();

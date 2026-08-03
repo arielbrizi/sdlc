@@ -317,7 +317,10 @@ OAuth en el navegador y confirma el resultado con `claude mcp get`. El login
 conserva una terminal interactiva —o crea una terminal virtual en macOS si el
 Studio no heredó una— porque Claude Code la necesita para esperar el callback.
 Es una sola acción: no muestra la consola del CLI, no pide copiar callbacks y no
-ve ni guarda el token. Al terminar la autorización, el estado se actualiza solo.
+ve ni guarda el token. Studio abre una pestaña de Figma desde el mismo clic para
+evitar que el navegador la bloquee; al terminar la cierra y actualiza el estado.
+Si el acceso no se completa en cinco minutos, cancela la espera y permite volver
+a intentarlo en lugar de quedar indefinidamente en “Autorizando”.
 Después de actualizar una versión que cambie el servidor del Studio hay que
 reiniciarlo; recargar solamente la pestaña conserva el proceso anterior.
 Cuando `@ux` y Figma están habilitados, el preflight no permite ejecutar hasta

@@ -78,6 +78,8 @@ printf '%s\n' '{"type":"result","is_error":false,"result":"Turno terminado","num
     const home = await fetch(baseUrl).then(r => r.text());
     assert.match(home, /Conectar Figma/);
     assert.doesNotMatch(home, /URL completa del callback|Abrir autenticación/);
+    assert.match(home, /window\.open\('about:blank', `flow360-\$\{server\}-oauth`\)/);
+    assert.match(home, /ev\.t === 'url'/);
     const plugin = await fetch(`${baseUrl}/api/plugin`).then(r => r.json());
     assert.equal(plugin.targetRepo, path.resolve(repo));
     assert.equal(plugin.targetRepoExplicit, true);
