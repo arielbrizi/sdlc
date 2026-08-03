@@ -971,7 +971,7 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
               </div>
               <div class="f">
                 <label class="f-label" for="repoScope">Alcance en el repositorio</label>
-                <select class="field" id="repoScope" disabled><option value=".">Todo el repositorio</option></select>
+                <select class="field" id="repoScope" disabled><option value="">—</option></select>
                 <span class="f-help">En un monorepo, elegí el servicio o aplicación que modifica la historia.</span>
               </div>
               <div class="f">
@@ -1503,9 +1503,7 @@ async function load() {
   const [plugin, ph] = await Promise.all([api('/api/plugin'), api('/api/phases')]);
   PLUGIN = plugin; PHASES = ph.phases;
 
-  $('railMeta').innerHTML =
-    `<span>${esc(plugin.pluginDir)}</span><span class="arrow">→</span><span>${esc(plugin.targetRepo)}</span>`;
-  if (!$('repoDir').value) $('repoDir').value = plugin.targetRepo;
+  renderRepoMeta();
 
   // El comando que hay que tipear es el calificado: /us solo da "Unknown command".
   const cmd = plugin.skills[0]?.command;
@@ -1604,17 +1602,34 @@ const agenteOn = nombre => (CONFIG ? CONFIG.agents?.[nombre] !== false : true);
 const figmaConfigurado = () => !!(
   CONFIG?.figma?.url || (CONFIG?.figma?.file_key && CONFIG?.figma?.node_id)
 );
-const uxSinFigma = () => agenteOn('ux') && !figmaConfigurado();
+const uxSinFigma = () => !!CONFIG && agenteOn('ux') && !figmaConfigurado();
+
+function renderRepoMeta(dir = '') {
+  $('railMeta').innerHTML = `<span>${esc(PLUGIN?.pluginDir || '')}</span><span class="arrow">→</span>` +
+    `<span>${dir ? esc(dir) : 'sin repo seleccionado'}</span>`;
+}
 
 async function loadConfig() {
+  const repoDir = $('repoDir').value.trim();
+  if (!repoDir) {
+    CONFIG = null;
+    renderCatalog();
+    renderGraph();
+    return null;
+  }
   try {
-    CONFIG = await api('/api/config?repoDir=' + encodeURIComponent($('repoDir').value.trim()));
+    CONFIG = await api('/api/config?repoDir=' + encodeURIComponent(repoDir));
     pintarDesign();
     renderCatalog();
     renderGraph();
+    return CONFIG;
   } catch (e) {
+    // La ruta recién se valida al ejecutar. Escribir/restaurar un valor no
+    // dispara errores preventivos ni intenta adivinar otro repositorio.
     CONFIG = null;
-    banner('err', `No se pudo leer la config del repo: ${e.message}`);
+    renderCatalog();
+    renderGraph();
+    return null;
   }
 }
 
@@ -1678,6 +1693,14 @@ async function guardarConfig(cambios = {}) {
       ...(cambios.storybook || {}),
     },
   };
+  if (!cuerpo.repoDir) {
+    CONFIG = { agents: cuerpo.agents, figma: cuerpo.figma, storybook: cuerpo.storybook };
+    pintarDesign();
+    renderCatalog();
+    renderGraph();
+    if (selectedNode) renderNodeDetail();
+    return { path: null, ...CONFIG };
+  }
   const r = await api('/api/config', {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
@@ -1699,7 +1722,9 @@ async function guardarConfig(cambios = {}) {
 async function toggleAgente(nombre, nuevoEstado) {
   try {
     await guardarConfig({ agents: { [nombre]: nuevoEstado } });
-    banner('ok', `@${nombre} ${nuevoEstado ? 'habilitado' : 'deshabilitado'} en este repo`);
+    if ($('repoDir').value.trim()) {
+      banner('ok', `@${nombre} ${nuevoEstado ? 'habilitado' : 'deshabilitado'} en este repo`);
+    }
     return true;
   } catch (e) {
     banner('err', `No se pudo cambiar @${nombre}: ${e.message}`);
@@ -1739,9 +1764,11 @@ $('btnSaveDesign').addEventListener('click', async () => {
       agents: $('fgUrl').value.trim() ? { ux: true } : {},
     });
     $('cfgStatus').textContent = '';
-    banner('ok', $('fgUrl').value.trim()
-      ? 'Diseño guardado. Figma y @ux quedaron habilitados para este repo.'
-      : `Configuración guardada en ${r.path}`);
+    banner('ok', !$('repoDir').value.trim()
+      ? 'Configuración temporal. Se guardará cuando prepares un repositorio.'
+      : $('fgUrl').value.trim()
+        ? 'Diseño guardado. Figma y @ux quedaron habilitados para este repo.'
+        : `Configuración guardada en ${r.path}`);
   } catch (e) {
     banner('err', `No se pudo guardar: ${e.message}`);
   } finally {
@@ -2211,7 +2238,7 @@ async function start() {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           repoDir: $('repoDir').value.trim(), baseBranch: $('baseBranch').value,
-          scope: $('repoScope').value || '.', storyId,
+          scope: $('repoScope').value, storyId,
           title: manual ? $('stTitle').value.trim() : '',
           repoHint: manual ? $('stRepoHint').value.trim() : '',
         }),
@@ -2247,7 +2274,7 @@ async function start() {
         repoDir: $('repoDir').value.trim(),
         permissionMode: $('permMode').value,
         baseBranch: $('baseBranch').value,
-        scope: $('repoScope').value || '.',
+        scope: $('repoScope').value,
         isolate: $('isolateRepo').checked,
         branchStrategy: $('branchStrategy').value,
         allowedTools: $('allowedTools').value.trim(),
@@ -2988,21 +3015,24 @@ async function prepararRepo() {
       $('repoDir').value = r.dir;
 
       const sel = $('baseBranch');
-      sel.innerHTML = r.branches.map(b =>
-        `<option value="${esc(b)}"${b === r.porDefecto ? ' selected' : ''}>${esc(b)}</option>`,
-      ).join('') || '<option value="">(sin branches)</option>';
+      sel.innerHTML = '<option value="" selected>Elegí una branch</option>' + r.branches.map(b =>
+        `<option value="${esc(b)}">${esc(b)}</option>`,
+      ).join('');
       sel.disabled = !r.branches.length;
 
       const scope = $('repoScope');
-      scope.innerHTML = (r.workspaces || ['.']).map(w =>
+      scope.innerHTML = '<option value="" selected>Elegí el alcance</option>' + (r.workspaces || ['.']).map(w =>
         `<option value="${esc(w)}">${w === '.' ? 'Todo el repositorio' : esc(w)}</option>`,
       ).join('');
-      scope.disabled = (r.workspaces || []).length <= 1;
+      scope.disabled = false;
+
+      renderRepoMeta(r.dir);
+      await loadConfig();
 
       repoState(true,
         `${r.clonado ? 'Clonado' : 'Actualizado'} en <code>${esc(r.dir)}</code>` +
         `<span class="grow"></span><span class="tag">${r.branches.length} branches</span>` +
-        `<span class="tag">base: ${esc(r.porDefecto || '—')}</span>` +
+        '<span class="tag">base: sin elegir</span>' +
         ((r.workspaces || []).length > 1 ? `<span class="tag">${r.workspaces.length - 1} subproyectos</span>` : ''));
     } catch (e) {
       repoState(false, esc(e.message));
@@ -3137,7 +3167,7 @@ $('btnGlosClose').addEventListener('click', () => $('dlgGlosario').close());
 // eventos y los repite al reconectar, así que alcanza con recordar el id y
 // volver a engancharse: el replay reconstruye fases, grafo, log y sesión.
 const LS = 'globant-sdlc-studio';
-const CAMPOS = ['source', 'story', 'repoUrl', 'repoDir', 'baseBranch', 'repoScope',
+const CAMPOS = ['source', 'story',
                 'permMode', 'allowedTools', 'extraFlags', 'stTitle', 'stDesc', 'stAc', 'stRepoHint'];
 
 function requestReset() {
@@ -3170,10 +3200,10 @@ async function resetStudio() {
   for (const id of ['story', 'repoUrl', 'allowedTools', 'extraFlags',
                     'stTitle', 'stDesc', 'stAc', 'stRepoHint', 'sendText']) $(id).value = '';
   $('permMode').value = 'bypassPermissions';
-  $('repoDir').value = PLUGIN?.targetRepo || '';
+  $('repoDir').value = '';
   $('baseBranch').innerHTML = '<option value="">—</option>';
   $('baseBranch').disabled = true;
-  $('repoScope').innerHTML = '<option value=".">Todo el repositorio</option>';
+  $('repoScope').innerHTML = '<option value="">—</option>';
   $('repoScope').disabled = true;
   $('isolateRepo').checked = true;
   $('cmdHint').textContent = 'Todavía no se ejecutó ningún run en esta sesión del studio.';
@@ -3188,6 +3218,8 @@ async function resetStudio() {
     correctionRound: 0, maxCorrectionRounds: 3,
   };
   NODE_OUT = {}; NODE_STATE = {}; selectedNode = null;
+  CONFIG = null;
+  renderRepoMeta();
   $('detailCard').hidden = true;
   resetPhases();
   syncSource();
@@ -3196,7 +3228,6 @@ async function resetStudio() {
   renderGraph();
   showView('ciclo');
   medirDock();
-  await loadConfig();
   banner('ok', 'Studio reiniciado. Ya podés comenzar una historia nueva.');
 }
 
@@ -3267,7 +3298,7 @@ setSession('none', 'Sin sesión abierta');
 setInterval(renderElapsed, 1000);
 medirDock();
 syncSource();
-load().then(loadConfig).then(restaurar).catch(e => banner('err', e.message));
+load().then(restaurar).catch(e => banner('err', e.message));
 refreshAuth();
 </script>
 </body>

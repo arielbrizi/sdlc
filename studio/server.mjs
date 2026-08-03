@@ -708,13 +708,16 @@ async function gitValue(dir, args) {
 }
 
 /** Estado verificable que se muestra antes de autorizar un run. */
-async function repositoryPreflight({ repoDir, baseBranch, scope = '.', storyId = '', title = '', repoHint = '' }) {
+async function repositoryPreflight({ repoDir, baseBranch, scope = '', storyId = '', title = '', repoHint = '' }) {
   const selected = path.resolve(repoDir || TARGET_REPO);
   const root = await gitValue(selected, ['rev-parse', '--show-toplevel']);
   if (!root) throw Object.assign(new Error(`${selected} no es un repositorio Git`), { code: 400 });
   const scopedDir = safeScope(root, scope);
   const base = String(baseBranch || '').trim();
   if (!base) throw Object.assign(new Error('elegí una branch base'), { code: 400 });
+  if (!String(scope || '').trim()) {
+    throw Object.assign(new Error('elegí el alcance del repositorio'), { code: 400 });
+  }
   if (base.startsWith('feature/')) {
     throw Object.assign(new Error('una feature no puede ser la base del modo automático'), { code: 400 });
   }

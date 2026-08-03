@@ -76,6 +76,12 @@ se configura una vez y se ejecuta muchas. Si algo falla con el repositorio, el
 studio te lleva ahí y marca la sección: un problema no puede quedar escondido en
 una pantalla que no estás mirando.
 
+El repositorio, la branch base y el alcance empiezan siempre vacíos y no se
+restauran desde `localStorage`. Studio tampoco intenta leer una configuración
+apenas abre. Una ruta ausente o inválida se informa al presionar **Ejecutar**;
+**Preparar** conserva sus propios errores porque esa acción sí intenta acceder
+explícitamente al repositorio.
+
 **Reiniciar Studio** está disponible tanto en Inicio como en Configuración. La
 acción limpia la historia, el run visible, el chat, el mapa, el costo y los
 campos temporales. Si una sesión quedó esperando mensajes, primero la cierra;

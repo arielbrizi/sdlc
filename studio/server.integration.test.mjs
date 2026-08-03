@@ -51,6 +51,13 @@ test('prepara monorepo, confirma contexto y ejecuta en worktree aislado', { time
     assert.equal(prepare.dir, fs.realpathSync(repo));
     assert.ok(prepare.workspaces.includes('apps/web'));
 
+    const missingScope = await fetch(`${baseUrl}/api/repo/preflight`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ repoDir: repo, baseBranch: 'main', storyId: 'LOCAL-1' }),
+    });
+    assert.equal(missingScope.status, 400);
+    assert.match(await missingScope.text(), /elegí el alcance/);
+
     const preflight = await fetch(`${baseUrl}/api/repo/preflight`, {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ repoDir: repo, baseBranch: 'main', scope: 'apps/web', storyId: 'LOCAL-1', repoHint: 'web' }),
