@@ -1047,6 +1047,21 @@ async function pollArtifacts(run) {
  * en una consola — el dev puede seguir la conversación donde el run la dejó, en
  * la misma sesión y con el mismo contexto.
  */
+function beginRunWork(run, at = Date.now()) {
+  if (run.activeStartedAt == null) run.activeStartedAt = at;
+  run.status = 'running';
+}
+
+function pauseRunWork(run, at = Date.now()) {
+  if (run.activeStartedAt == null) return;
+  run.elapsedMs += Math.max(0, at - run.activeStartedAt);
+  run.activeStartedAt = null;
+}
+
+const runElapsed = (run, at = Date.now()) => run.elapsedMs + (
+  run.activeStartedAt == null ? 0 : Math.max(0, at - run.activeStartedAt)
+);
+
 function sendToRun(run, text) {
   if (!run.child || run.stdinClosed) {
     throw Object.assign(new Error('la sesión ya está cerrada'), { code: 409 });
@@ -1055,7 +1070,7 @@ function sendToRun(run, text) {
     type: 'user',
     message: { role: 'user', content: [{ type: 'text', text }] },
   }) + '\n');
-  run.status = 'running';
+  beginRunWork(run);
   emit(run, { t: 'ask', text: text.slice(0, 2000), at: Date.now() });
 }
 
@@ -1066,8 +1081,9 @@ function sendToRun(run, text) {
  * trabajando: cuando aparece, servidor y UI vuelven juntos a `running`.
  */
 function markRunActive(run) {
-  if (run.status === 'running' || run.blocked || run.cycleComplete) return;
-  run.status = 'running';
+  if (run.blocked || run.cycleComplete) return;
+  if (run.status === 'running' && run.activeStartedAt != null) return;
+  beginRunWork(run);
   emit(run, { t: 'activity', phase: run.phase, at: Date.now() });
 }
 
@@ -1097,9 +1113,11 @@ function startRun({ storyId, repoDir, manual, baseBranch, permissionMode, allowe
   if (allowedTools) args.push('--allowedTools', allowedTools);
   if (extraFlags) args.push(...extraFlags.split(/\s+/).filter(Boolean));
 
+  const startedAt = Date.now();
   const run = {
     id, storyId, prompt, args, cwd: repoDir,
-    startedAt: Date.now(), status: 'running',
+    startedAt, status: 'running', elapsedMs: 0,
+    activeStartedAt: prompt ? startedAt : null,
     phase: null, phaseHistory: [], blocked: null, pendingBlock: null, cycleComplete: false,
     cost: 0, costReports: 0,
     artifacts: {}, events: [], clients: new Set(), child: null, stdinClosed: false,
@@ -1116,6 +1134,7 @@ function startRun({ storyId, repoDir, manual, baseBranch, permissionMode, allowe
     if (baseBranch) env.CLAUDE_PLUGIN_OPTION_BASE_BRANCH = baseBranch;
     child = spawn('claude', args, { cwd: repoDir, env, stdio: ['pipe', 'pipe', 'pipe'] });
   } catch (e) {
+    pauseRunWork(run);
     run.status = 'error';
     emit(run, { t: 'error', message: `No se pudo ejecutar \`claude\`: ${e.message}`, at: Date.now() });
     return run;
@@ -1132,6 +1151,7 @@ function startRun({ storyId, repoDir, manual, baseBranch, permissionMode, allowe
   }
 
   child.on('error', (e) => {
+    pauseRunWork(run);
     run.status = 'error';
     emit(run, {
       t: 'error',
@@ -1181,7 +1201,9 @@ function startRun({ storyId, repoDir, manual, baseBranch, permissionMode, allowe
           run.costReports++;
         }
         run.turns = msg.num_turns ?? null;
-        // Terminó el turno, no la sesión: queda esperando el próximo mensaje.
+        // Terminó el turno, no la sesión: el reloj se pausa mientras queda
+        // esperando el próximo mensaje.
+        pauseRunWork(run);
         run.status = run.stdinClosed ? 'done' : 'idle';
         const resultText = typeof msg.result === 'string' ? msg.result.trim() : '';
         if (!msg.is_error && !run.pendingBlock && !run.blocked && !run.cycleComplete) {
@@ -1205,6 +1227,7 @@ function startRun({ storyId, repoDir, manual, baseBranch, permissionMode, allowe
           cost: run.cost,
           costReported: Number.isFinite(turnCost) && turnCost >= 0,
           costReports: run.costReports,
+          elapsedMs: run.elapsedMs,
           turnCost: Number.isFinite(turnCost) ? turnCost : null,
           turns: run.turns,
           text: resultText ? resultText.slice(0, 4000) : null,
@@ -1220,8 +1243,9 @@ function startRun({ storyId, repoDir, manual, baseBranch, permissionMode, allowe
   });
 
   child.on('close', (code) => {
+    pauseRunWork(run);
     if (run.status !== 'stopped') run.status = code === 0 ? 'done' : 'error';
-    emit(run, { t: 'end', code, status: run.status, at: Date.now() });
+    emit(run, { t: 'end', code, status: run.status, elapsedMs: run.elapsedMs, at: Date.now() });
     for (const res of run.clients) res.end();
     run.clients.clear();
   });
@@ -1433,6 +1457,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, {
         id: run.id, storyId: run.storyId, status: run.status, phase: run.phase,
         blocked: run.blocked, cost: run.cost ?? null, costReports: run.costReports ?? 0,
+        elapsedMs: runElapsed(run),
         turns: run.turns ?? null,
         actions: [...run.actions.values()], cycleComplete: run.cycleComplete,
         cwd: run.cwd, prompt: run.prompt, vivo: !!run.child,
@@ -1451,7 +1476,9 @@ const server = http.createServer(async (req, res) => {
       for (const ev of run.events) res.write(`data: ${JSON.stringify(ev)}\n\n`);
       // Marca el fin del replay para que el front no abra diálogos una vez por
       // cada evento histórico; el estado ya quedó reconstruido en ese punto.
-      res.write(`data: ${JSON.stringify({ t: 'snapshot', at: Date.now() })}\n\n`);
+      res.write(`data: ${JSON.stringify({
+        t: 'snapshot', status: run.status, elapsedMs: runElapsed(run), at: Date.now(),
+      })}\n\n`);
       // Mientras el proceso viva la sesión sigue: `idle` es esperando input, no fin.
       if (run.child) {
         run.clients.add(res);
@@ -1511,8 +1538,9 @@ const server = http.createServer(async (req, res) => {
       const run = runs.get(m[1]);
       if (!run) return json(res, 404, { error: 'run no encontrado' });
       run.child?.kill('SIGTERM');
+      pauseRunWork(run);
       run.status = 'stopped';
-      emit(run, { t: 'end', code: null, status: 'stopped', at: Date.now() });
+      emit(run, { t: 'end', code: null, status: 'stopped', elapsedMs: run.elapsedMs, at: Date.now() });
       return json(res, 200, { ok: true });
     }
 

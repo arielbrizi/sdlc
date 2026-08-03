@@ -52,6 +52,11 @@ en el evento final `result`. Mientras el primer turno está activo el Studio dic
 agrega `+ calculando…`. Si el resultado no incluye costo, muestra `no informado`
 en vez de presentar un cero engañoso.
 
+Al lado del consumo se muestra un reloj `HH:MM:SS`. Cuenta únicamente el tiempo
+en que Claude está ejecutando un turno: se pausa cuando la sesión queda esperando
+un mensaje o una acción humana, continúa al retomar y se reconstruye al recuperar
+el run después de recargar la página.
+
 | Sección | Para qué |
 |---|---|
 | Ciclo | El mapa del skill `us` con el estado del run en vivo |

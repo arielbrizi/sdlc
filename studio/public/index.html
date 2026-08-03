@@ -724,6 +724,9 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
   <span class="cost-chip" id="costChip" title="Costo acumulado informado por Claude Code">
     <small>Consumo</small><strong id="costValue" aria-live="polite">US$ 0.0000</strong>
   </span>
+  <span class="cost-chip" id="timeChip" title="Tiempo acumulado con Claude trabajando">
+    <small>Tiempo</small><strong id="timeValue">00:00:00</strong>
+  </span>
 </div>
 
 <div class="action-strip" id="actionStrip" role="alert" hidden>
@@ -1352,7 +1355,8 @@ let PLUGIN = null, PHASES = [], current = null, original = '', run = null, es = 
 let authES = null, isReplaying = false;
 let RUN_MODEL = {
   status: 'none', phase: null, blocked: null, complete: false,
-  cost: 0, costReported: false, turns: null, actions: {},
+  cost: 0, costReported: false, turns: null,
+  elapsedMs: 0, activeSince: null, actions: {},
 };
 
 const openAction = () => Object.values(RUN_MODEL.actions).find(a => a.status === 'open');
@@ -1361,6 +1365,27 @@ const usd = value => {
   const n = Number(value) || 0;
   return `US$ ${n > 0 && n < .01 ? n.toFixed(6) : n.toFixed(4)}`;
 };
+const duration = value => {
+  const total = Math.max(0, Math.floor((Number(value) || 0) / 1000));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor(total % 3600 / 60);
+  const seconds = total % 60;
+  return [hours, minutes, seconds].map(n => String(n).padStart(2, '0')).join(':');
+};
+const elapsedNow = () => RUN_MODEL.elapsedMs + (
+  RUN_MODEL.activeSince == null ? 0 : Math.max(0, Date.now() - RUN_MODEL.activeSince)
+);
+function renderElapsed() {
+  $('timeValue').textContent = duration(elapsedNow());
+}
+function beginClientWork() {
+  if (RUN_MODEL.activeSince == null) RUN_MODEL.activeSince = Date.now();
+}
+function syncClientElapsed(value, running = false) {
+  RUN_MODEL.elapsedMs = Math.max(0, Number(value) || 0);
+  RUN_MODEL.activeSince = running ? Date.now() : null;
+  renderElapsed();
+}
 
 // Barra superior, resumen de consola y mapa leen este mismo modelo. Así el
 // estado visible no depende de qué vista esté abierta ni de un texto del log.
@@ -1378,6 +1403,7 @@ function renderRunSurfaces() {
     : 'Costo acumulado informado por Claude Code al terminar cada turno.';
   $('costChip').title = costTitle;
   $('dockCost').title = costTitle;
+  renderElapsed();
   $('actionStrip').hidden = !action;
   $('btnConsoleAction').hidden = !action;
   if (action) $('actionStripText').textContent = `${phaseName(action.phase)} · ${action.reason}`;
@@ -2065,7 +2091,8 @@ async function start() {
   $('log').innerHTML = '';
   RUN_MODEL = {
     status: 'running', phase: null, blocked: null, complete: false,
-    cost: 0, costReported: false, turns: null, actions: {},
+    cost: 0, costReported: false, turns: null,
+    elapsedMs: 0, activeSince: consola ? null : Date.now(), actions: {},
   };
   renderRunSurfaces();
   NODE_OUT = {}; NODE_STATE = {}; renderGraph();
@@ -2137,6 +2164,7 @@ async function send() {
   const text = $('sendText').value.trim();
   if (!text || !run) return;
   $('sendText').value = '';
+  beginClientWork();
   setSession('running', 'Claude está trabajando…');
   try {
     await api(`/api/run/${run}/send`, {
@@ -2146,6 +2174,7 @@ async function send() {
     });
   } catch (e) {
     banner('err', e.message);
+    syncClientElapsed(elapsedNow(), false);
     setSession('idle', 'Sin acciones pendientes · chat opcional');
   }
 }
@@ -2256,6 +2285,7 @@ function onEvent(ev) {
     for (const p of PHASES) PHASE_STATE[p.id] = 'done';
   }
   if (ev.t === 'snapshot') {
+    syncClientElapsed(ev.elapsedMs, ev.status === 'running');
     isReplaying = false;
     if (openAction()) showAction();
   }
@@ -2265,6 +2295,7 @@ function onEvent(ev) {
   if (ev.t === 'ready') setSession('idle', 'Sin acciones pendientes · chat opcional');
   if (ev.t === 'activity') {
     if (!RUN_MODEL.blocked && !RUN_MODEL.complete) {
+      beginClientWork();
       if (RUN_MODEL.phase != null) {
         PHASE_STATE[RUN_MODEL.phase] = 'active';
         PHASE_NOTE[RUN_MODEL.phase] = 'Claude está trabajando';
@@ -2274,6 +2305,7 @@ function onEvent(ev) {
     }
   }
   if (ev.t === 'ask') {
+    beginClientWork();
     if (RUN_MODEL.phase != null && PHASE_STATE[RUN_MODEL.phase] === 'paused') {
       PHASE_STATE[RUN_MODEL.phase] = 'active';
       renderGraph();
@@ -2281,6 +2313,7 @@ function onEvent(ev) {
     setSession('running', 'Claude está trabajando…');
   }
   if (ev.t === 'result') {
+    syncClientElapsed(ev.elapsedMs, false);
     RUN_MODEL.cost = Number(ev.cost) || 0;
     RUN_MODEL.costReported = RUN_MODEL.costReported || !!ev.costReported;
     RUN_MODEL.turns = ev.turns ?? RUN_MODEL.turns;
@@ -2299,7 +2332,10 @@ function onEvent(ev) {
     if (ev.status === 'idle') setSession('idle', 'Sin acciones pendientes · chat opcional');
   }
   if (ev.t === 'error') finish('error');
-  if (ev.t === 'end') finish(ev.status || (ev.code === 0 ? 'done' : 'error'));
+  if (ev.t === 'end') {
+    syncClientElapsed(ev.elapsedMs ?? elapsedNow(), false);
+    finish(ev.status || (ev.code === 0 ? 'done' : 'error'));
+  }
 
   renderRunSurfaces();
   if (ev.t !== 'snapshot') logEvent(ev);
@@ -2357,6 +2393,7 @@ function logEvent(ev) {
 }
 
 function finish(status = 'done') {
+  syncClientElapsed(elapsedNow(), false);
   setSession(status, status === 'error' ? 'Sesión cerrada con error'
     : status === 'stopped' ? 'Sesión detenida' : 'Sesión cerrada');
   // Cerrar el proceso no prueba que una fase terminó bien. Si falló o fue
@@ -2937,7 +2974,8 @@ async function resetStudio() {
 
   RUN_MODEL = {
     status: 'none', phase: null, blocked: null, complete: false,
-    cost: 0, costReported: false, turns: null, actions: {},
+    cost: 0, costReported: false, turns: null,
+    elapsedMs: 0, activeSince: null, actions: {},
   };
   NODE_OUT = {}; NODE_STATE = {}; selectedNode = null;
   $('detailCard').hidden = true;
@@ -2990,12 +3028,15 @@ async function restaurar() {
     status: info.status || 'none', phase: info.phase ?? null,
     blocked: info.blocked || null, complete: !!info.cycleComplete,
     cost: Number(info.cost) || 0, costReported: Number(info.costReports) > 0,
-    turns: info.turns ?? null,
+    turns: info.turns ?? null, elapsedMs: Number(info.elapsedMs) || 0,
+    activeSince: info.status === 'running' ? Date.now() : null,
     actions: Object.fromEntries((info.actions || []).map(a => [a.id, a])),
   };
   NODE_OUT = {}; NODE_STATE = {}; PHASE_STATE = {}; PHASE_NOTE = {};
   $('log').innerHTML = '';
-  setSession(info.vivo ? 'running' : 'none', 'Recuperando el run…');
+  const restoredStatus = info.status === 'running' || info.status === 'idle'
+    ? info.status : (info.vivo ? 'idle' : 'none');
+  setSession(restoredStatus, 'Recuperando el run…');
 
   es?.close();
   isReplaying = true;
@@ -3009,6 +3050,7 @@ async function restaurar() {
 }
 
 setSession('none', 'Sin sesión abierta');
+setInterval(renderElapsed, 1000);
 medirDock();
 syncSource();
 load().then(loadConfig).then(restaurar).catch(e => banner('err', e.message));
