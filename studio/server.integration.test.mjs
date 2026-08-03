@@ -32,7 +32,10 @@ test('prepara monorepo, confirma contexto y ejecuta en worktree aislado', { time
 printf '%s\n' '{"tool_input":{"command":"git status"}}' \\
   | CLAUDE_PROJECT_DIR="$PWD" CLAUDE_PLUGIN_ROOT="$FLOW360_TEST_PLUGIN_ROOT" \\
     "$FLOW360_TEST_PLUGIN_ROOT/scripts/guard-git.sh"
-printf '%s\n' '{"type":"assistant","message":{"content":[]}}'
+printf '%s\n' '{"type":"system","subtype":"init","session_id":"session-test"}'
+printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"tool-1","name":"ToolSearch","input":{"query":"+bash shell command git"}}]}}'
+printf '%s\n' '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"tool-1","content":[]}]}}'
+printf '%s\n' '{"type":"result","is_error":false,"result":"Turno terminado","num_turns":1,"total_cost_usd":0}'
 `, { mode: 0o755 });
   git(repo, 'init', '-q');
   git(repo, 'config', 'user.name', 'Test');
@@ -104,6 +107,10 @@ printf '%s\n' '{"type":"assistant","message":{"content":[]}}'
     const stream = await fetch(`${baseUrl}/api/run/${run.runId}/stream`).then(r => r.text());
     assert.match(stream, /"t":"hook"/);
     assert.match(stream, /"script":"guard-git\.sh"/);
+    assert.match(stream, /"t":"init","sessionId":"session-test"/);
+    assert.match(stream, /"progress":"Buscando una herramienta para ejecutar comandos del repositorio y trabajar con Git"/);
+    assert.match(stream, /"success":"Búsqueda completada; Claude Code recibió una respuesta y puede continuar"/);
+    assert.match(stream, /"isError":false/);
   } finally {
     const closed = new Promise(resolve => server.once('close', resolve));
     server.kill('SIGTERM');

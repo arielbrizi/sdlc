@@ -157,6 +157,13 @@ esa actividad reactiva de inmediato el estado **En ejecución** y la fase actual
 en el mapa. Así el encabezado nunca puede decir “en pausa” mientras el chat sigue
 recibiendo contenido, incluso después de recuperar un run con F5.
 
+La consola diferencia también la conexión de la actividad. Primero muestra
+**Conectando**, y recién cuando Claude Code confirma el inicio pasa a
+**Conectado**. Las herramientas se explican como operaciones legibles con estado
+**en curso**, **completado** o **error**. Un resultado técnico vacío nunca deja
+una fila en blanco: el Studio confirma que la herramienta respondió y que Claude
+Code continúa con el siguiente paso.
+
 Una pregunta o un pedido de aprobación en el resultado final también es estado:
 el Studio lo convierte en **Acción requerida**, abre el diálogo para responder y
 marca la fase bloqueada. Nunca muestra “Sin acciones pendientes” si Claude cerró

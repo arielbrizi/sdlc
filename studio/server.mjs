@@ -37,6 +37,7 @@ import {
   safeScope,
 } from './repository.mjs';
 import { hookEventsSince } from './hook-events.mjs';
+import { toolActivity } from './tool-activity.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..');
@@ -915,6 +916,8 @@ const subagentName = input => unqualify(String(
 ).toLowerCase());
 
 function toolSummary(name, input = {}) {
+  const friendly = toolActivity(name, input);
+  if (friendly.summary) return friendly.summary;
   if (name === 'Bash') return String(input.command || '');
   if (isSubagentTool(name)) {
     return String(input.description || input.prompt || 'Trabajo delegado a un subagente');
@@ -1062,13 +1065,16 @@ function inferPhase(run, msg) {
         ? subagentName(input)
         : null;
       const pr = name === 'Bash' ? prCommand(input.command) : prTool(name);
+      const activity = toolActivity(name, input);
       if (b.id) run.pending.set(b.id, {
         node, name, agent, isPr: pr.creates, touchesPr: pr.touches,
         phase: agent ? AGENT_PHASE[agent] : run.phase,
+        success: activity.success,
       });
       emit(run, {
         t: 'tool', name, node, agent, id: b.id || null,
-        summary: toolSummary(name, input).slice(0, 400), at: Date.now(),
+        summary: toolSummary(name, input).slice(0, 400),
+        progress: activity.progress, at: Date.now(),
       });
 
       if (isSubagentTool(name)) {
@@ -1128,7 +1134,8 @@ function inferPhase(run, msg) {
           emit(run, {
             t: 'output', node: pending.node, agent: pending.agent, name: pending.name,
             id: b.tool_use_id,
-            text: text.slice(0, 6000), at: Date.now(),
+            text: text.slice(0, 6000), success: pending.success,
+            isError: !!b.is_error, at: Date.now(),
           });
 
           if (pending.touchesPr && !b.is_error) run.prConfirmed = true;
@@ -1730,6 +1737,7 @@ const server = http.createServer(async (req, res) => {
       // cada evento histórico; el estado ya quedó reconstruido en ese punto.
       res.write(`data: ${JSON.stringify({
         t: 'snapshot', status: run.status, elapsedMs: runElapsed(run),
+        connection: run.sessionId && run.child ? 'connected' : (run.child ? 'starting' : 'closed'),
         correctionRound: run.correctionRound, maxCorrectionRounds: MAX_CORRECTION_ROUNDS,
         at: Date.now(),
       })}\n\n`);

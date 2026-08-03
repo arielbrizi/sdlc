@@ -562,7 +562,9 @@ body.dock-resizing{cursor:ns-resize;user-select:none}
 .ev-m{white-space:pre-wrap;word-break:break-word;min-width:0;color:var(--text)}
 .ev[data-k="phase"] .ev-k,.ev[data-k="agent"] .ev-k{color:var(--warn);font-weight:600}
 .ev[data-k="blocked"] .ev-k,.ev[data-k="error"] .ev-k,.ev[data-k="stderr"] .ev-k{color:var(--danger);font-weight:600}
+.ev[data-k="init"] .ev-k,.ev[data-k="output"] .ev-k,
 .ev[data-k="result"] .ev-k,.ev[data-k="artifact"] .ev-k{color:var(--ok);font-weight:600}
+.ev[data-error="1"] .ev-k{color:var(--danger);font-weight:700}
 .ev[data-k="tool"] .ev-k{color:var(--k-script)}
 .ev[data-k="ask"] .ev-k{color:var(--k-skill)}
 .ev[data-k="action"] .ev-k,.ev[data-k="action_resolved"] .ev-k{color:var(--danger);font-weight:700}
@@ -1422,6 +1424,7 @@ let PLUGIN = null, PHASES = [], current = null, original = '', run = null, es = 
 let authES = null, isReplaying = false;
 let RUN_MODEL = {
   status: 'none', phase: null, blocked: null, complete: false,
+  connection: 'closed', sessionReady: false,
   cost: 0, costReported: false, turns: null,
   elapsedMs: 0, activeSince: null, actions: {},
   correctionRound: 0, maxCorrectionRounds: 3,
@@ -1485,7 +1488,11 @@ function renderRunSurfaces() {
     : RUN_MODEL.status === 'done' ? 'Sesión cerrada'
     : 'Sin ejecución';
   $('consoleSummary').dataset.s = RUN_MODEL.blocked ? 'error' : RUN_MODEL.status;
-  $('consoleStatus').textContent = status;
+  const connection = RUN_MODEL.connection === 'connected' ? 'Conectado'
+    : RUN_MODEL.connection === 'starting' ? 'Conectando'
+    : RUN_MODEL.connection === 'error' ? 'Sin conexión'
+    : 'Desconectado';
+  $('consoleStatus').textContent = `${connection} · ${status}`;
   $('consolePhase').textContent = RUN_MODEL.phase == null
     ? 'Todavía no comenzó ninguna fase'
     : `${String(RUN_MODEL.phase).padStart(2, '0')} · ${phaseName(RUN_MODEL.phase)} · ${
@@ -2273,6 +2280,7 @@ async function start() {
   $('log').innerHTML = '';
   RUN_MODEL = {
     status: 'running', phase: null, blocked: null, complete: false,
+    connection: 'starting', sessionReady: false,
     cost: 0, costReported: false, turns: null,
     elapsedMs: 0, activeSince: consola ? null : Date.now(), actions: {},
     correctionRound: 0, maxCorrectionRounds: 3,
@@ -2457,13 +2465,29 @@ function onEvent(ev) {
     // pase después.
     if (!esFase(ev.node) && NODE_STATE[ev.node] !== 'blocked') NODE_STATE[ev.node] = 'active';
     pushOut(ev.node, { kind: 'call', title: `llamada · ${ev.name}`, text: ev.summary || '' });
+    if (!RUN_MODEL.blocked && !RUN_MODEL.complete) {
+      RUN_MODEL.connection = 'connected';
+      setSession('running', `${ev.progress || `Usando ${ev.name}`}…`);
+    }
     renderGraph();
   }
   if (ev.t === 'output') {
     // Que termine UNA herramienta no termina la fase que la contiene: eso lo
     // decide el avance de fase.
-    if (!esFase(ev.node) && NODE_STATE[ev.node] !== 'blocked') NODE_STATE[ev.node] = 'done';
-    pushOut(ev.node, { kind: 'result', title: 'resultado', text: ev.text || '' });
+    if (!esFase(ev.node) && NODE_STATE[ev.node] !== 'blocked') {
+      NODE_STATE[ev.node] = ev.isError ? 'error' : 'done';
+    }
+    const outputText = ev.text || (ev.isError
+      ? 'La herramienta terminó con error y no informó más detalles.'
+      : ev.success || 'Operación completada correctamente.');
+    pushOut(ev.node, {
+      kind: 'result', title: ev.isError ? 'error' : 'completado', text: outputText,
+    });
+    if (!RUN_MODEL.blocked && !RUN_MODEL.complete) {
+      setSession('running', ev.isError
+        ? 'Una operación falló · Claude está evaluando cómo continuar…'
+        : `${ev.success || 'Operación completada'} · Claude continúa trabajando…`);
+    }
     renderGraph();
   }
   if (ev.t === 'hook') {
@@ -2492,6 +2516,7 @@ function onEvent(ev) {
     RUN_MODEL.maxCorrectionRounds = Math.max(1, Number(ev.max) || 3);
   }
   if (ev.t === 'snapshot') {
+    if (ev.connection) RUN_MODEL.connection = ev.connection;
     RUN_MODEL.correctionRound = Math.max(0, Number(ev.correctionRound) || RUN_MODEL.correctionRound || 0);
     RUN_MODEL.maxCorrectionRounds = Math.max(1, Number(ev.maxCorrectionRounds) || RUN_MODEL.maxCorrectionRounds || 3);
     syncClientElapsed(ev.elapsedMs, ev.status === 'running');
@@ -2502,7 +2527,21 @@ function onEvent(ev) {
       ev.t === 'action_resolved' || ev.t === 'cycle_complete' ||
       ev.t === 'correction_round') renderGraph();
 
-  if (ev.t === 'ready') setSession('idle', 'Sin acciones pendientes · chat opcional');
+  if (ev.t === 'start') setSession('running', 'Claude Code iniciado · esperando confirmación de conexión…');
+  if (ev.t === 'init') {
+    RUN_MODEL.connection = 'connected';
+    setSession(RUN_MODEL.sessionReady ? 'idle' : 'running', RUN_MODEL.sessionReady
+      ? 'Conectado a Claude Code · listo para recibir mensajes'
+      : 'Conectado a Claude Code · preparando el trabajo…');
+  }
+  if (ev.t === 'ready') {
+    RUN_MODEL.sessionReady = true;
+    if (RUN_MODEL.connection === 'connected') {
+      setSession('idle', 'Conectado a Claude Code · listo para recibir mensajes');
+    } else {
+      setSession('running', 'Claude Code iniciado · esperando confirmación de conexión…');
+    }
+  }
   if (ev.t === 'activity') {
     if (!RUN_MODEL.blocked && !RUN_MODEL.complete) {
       beginClientWork();
@@ -2550,8 +2589,12 @@ function onEvent(ev) {
     if (bits.length && !ev.recovering) banner(ev.ok ? 'ok' : 'err', bits.join(' · '));
     if (ev.status === 'idle') setSession('idle', 'Sin acciones pendientes · chat opcional');
   }
-  if (ev.t === 'error') finish('error');
+  if (ev.t === 'error') {
+    RUN_MODEL.connection = 'error';
+    finish('error');
+  }
   if (ev.t === 'end') {
+    RUN_MODEL.connection = ev.status === 'error' ? 'error' : 'closed';
     syncClientElapsed(ev.elapsedMs ?? elapsedNow(), false);
     finish(ev.status || (ev.code === 0 ? 'done' : 'error'));
   }
@@ -2562,7 +2605,7 @@ function onEvent(ev) {
 
 // El tipo crudo del evento no le dice nada a quien no escribió el servidor.
 const EV_LABEL = {
-  start: 'inicio', init: 'sesión', ready: 'lista', phase: 'fase', agent: 'subagente',
+  start: 'inicio', init: 'conexión', ready: 'lista', phase: 'fase', agent: 'subagente',
   activity: 'actividad', recovery: 'recuperación',
   tool: 'herramienta', output: 'salida', say: 'claude', ask: 'vos', artifact: 'archivo',
   hook: 'hook',
@@ -2576,6 +2619,7 @@ let evCount = 0;
 function logEvent(ev) {
   const row = document.createElement('div');
   row.className = 'ev'; row.dataset.k = ev.t;
+  if (ev.isError) row.dataset.error = '1';
   if (ev.agent || String(ev.node || '').startsWith('agent:')) row.dataset.agent = '1';
 
   const owner = (() => {
@@ -2594,11 +2638,22 @@ function logEvent(ev) {
     return '';
   })();
   const label = ev.t === 'tool' && ev.agent ? 'delegación'
-    : ev.t === 'output' ? 'resultado'
+    : ev.t === 'tool' ? 'en curso'
+    : ev.t === 'output' ? (ev.isError ? 'error' : 'completado')
     : EV_LABEL[ev.t] || ev.t;
 
   // Una tool call se lee mejor con el nombre de la herramienta destacado.
-  const body = ev.t === 'tool'
+  const body = ev.t === 'init'
+    ? '<span class="ev-m">Conexión con Claude Code establecida correctamente</span>'
+    : ev.t === 'ready'
+    ? '<span class="ev-m">Proceso iniciado; esperando confirmación de Claude Code</span>'
+    : ev.t === 'activity'
+    ? '<span class="ev-m">Claude continúa trabajando</span>'
+    : ev.t === 'output'
+    ? `<span class="ev-m">${esc(ev.text || (ev.isError
+        ? 'La herramienta terminó con error y no informó más detalles.'
+        : ev.success || 'Operación completada correctamente.'))}</span>`
+    : ev.t === 'tool'
     ? `<span class="ev-m ev-tool"><b>${esc(ev.agent ? 'Subagente' : ev.name)}</b> ${esc(ev.summary || '')}</span>`
     : `<span class="ev-m">${esc(ev.text || ev.message || ev.reason || ev.detail ||
         ev.file || ev.cmd || ev.agent || ev.script || ev.status || '')}</span>`;
@@ -2615,6 +2670,8 @@ function logEvent(ev) {
 }
 
 function finish(status = 'done') {
+  RUN_MODEL.connection = status === 'error' ? 'error'
+    : (status === 'done' || status === 'stopped' ? 'closed' : RUN_MODEL.connection);
   syncClientElapsed(elapsedNow(), false);
   setSession(status, status === 'error' ? 'Sesión cerrada con error'
     : status === 'stopped' ? 'Sesión detenida' : 'Sesión cerrada');
@@ -3255,6 +3312,7 @@ async function resetStudio() {
 
   RUN_MODEL = {
     status: 'none', phase: null, blocked: null, complete: false,
+    connection: 'closed', sessionReady: false,
     cost: 0, costReported: false, turns: null,
     elapsedMs: 0, activeSince: null, actions: {},
     correctionRound: 0, maxCorrectionRounds: 3,
@@ -3312,6 +3370,7 @@ async function restaurar() {
   RUN_MODEL = {
     status: info.status || 'none', phase: info.phase ?? null,
     blocked: info.blocked || null, complete: !!info.cycleComplete,
+    connection: info.vivo ? 'starting' : 'closed', sessionReady: false,
     cost: Number(info.cost) || 0, costReported: Number(info.costReports) > 0,
     turns: info.turns ?? null, elapsedMs: Number(info.elapsedMs) || 0,
     activeSince: info.status === 'running' ? Date.now() : null,
