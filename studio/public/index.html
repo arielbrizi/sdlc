@@ -1269,7 +1269,7 @@ function banner(kind, text) {
 // Cada fase declara qué componentes le pertenecen. Es lo que une el plugin en
 // disco con el ciclo que describe el SKILL.md.
 const PHASE_PARTS = {
-  0: { scripts: ['resolve-story.sh', 'config.sh'], skills: ['us'] },
+  0: { scripts: ['resolve-story.sh', 'config.sh', 'run-state.sh'], skills: ['us'] },
   1: { agents: ['refinamiento'] },
   2: { agents: ['arquitectura'] },
   3: { agents: ['ux'] },
@@ -1328,7 +1328,7 @@ const KINDS = {
 
 // Qué pasa en cada fase, en una línea y sin jerga.
 const PHASE_HELP = {
-  0: 'Busca la historia y lee qué agentes tiene habilitados este repo.',
+  0: 'Busca la historia, lee qué agentes tiene habilitados este repo y qué parte del ciclo ya está hecha, para no rehacerla si el run se reanuda.',
   1: 'Decide si la historia se puede implementar. Si es ambigua, el ciclo corta acá.',
   2: 'Diseña el cambio antes de tocar una línea de código.',
   3: 'Baja la historia a contrato de UI contra lo que ya existe en Storybook y Figma. Apagada por defecto: un repo de backend no tiene interfaz que revisar.',

@@ -273,7 +273,7 @@ verificable.
 implementar. En una historia sin interfaz el agente devuelve `N_A` y no cuesta
 más que ese turno, que es el caso esperado en un repo mixto.
 =======
-## D12 — El criterio de aceptación es el piso, no la especificación
+## D14 — El criterio de aceptación es el piso, no la especificación
 
 **Contexto.** Pedirle una calculadora al ciclo completo devolvía un formulario:
 dos inputs numéricos, cuatro botones de operación y un campo de resultado.
@@ -325,3 +325,76 @@ historia.
 dimensión más, así que el ciclo se hace un poco más caro en las historias con
 UI. Es el costo correcto: hasta acá era gratis porque nadie miraba el resultado.
 >>>>>>> bef0c18 (fix(plugin): el criterio de aceptacion es el piso, no la especificacion)
+
+## D15 — El estado del run vive en disco, no en el transcript
+
+**Contexto.** Un run real de 46 minutos sobre una calculadora. El
+`desarrollador` terminó a las 22:08 con cuatro commits, 110 tests en verde y el
+árbol limpio. A las 22:18 el dev interrumpió, y al decir "continuar" el ciclo
+lanzó un `desarrollador` nuevo que releyó `plan.md`, `story.json`, `index.html`,
+`README.md`, `calc.js` y `tests.html` para descubrir once minutos después que su
+trabajo ya estaba hecho.
+
+El orquestador no mintió: cuando se interrumpe un subagente su `Task` nunca
+devuelve resultado, así que efectivamente no tenía su salida. El problema no fue
+mala reconciliación — **no había nada contra qué reconciliar**.
+
+**Decisión.** `scripts/run-state.sh <ID>` reporta, leyendo disco y git, qué
+sobrevivió: artefactos por fase, agentes cerrados con su veredicto, commits con
+el ID de la historia y si el árbol tiene trabajo pendiente. El SKILL lo corre al
+arrancar y en cada reanudación, y una fase que ya produjo lo suyo no se vuelve a
+delegar.
+
+**Por qué el disco y no el transcript.** El transcript es exactamente lo que se
+pierde al interrumpir. Los commits y los artefactos no. La regla operativa que
+queda escrita es esa: la verdad del run son los commits y `.claude/run/<ID>/`;
+lo que el orquestador recuerda es una opinión.
+
+**Lo que ya estaba y no se usaba.** `log-run.sh` escribía `timeline.log` en cada
+`SubagentStop` desde el primer día y no lo leía nadie. Además prometía en su
+propio comentario registrar *el veredicto* de cada agente, y escribía solamente
+`finished`. Ahora lo registra —desescapando el JSON del agente, que viaja como
+string dentro del payload del hook— y `run-state.sh` lo expone. Es el mismo
+patrón que `estimated_blast_radius`: la señal se producía y se tiraba.
+
+**Costo.** Una llamada a script por reanudación, del orden de decenas de
+milisegundos. Contra once minutos de un subagente en Opus, no hay discusión.
+
+## D16 — La branch protegida se resuelve, no se enumera
+
+**Contexto.** En ese mismo run, `desarrollador` commiteó cuatro veces sobre
+`feature/LOCAL-calculadora-html-calculadora-suma` —la branch de una historia
+anterior— y el orquestador la pusheó. Recién después descubrió que esa branch
+era la default del repo en GitHub. El resultado: dos historias mezcladas en el
+PR #1, y la descripción de la primera pisada por la de la segunda.
+
+`guard-git.sh` no dijo nada, y no podía: su lista era
+`main|master|develop|release/.*`, y esa branch no está en la lista por más que
+sea la default. Una lista de nombres protege los repos que se llaman como
+esperábamos.
+
+**Decisión.** El hook resuelve la branch a proteger en vez de enumerarla:
+
+- la default del remoto, vía `git symbolic-ref refs/remotes/origin/HEAD`, se
+  llame como se llame;
+- la `base_branch` que declara el `run.json` del run en curso, que es punto de
+  partida y no lugar de trabajo.
+
+Ambas bloquean tanto `commit` como `push`. La lista estática queda como red
+adicional, no como única defensa.
+
+**Por qué hook y no preflight en el skill.** Por la tabla de este mismo repo:
+la regla es determinística, se evalúa con un exit code y es política de
+compañía. Un preflight en el prompt es una sugerencia fuerte; acá hacía falta
+una barrera. El run que motivó esto tenía la regla escrita en el SKILL
+—"**Nunca** commitees a la branch base"— y se la salteó igual.
+
+**Falsos positivos que se probaron explícitamente.** No bloquea: commit y push
+sobre `feature/<ID>-<slug>`, `git push` a secas desde una feature branch,
+`fetch`, `rebase`, `status`, `log`, `diff`, ni una branch llamada `maintenance`
+por empezar con `main`. Un hook con falsos positivos se desactiva, y ahí se
+pierde la política entera.
+
+**De paso.** `--force-with-lease` pasaba: el patrón exigía espacio o fin de
+línea después de `--force`. Y `git push` sin refspec no se evaluaba contra nada,
+porque la regla solo miraba el destino explícito.

@@ -18,6 +18,36 @@ evidencia auditable y el flujo se aborta ante señales de riesgo en vez de impro
 /us LOCAL-exportar-csv --tracker manual # historia escrita a mano, sin tracker
 ```
 
+## Antes de cualquier fase — qué está hecho ya
+
+```bash
+"${CLAUDE_PLUGIN_ROOT}"/scripts/run-state.sh <ID>
+```
+
+Correlo al arrancar **y cada vez que retomás después de una interrupción**. Es
+barato y contesta lo único que el transcript no puede: qué sobrevivió.
+
+Una fase **no se vuelve a delegar si ya produjo lo suyo**:
+
+| Ya existe | Fase hecha | Qué hacés |
+|---|---|---|
+| `story.json` | 0 | leerlo |
+| `agents_finished.refinamiento` | 1 | leer su veredicto, no re-refinar |
+| `plan.md` | 2 | leerlo y pasarlo a la fase siguiente |
+| `design.md` | 3 | leerlo |
+| `commits` con el ID y árbol limpio | 4 | la implementación está hecha |
+
+Reanudar no es empezar de nuevo. Si el dev te dice "continuá", eso significa
+seguir desde donde quedó: un `desarrollador` relanzado sobre trabajo ya
+commiteado relee el repo entero para descubrir que no tenía nada que hacer —en
+un run real eso costó once minutos.
+
+Y ojo con lo que *vos* sabés: cuando interrumpen un subagente, su `Task` nunca
+te devuelve resultado, así que no tenés su salida. Eso **no** quiere decir que
+no haya trabajado. Los commits y los artefactos son la verdad; tu transcript,
+no. Si el agente sigue vivo, continualo por su `agentId` en vez de lanzar uno
+nuevo: el nuevo arranca sin nada de lo que el anterior ya sabía.
+
 ## Fase 0 — Resolver la historia y la configuración
 
 Primero, leé qué tiene habilitado este repo:
