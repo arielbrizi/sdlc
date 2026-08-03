@@ -19,6 +19,13 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import os from 'node:os';
+import {
+  RECOVERY_PROMPT,
+  finalCycleCompletion,
+  prCommand,
+  prTool,
+  technicalToolInterruption,
+} from './run-signals.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..');
@@ -905,36 +912,6 @@ function humanInputRequest(text) {
   };
 }
 
-/**
- * Claude Code puede cerrar un turno con este marcador cuando una llamada de
- * herramienta se interrumpe dentro del runtime. No es una decisión del dev y
- * no debe dejar el ciclo esperando un "continuar" escrito a mano.
- */
-function technicalToolInterruption(text) {
-  const clean = String(text || '').trim();
-  return /^\[?request interrupted by user(?: for tool use)?\]?$/i.test(clean);
-}
-
-/** Comandos que crean o inspeccionan el PR final en los trackers soportados. */
-function prCommand(command) {
-  const cmd = String(command || '');
-  const creates = /\b(?:gh pr create|az repos pr create|glab mr create)\b/.test(cmd);
-  const touches = creates || /\b(?:gh pr (?:view|edit)|az repos pr (?:show|update)|glab mr (?:view|update))\b/.test(cmd);
-  return { creates, touches };
-}
-
-/**
- * Crear no es la única salida válida: si la branch ya tenía un PR draft, el
- * skill lo actualiza. El resumen final confirma que ese camino también llegó
- * realmente al final del ciclo.
- */
-function finalCycleCompletion(text) {
-  const clean = String(text || '');
-  const saysComplete = /\bciclo\s+completo\b|\blist[oa]\s+para\s+revisi[oó]n\s+humana\b/i.test(clean);
-  const hasPr = /\bPR\s*:\s*https?:\/\/\S+|https?:\/\/\S+\/(?:pull|pullrequest|merge_requests)\/\d+/i.test(clean);
-  return saysComplete && hasPr;
-}
-
 function completeCycle(run, detail = 'PR listo') {
   if (run.blocked || run.pendingBlock || run.cycleComplete) return false;
   setPhase(run, PHASE_PR, detail);
@@ -958,7 +935,7 @@ function inferPhase(run, msg) {
       const agent = isSubagentTool(name)
         ? subagentName(input)
         : null;
-      const pr = name === 'Bash' ? prCommand(input.command) : { creates: false, touches: false };
+      const pr = name === 'Bash' ? prCommand(input.command) : prTool(name);
       if (b.id) run.pending.set(b.id, {
         node, name, agent, isPr: pr.creates, touchesPr: pr.touches,
         phase: agent ? AGENT_PHASE[agent] : run.phase,
@@ -982,6 +959,10 @@ function inferPhase(run, msg) {
         const cmd = String(input.command || '');
         if (cmd.includes('resolve-story.sh')) setPhase(run, 0, 'resolve-story.sh');
         else if (pr.touches) setPhase(run, PHASE_PR, pr.creates ? 'abriendo PR' : 'verificando PR');
+        continue;
+      }
+      if (pr.touches) {
+        setPhase(run, PHASE_PR, pr.creates ? 'abriendo PR por MCP' : 'verificando PR por MCP');
         continue;
       }
       if (['Write', 'Edit', 'MultiEdit', 'NotebookEdit'].includes(name)) {
@@ -1014,9 +995,7 @@ function inferPhase(run, msg) {
             text: text.slice(0, 6000), at: Date.now(),
           });
 
-          if (pending.isPr && !b.is_error && !run.blocked && !run.pendingBlock && !run.cycleComplete) {
-            completeCycle(run, 'PR creado');
-          }
+          if (pending.touchesPr && !b.is_error) run.prConfirmed = true;
 
           const answer = pending.agent ? agentJson(text) : null;
           if (answer?.verdict === 'BLOCKED') {
@@ -1059,8 +1038,10 @@ async function pollArtifacts(run) {
   if (!run.storyId) return; // sesión de consola: no hay run de historia que auditar
   const dir = path.join(TARGET_REPO, '.claude/run', run.storyId);
   const map = [
-    ['story.json', 0], ['plan.md', 2], ['qa.json', 5],
-    ['security.json', 5], ['review.json', 6],
+    ['story.json', 0], ['config.json', 0], ['git.json', 0],
+    ['refinement.json', 1], ['architecture.json', 2], ['plan.md', 2],
+    ['design.json', 3], ['design.md', 3], ['implementation.json', 4],
+    ['qa.json', 5], ['security.json', 5], ['review.json', 6],
   ];
   for (const [file, phase] of map) {
     if (run.artifacts[file]) continue;
@@ -1160,7 +1141,7 @@ function startRun({ storyId, repoDir, manual, baseBranch, permissionMode, allowe
     cost: 0, costReports: 0,
     artifacts: {}, events: [], clients: new Set(), child: null, stdinClosed: false,
     pending: new Map(), // tool_use_id -> herramienta/agente/nodo, para atribuir resultados
-    actions: new Map(), autoRecoveryCount: 0,
+    actions: new Map(), autoRecoveryCount: 0, prConfirmed: false,
   };
   runs.set(id, run);
 
@@ -1245,7 +1226,7 @@ function startRun({ storyId, repoDir, manual, baseBranch, permissionMode, allowe
         run.status = run.stdinClosed ? 'done' : 'idle';
         const resultText = typeof msg.result === 'string' ? msg.result.trim() : '';
         const interrupted = technicalToolInterruption(resultText);
-        if (!msg.is_error && finalCycleCompletion(resultText)) {
+        if (!msg.is_error && finalCycleCompletion(resultText, run.prConfirmed)) {
           completeCycle(run, 'PR listo para revisión');
         }
         if (!interrupted) run.autoRecoveryCount = 0;
@@ -1284,7 +1265,7 @@ function startRun({ storyId, repoDir, manual, baseBranch, permissionMode, allowe
             // `result`; olvidarlo evita que quede como trabajo fantasma.
             run.pending.clear();
             sendToRun(run,
-              'La llamada de herramienta anterior fue interrumpida por el runtime, no por una decisión del usuario. Retomá automáticamente desde el punto exacto donde quedó el ciclo y reintentá la herramienta. No pidas confirmación para continuar.',
+              RECOVERY_PROMPT,
               {
                 event: 'recovery',
                 displayText: `Interrupción técnica detectada · reintentando automáticamente (${run.autoRecoveryCount}/3)`,

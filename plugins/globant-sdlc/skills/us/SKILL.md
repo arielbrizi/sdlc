@@ -18,15 +18,31 @@ evidencia auditable y el flujo se aborta ante señales de riesgo en vez de impro
 /us LOCAL-exportar-csv --tracker manual # historia escrita a mano, sin tracker
 ```
 
+Aceptá `--tracker <jira|ado|github|manual>` y `--no-pr` en cualquier orden
+después del ID. `--no-pr` ejecuta todas las verificaciones y deja los artefactos
+del run, pero no hace push, no abre ni actualiza PR y no modifica el ticket.
+
 ## Fase 0 — Resolver la historia y la configuración
 
-Primero, leé qué tiene habilitado este repo:
+Primero ejecutá el resolver. Acepta tanto el tracker posicional como
+`--tracker <tracker>`:
+
+```bash
+"${CLAUDE_PLUGIN_ROOT}"/scripts/resolve-story.sh <ID> [--tracker <tracker>]
+```
+
+El resolver crea `.claude/run/<ID>/` y devuelve la ruta de `story.json` con el
+esquema canónico (ver `references/trackers.md`). Si falla, **detenete y
+reportá**: no inventes el contenido de la historia ni sigas con supuestos.
+
+Después leé qué tiene habilitado este repo:
 
 ```bash
 "${CLAUDE_PLUGIN_ROOT}"/scripts/config.sh json
 ```
 
-Guardá la salida en `.claude/run/<ID>/config.json`. Decide dos cosas:
+Guardá la salida JSON, sin modificarla, en `.claude/run/<ID>/config.json`.
+Decide dos cosas:
 
 - **Qué agentes corren.** Un agente deshabilitado **no se invoca y no se
   reemplaza**: si el proyecto apagó `qa`, vos no hacés de QA. Saltás la fase,
@@ -42,17 +58,6 @@ Dos casos que no son "saltear una fase":
   igual, pero anotalo en la descripción del PR: quien revisa tiene que saber
   que la historia no pasó por ese control.
 
-Después ejecutá el resolver, que detecta el tracker y normaliza la historia a un
-formato único:
-
-```bash
-"${CLAUDE_PLUGIN_ROOT}"/scripts/resolve-story.sh <ID> [tracker]
-```
-
-Devuelve la ruta a `.claude/run/<ID>/story.json` con el esquema canónico
-(ver `references/trackers.md`). Si el script falla, **detenete y reportá** — no
-inventes el contenido de la historia ni sigas con supuestos.
-
 El campo `tracker` de la salida decide de dónde sale el contenido:
 
 - **`jira` | `ado` | `github`** — leé la historia con el MCP que indica
@@ -64,9 +69,38 @@ El campo `tracker` de la salida decide de dónde sale el contenido:
 Que una historia esté escrita a mano no la hace más confiable que una de Jira.
 Pasa por refinamiento igual que las demás.
 
+### Preflight Git obligatorio
+
+Con `story.json` resuelto y antes de invocar cualquier subagente, prepará una
+branch exclusiva para la historia:
+
+```bash
+"${CLAUDE_PLUGIN_ROOT}"/scripts/prepare-branch.sh <ID> "<título>"
+```
+
+El script valida que la base exista, rechaza una `feature/*` como base del modo
+automático, preserva cambios ajenos al run y crea —o recupera—
+`feature/<ID>-<slug>`. Si falla, **detenete y reportá**: no cambies de branch a
+mano ni continúes sobre la branch actual. Los PR apilados son una decisión
+explícita y quedan fuera del ciclo automático.
+
+Guardá el JSON que devuelve como `.claude/run/<ID>/git.json`. Es el contrato de
+branch para `desarrollador`: contiene `base_branch`, `base_ref`, `branch` y si el
+run fue creado o reanudado.
+
+### Contrato de salidas de agentes
+
+Cada subagente debe devolver exactamente un objeto JSON parseable con un campo
+`verdict`. Guardá la respuesta completa en el artefacto correspondiente antes de
+ramificar. Si no parsea, falta `verdict` o usa un valor fuera del contrato,
+detenete y escribí `blocked.md`: continuar sería interpretar una salida que el
+flujo no entiende.
+
 ## Fase 1 — Refinamiento (circuit breaker)
 
 Delegá en el subagente `refinamiento` pasándole `story.json`.
+
+Guardá su salida validada en `refinement.json`.
 
 Este es el corte de seguridad más importante del flujo automático. Si el agente
 devuelve `verdict: "BLOCKED"`:
@@ -83,11 +117,14 @@ Frenar acá es el comportamiento correcto, no una falla.
 
 ## Fase 2 — Arquitectura
 
-Delegá en `arquitectura`. Produce `plan.md` en el directorio del run con:
+Delegá en `arquitectura`, pasándole `story.json`, `config.json` y `git.json`.
+Guardá su JSON en `architecture.json` y escribí el campo `plan_md` como
+`plan.md`. El agente no escribe archivos. El plan contiene:
 impacto en el codebase, diseño propuesto, archivos a tocar, contratos de API,
 migraciones de datos y riesgos.
 
-Si el plan declara `blast_radius: high` (migración de datos, cambio de contrato
+Si devuelve `BLOCKED`, tratá sus `blocking_questions` como las de refinamiento.
+Si declara `blast_radius: high` (migración de datos, cambio de contrato
 público, tocar auth o billing), **el modo automático no aplica**: dejá el plan
 escrito, no implementes y pedí revisión humana explícita.
 
@@ -98,7 +135,8 @@ corre en repos de backend, y ahí un agente de diseño produce hallazgos genéri
 que nadie puede accionar.
 
 Delegá en `ux`, pasándole `story.json`, `plan.md` y la sección de diseño de
-`config.json`. Produce `design.md` en el directorio del run —escribilo vos con
+`config.json`. Guardá su JSON en `design.json`. Produce `design.md` en el
+directorio del run —escribilo vos con
 el contenido que devuelve en `design_md`— con qué componentes del design system
 reusar, qué falta, tokens, estados y criterios visuales verificables.
 
@@ -119,12 +157,16 @@ cuando una de las dos fuentes no está disponible.
 
 ## Fase 4 — Implementación
 
-Delegá en el subagente `desarrollador`, pasándole `plan.md` y `story.json`. Si
-existe `design.md`, va también: es contrato, no sugerencia.
+Delegá en el subagente `desarrollador`, pasándole `plan.md`, `story.json` y
+`git.json`. Si existe `design.md`, va también: es contrato, no sugerencia.
 
-Es el único agente del ciclo que escribe código: branch `feature/<ID>-<slug>`,
-implementación siguiendo el plan, tests junto con el código y commits atómicos
-con el ID de la historia.
+Es el único agente del ciclo que escribe código. La branch
+`feature/<ID>-<slug>` ya fue preparada en el preflight: el agente debe verificar
+que sigue parado ahí, implementar siguiendo el plan, agregar tests junto con el
+código y hacer commits atómicos con el ID de la historia.
+
+Guardá cada salida validada del agente en `implementation.json`, reemplazando la
+anterior; el historial de commits queda en Git.
 
 Si devuelve `verdict: "BLOCKED"`, no implementes vos lo que él frenó: sus
 `blocking_questions` son las mismas que frenarían a cualquiera. Reportá al dev y
@@ -135,27 +177,40 @@ contexto, leer su salida y encadenar la fase siguiente.
 
 ## Fase 5 — Verificación (en paralelo)
 
-Delegá simultáneamente en:
+Delegá simultáneamente, pasándoles `story.json`, `plan.md`, `git.json`, el diff
+completo contra `base_ref` y, si existe, `design.md`, en:
 
 - `qa` — cobertura de los criterios de aceptación, casos de borde, regresión
 - `seguridad` — OWASP, secretos, authz, dependencias
 
-Ninguno de los dos modifica código: reportan. Las correcciones vuelven a
+Guardá las salidas en `qa.json` y `security.json`. Ninguno modifica código:
+reportan. Las correcciones vuelven a
 `desarrollador`, con los hallazgos de ambos en una sola pasada — invocarlo dos
 veces seguidas le hace releer el mismo código para nada.
 
-Iterá hasta que ambos devuelvan `PASS`, con un **máximo de 3 ciclos**. Si al
-tercero sigue habiendo hallazgos de severidad alta, abrí el PR igual pero
-marcándolo con el hallazgo abierto y visible en la descripción. Nunca silencies
-un hallazgo para poder cerrar el flujo.
+Las fases 5 y 6 forman un único loop de verificación. Después de cualquier
+corrección del desarrollador, volvé a correr **QA y seguridad antes del
+reviewer**: el último código del PR siempre tiene que haber sido auditado.
+
+Hay un máximo total de **3 rondas de corrección** entre implementación,
+verificación y review. Si después de la tercera queda un hallazgo `critical` o
+`high`, un criterio sin cubrir o un cambio bloqueante del reviewer, detené el
+ciclo y escribí `blocked.md`; no abras un PR que el propio flujo considera
+inseguro. Hallazgos `medium` o `low` pueden quedar visibles en el PR.
 
 ## Fase 6 — Revisión adversarial
 
-Delegá en `reviewer` con el diff completo. Su trabajo es buscar razones para
+Delegá en `reviewer` con `story.json`, `plan.md`, los JSON de QA y seguridad y
+el diff completo contra `base_ref`. Guardá su salida en `review.json`. Su
+trabajo es buscar razones para
 rechazar el cambio, no para aprobarlo. Lo que corresponda corregir vuelve a
-`desarrollador`, igual que en la fase 5.
+`desarrollador`. Después repetí QA, seguridad y reviewer, respetando el máximo
+global de 3 rondas.
 
 ## Fase 7 — Pull Request
+
+Si se invocó con `--no-pr`, terminá acá reportando las verificaciones y la
+branch local. No hagas push ni escrituras remotas.
 
 Abrí el PR **en draft**, con esta descripción:
 
@@ -194,7 +249,9 @@ Generado por globant-sdlc. Los agentes no aprueban su propio trabajo:
 este PR requiere revisión humana antes del merge.
 ```
 
-Comentá en el ticket con el link al PR y movelo a "Code Review".
+Comentá en el ticket con el link al PR y movelo a "Code Review". Recién después
+de confirmar ambas operaciones reportá `ciclo completo` y el link del PR; el
+Studio usa esa salida como evidencia de cierre.
 
 Con tracker `manual` no hay ticket: salteá ese paso. El PR queda como único
 registro de la historia, así que la descripción tiene que sostenerse sola —
@@ -203,10 +260,14 @@ copiá los criterios de aceptación completos en vez de referenciarlos.
 ## Reglas transversales
 
 - **Nunca** commitees a la branch base ni hagas force push
+- **Nunca** reutilices la branch o el PR de otra historia. Antes de pushear,
+  verificá la base/default branch y buscá un PR existente para el head actual.
 - **Nunca** toques secretos, `.env`, credenciales o config de infra
 - Si el alcance real supera lo que describe la historia, paralo y reportalo:
   es señal de que la historia estaba mal dimensionada
 - Todo el estado del run vive en `.claude/run/<ID>/` para que sea auditable
+- La sesión principal persiste las salidas de agentes; un auditor nunca escribe
+  su propio veredicto ni su contrato
 - Con tracker `manual` no hay dónde escribir de vuelta: todo lo que iría a un
   comentario del ticket queda en `.claude/run/<ID>/`
 

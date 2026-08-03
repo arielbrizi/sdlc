@@ -2,6 +2,7 @@
 # resolve-story.sh — detecta el tracker a partir del ID y prepara el directorio del run.
 #
 # Uso: resolve-story.sh <ID> [tracker]
+#      resolve-story.sh <ID> --tracker <tracker>
 # Salida (stdout, JSON):
 #   { "id": "...", "tracker": "jira", "run_dir": "...", "story_path": "...", "mcp_hint": "..." }
 #
@@ -14,7 +15,27 @@
 set -euo pipefail
 
 ID_RAW="${1:-}"
-TRACKER_ARG="${2:-}"
+shift || true
+TRACKER_ARG=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --tracker)
+      [[ -n "${2:-}" ]] || { echo "error: --tracker requiere un valor" >&2; exit 2; }
+      TRACKER_ARG="$2"
+      shift 2
+      ;;
+    jira|ado|github|manual)
+      [[ -z "$TRACKER_ARG" ]] || { echo "error: tracker especificado más de una vez" >&2; exit 2; }
+      TRACKER_ARG="$1"
+      shift
+      ;;
+    *)
+      echo "error: argumento desconocido '$1'" >&2
+      exit 2
+      ;;
+  esac
+done
 
 if [[ -z "$ID_RAW" ]]; then
   echo "error: falta el ID de la historia" >&2
@@ -22,6 +43,7 @@ if [[ -z "$ID_RAW" ]]; then
 fi
 
 ID="${ID_RAW#\#}"
+[[ "$ID" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "error: ID de historia inválido '${ID_RAW}'" >&2; exit 2; }
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 TRACKER_DEFAULT="${CLAUDE_PLUGIN_OPTION_TRACKER_DEFAULT:-jira}"
 

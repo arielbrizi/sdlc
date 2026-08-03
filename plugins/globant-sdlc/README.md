@@ -19,10 +19,11 @@ punta, desde el ID del ticket hasta un Pull Request en draft.
   │
   ├─ 0  resolve-story.sh   detecta tracker, normaliza la historia
   │     config.sh          qué agentes tiene habilitados este repo
+  │     prepare-branch.sh  actualiza la base y prepara una branch exclusiva
   ├─ 1  @refinamiento      ⛔ CIRCUIT BREAKER: aborta si la US es ambigua
   ├─ 2  @arquitectura      plan.md  (⛔ aborta si blast_radius: high)
   ├─ 3  @ux                design.md — contrato de UI  (apagado por defecto)
-  ├─ 4  @desarrollador     branch + código + tests (el único que escribe)
+  ├─ 4  @desarrollador     código + tests sobre la branch preparada
   ├─ 5  @qa ‖ @seguridad   auditan en paralelo; corrigen volviendo a la 4
   ├─ 6  @reviewer          revisión adversarial del diff
   └─ 7  PR en draft + comentario en el ticket
@@ -86,6 +87,10 @@ Para desarrollo local del propio plugin:
 claude --plugin-dir ./globant-sdlc
 ```
 
+Antes de ejecutar un run headless desde el Studio, abrí una sesión interactiva,
+ejecutá `/mcp` y autorizá Atlassian y Figma si el proyecto los usa. GitHub toma
+`GITHUB_TOKEN`; Azure DevOps abre su login la primera vez que inicia el servidor.
+
 **Los scripts necesitan permiso de ejecución** después de clonar:
 
 ```bash
@@ -96,7 +101,7 @@ chmod +x scripts/*.sh
 
 | Variable | Para qué |
 |---|---|
-| `JIRA_MCP_TOKEN` | Auth del MCP de Jira |
+| — | Jira se autoriza por OAuth desde `/mcp`; el plugin no guarda tokens |
 | `ADO_ORG` | Organización de Azure DevOps |
 | `GITHUB_TOKEN` | Auth del MCP de GitHub |
 | `GLOBANT_PROTECTED_BRANCHES` | Regex de branches protegidas (default: `main\|master\|develop\|release/.*`) |
@@ -130,17 +135,18 @@ autoevaluación de cada agente y una sección explícita de "qué revisar con
 atención". Un PR que se presenta como terminado invita al rubber-stamp; uno que
 declara dónde tiene menos confianza, no.
 
-**2. El circuit breaker está al principio, no al final.** El paso 0 es
+**2. El circuit breaker está al principio, no al final.** La fase 1 es
 refinamiento y puede abortar todo el run. En un flujo automático el costo no es
 el error detectado tarde: es haber gastado 40 minutos y contexto sobre una
 historia que nadie podía implementar. Además convierte la calidad del backlog
 en una señal medible.
 
-**3. Quien audita no escribe.** `qa`, `seguridad`, `arquitectura`,
-`refinamiento` y `reviewer` tienen `disallowedTools: Write, Edit`. El único que
-escribe es `desarrollador`. Un agente que puede corregir lo que audita termina
-aprobándose solo, así que la separación es estructural —a nivel de herramientas
-disponibles— y no una instrucción en el prompt.
+**3. Quien audita no corrige.** La sesión principal persiste los JSON de
+auditoría y `desarrollador` aplica cambios de producto. Los auditores no tienen
+`Write` ni `Edit`; arquitectura, UX y reviewer tampoco tienen `Bash`. QA y
+seguridad conservan Bash exclusivamente para ejecutar verificaciones, por lo que
+esa parte del límite es contractual y queda reforzada por los hooks de Git y
+secretos, no se presenta como una garantía absoluta del runtime.
 
 ## Qué es hook y qué es prompt
 
@@ -149,9 +155,9 @@ Los hooks son código: no dependen de que el modelo se acuerde de la regla.
 | Regla | Implementación |
 |---|---|
 | No leer `.env`, `.pem`, `credentials`, `tfstate` | `guard-secrets.sh` (PreToolUse) |
-| No force push, no reset --hard, no commit en branch protegida | `guard-git.sh` (PreToolUse) |
+| No force push, no reset --hard, no commit en branch protegida ni en la base configurada | `guard-git.sh` (PreToolUse) |
 | Formatear y lintar todo lo que se toca | `format-and-lint.sh` (PostToolUse) |
-| Registrar el veredicto de cada agente | `log-run.sh` (SubagentStop) |
+| Registrar cierre y veredicto cuando el runtime lo expone | `log-run.sh` (SubagentStop) |
 
 Todo lo que sea política de compañía va acá. Lo que requiera criterio, al agente.
 
@@ -163,7 +169,13 @@ Cada run deja rastro en `.claude/run/<ID>/`:
 .claude/run/GLOB-1234/
 ├── run.json        quién, cuándo, sobre qué branch
 ├── story.json      la historia normalizada
+├── config.json     agentes e integraciones efectivas
+├── git.json        base, branch y modo created/resumed
+├── refinement.json salida estructurada de refinamiento
+├── architecture.json salida estructurada de arquitectura
 ├── plan.md         el plan de arquitectura
+├── design.json     salida de UX, si la fase aplica
+├── implementation.json último resultado del desarrollador
 ├── qa.json         veredicto de QA
 ├── security.json   veredicto de seguridad
 ├── review.json     revisión adversarial

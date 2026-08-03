@@ -150,15 +150,19 @@ pendientes · chat opcional”; tener el chat habilitado no significa que el cic
 esté esperando una respuesta.
 
 Si el PR ya existía, el ciclo puede terminar actualizándolo en lugar de ejecutar
-`gh pr create`. El Studio reconoce tanto esa ruta como la creación nueva: exige
-un resumen final que diga **ciclo completo** (o **listo para revisión humana**) y
-que incluya la URL del PR antes de marcar todas las fases como listas.
+`gh pr create`. El Studio reconoce tanto esa ruta como la creación nueva: antes
+de aceptar el resumen final exige evidencia de que una herramienta creó,
+inspeccionó o actualizó el PR. Recién entonces una salida que diga **ciclo
+completo** (o **listo para revisión humana**) y tenga la URL marca las fases como
+listas. La prosa sola no puede cerrar el ciclo.
 
 Si Claude Code devuelve el marcador técnico `Request interrupted by user for
 tool use`, el Studio no lo trata como una decisión humana: retoma el mismo ciclo
-automáticamente y deja una línea **recuperación** visible en la consola. Reintenta
-hasta tres veces consecutivas para no entrar en un bucle; solo si las tres fallan
-expone el problema como acción.
+automáticamente y deja una línea **recuperación** visible en la consola. Antes de
+repetir una herramienta le ordena reconciliar archivos, commits, artefactos del
+run, subagentes y PR: si el efecto ya ocurrió, continúa sin duplicarlo. Hace hasta
+tres recuperaciones consecutivas para no entrar en un bucle; solo si las tres
+fallan expone el problema como acción.
 
 **Editar abre una ventana a pantalla completa**, con la configuración en una
 columna y las instrucciones en la otra. Editar es una tarea enfocada y no tiene
@@ -408,7 +412,7 @@ Por dos vías, porque ninguna sola alcanza:
 
 | Evento | Fase |
 |---|---|
-| `Bash` con `resolve-story.sh` | 0 · Resolver |
+| `Bash` con `resolve-story.sh`, `config.sh` o `prepare-branch.sh` | 0 · Resolver |
 | `Task`/`Agent` con `subagent_type` | la del agente (refinamiento → 1, qa/seguridad → 5, …) |
 | `Write` / `Edit` / `MultiEdit` | 4 · Implementación |
 | `Bash` con `gh pr create/view/edit` | 7 · Pull Request |
@@ -416,8 +420,10 @@ Por dos vías, porque ninguna sola alcanza:
 | `blast_radius: high` | corta en 2 |
 
 **Artefactos en disco** — confirman lo que la inferencia adivinó. El servidor
-mira `.claude/run/<ID>/` y marca la fase cuando aparecen `story.json`, `plan.md`,
-`qa.json`, `security.json`, `review.json`.
+mira `.claude/run/<ID>/` y reconoce configuración, branch y todas las salidas
+estructuradas: `story.json`, `config.json`, `git.json`, `refinement.json`,
+`architecture.json`, `plan.md`, `design.json`, `implementation.json`, `qa.json`,
+`security.json` y `review.json`.
 
 Dos correcciones sobre esa inferencia, que valen porque el modo de falla es
 mostrar progreso que no ocurrió:

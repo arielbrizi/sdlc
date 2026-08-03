@@ -18,28 +18,35 @@ final conserva la autonomía sin eliminar la supervisión. El draft y la secció
 foco existen para evitar el rubber-stamp: un PR que declara dónde tiene menos
 confianza se revisa mejor que uno que se presenta terminado.
 
-## D2 — Dos abortos automáticos
+## D2 — Condiciones de aborto automático
 
 **Contexto.** Sin gates intermedios, el flujo necesita poder frenarse solo.
 
-**Decisión.** Dos condiciones abortan el run:
+**Decisión.** El run aborta automáticamente cuando:
 1. `refinamiento` devuelve `BLOCKED` — la historia no es implementable
 2. `arquitectura` declara `blast_radius: high` — auth, pagos, PII, migración
    destructiva o contrato público
+3. una salida de agente no cumple su contrato JSON
+4. después de tres rondas siguen abiertos hallazgos críticos/altos, criterios
+   sin cubrir o cambios bloqueantes del reviewer
 
 **Por qué.** El costo del modo automático no es el bug detectado tarde: es gastar
 el ciclo completo sobre supuestos equivocados, o aplicar autonomía donde
 equivocarse es caro. Full auto para el 80% de las historias; el 20% restante
 pide humano por diseño.
 
-## D3 — Quien audita no escribe
+## D3 — Quien audita no corrige
 
-**Decisión.** `refinamiento`, `arquitectura`, `qa`, `seguridad` y `reviewer`
-tienen `disallowedTools: Write, Edit`.
+**Decisión.** Todos los auditores tienen `Write` y `Edit` deshabilitados. La
+sesión principal persiste sus JSON y sólo `desarrollador` corrige código.
+Arquitectura, UX y reviewer tampoco tienen Bash. QA y seguridad lo necesitan
+para correr suites y scanners, de modo que en ellos la prohibición de usar Bash
+para escribir es contractual y está acotada por los hooks de secretos y Git.
 
-**Por qué.** Un agente que puede corregir lo que audita se aprueba solo. La
-separación tiene que ser estructural — a nivel de herramientas disponibles — y no
-una instrucción en el prompt, que el modelo puede racionalizar.
+**Por qué.** Un agente que corrige lo que audita se aprueba solo. Donde el
+runtime permite separar herramientas de lectura y escritura, la separación es
+estructural; donde Bash es indispensable para verificar, la limitación se
+declara con precisión en vez de prometer una garantía inexistente.
 
 ## D4 — Adaptación de trackers en el borde
 
@@ -49,7 +56,7 @@ una instrucción en el prompt, que el modelo puede racionalizar.
 canónico. Los agentes solo conocen ese esquema.
 
 **Por qué.** Si los agentes conocieran a Jira, sumar un tracker obligaría a tocar
-los cinco. Con la adaptación en el borde, sumar uno es agregar un mapeo.
+todo el ciclo. Con la adaptación en el borde, sumar uno es agregar un mapeo.
 
 **Evidencia.** El modo `manual` (D8) se sumó sin tocar un solo agente.
 
@@ -184,7 +191,7 @@ instructivo propio: la calidad de la implementación dependía del prompt del
 skill orquestador, mezclado con la lógica de encadenar fases.
 
 **Decisión.** Un sexto agente, `desarrollador`, con perfil de developer senior
-fullstack. Es el único del ciclo que escribe: implementa la fase 3 y recibe las
+fullstack. Es el único agente que corrige código: implementa la fase 4 y recibe las
 correcciones de `qa`, `seguridad` y `reviewer`. La sesión principal pasa a
 orquestar y nada más.
 
@@ -192,7 +199,7 @@ orquestar y nada más.
 
 1. **Calibrarlo.** Modelo, esfuerzo y turnos de la implementación ahora se
    ajustan solos, sin tocar el skill. Es lo mismo que ya valía para los otros
-   cinco.
+   demás auditores.
 2. **Auditarlo.** Su salida es JSON con `verdict`, así que un run bloqueado en
    implementación se ve igual que uno bloqueado en refinamiento, con sus
    `blocking_questions`.
@@ -200,9 +207,9 @@ orquestar y nada más.
    principal improvisaba —tenía todo el contexto y ninguna instrucción de
    parar—. El agente tiene criterio explícito de cuándo devolver BLOCKED.
 
-**Lo que no cambia.** D3 sigue en pie y se refuerza: quien audita no escribe, y
-ahora hay exactamente un agente que escribe. Los otros cinco conservan
-`disallowedTools: Write, Edit`.
+**Lo que no cambia.** D3 sigue en pie: quien audita no corrige su propio
+hallazgo. La sesión principal sólo persiste artefactos del run y el desarrollador
+es el único agente que modifica código de producto.
 
 **Costo.** El contexto ya no es gratis. La sesión principal tenía el plan y el
 código que acababa de escribir; el subagente arranca limpio en cada ciclo de
@@ -215,7 +222,7 @@ atrás sino que el agente reciba el diff en vez del repo entero.
 
 ## D12 — Cualquier agente se puede apagar, y apagarlo es un hook
 
-**Contexto.** El ciclo asumía que sus seis agentes corren siempre. La primera
+**Contexto.** El ciclo asumía que todos sus agentes corren siempre. La primera
 vez que eso no alcanzó fue con diseño: un agente de UX es indispensable en un
 repo de frontend e inútil en uno de backend, donde produce hallazgos genéricos
 que nadie puede accionar. Y esos hallazgos son peores que no tener el agente,

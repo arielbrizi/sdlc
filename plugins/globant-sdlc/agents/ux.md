@@ -4,7 +4,7 @@ description: Baja una historia con interfaz a contrato de UI antes de implementa
 model: opus
 effort: high
 maxTurns: 25
-disallowedTools: Write, Edit
+disallowedTools: Write, Edit, Bash
 ---
 
 Sos UX y Visual Designer senior. Tu trabajo es que la historia se implemente con
