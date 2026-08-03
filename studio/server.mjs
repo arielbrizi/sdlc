@@ -874,6 +874,32 @@ function queueBlock(run, block) {
   if (!run.pendingBlock && !run.blocked) run.pendingBlock = block;
 }
 
+/**
+ * Una pregunta en el resultado final significa que el turno terminó esperando
+ * al usuario. Claude no siempre la expresa mediante un subagente `BLOCKED`:
+ * los pedidos de aprobación de permisos, por ejemplo, llegan como texto común.
+ * Se detectan acá para que nunca se traduzcan como "sin acciones pendientes".
+ */
+function humanInputRequest(text) {
+  const clean = String(text || '').trim();
+  if (!clean) return null;
+
+  const lines = clean.split(/\n+/)
+    .map(line => line.replace(/^\s*[-*#>]+\s*/, '').trim())
+    .filter(Boolean);
+  const questions = lines.filter(line => /[?？]/.test(line)).slice(-3);
+  const approval = /(?:aprobaci[oó]n|aprobar|apruebo|aprob[aá]s|confirmaci[oó]n|confirm[aá]s|permiso para)/i.test(clean);
+  const explicitRequest = /(?:para continuar|necesito que|indicame|ind[ií]came|respond[eé]|eleg[ií]|decid[ií])/i.test(clean);
+
+  if (!questions.length && !approval && !explicitRequest) return null;
+  return {
+    reason: approval
+      ? 'Claude necesita tu aprobación para continuar'
+      : 'Claude necesita una respuesta tuya para continuar',
+    questions: questions.length ? questions : [clean.slice(-600)],
+  };
+}
+
 /** Deriva la fase actual a partir de un evento del stream. Es inferencia. */
 function inferPhase(run, msg) {
   const blocks = msg?.message?.content;
@@ -1148,6 +1174,16 @@ function startRun({ storyId, repoDir, manual, baseBranch, permissionMode, allowe
         run.turns = msg.num_turns ?? null;
         // Terminó el turno, no la sesión: queda esperando el próximo mensaje.
         run.status = run.stdinClosed ? 'done' : 'idle';
+        const resultText = typeof msg.result === 'string' ? msg.result.trim() : '';
+        if (!msg.is_error && !run.pendingBlock && !run.blocked && !run.cycleComplete) {
+          const request = humanInputRequest(resultText);
+          if (request) queueBlock(run, {
+            phase: run.phase ?? 0,
+            agent: null,
+            reason: request.reason,
+            questions: request.questions,
+          });
+        }
         if (run.pendingBlock) {
           const pendingBlock = run.pendingBlock;
           run.pendingBlock = null;
@@ -1160,7 +1196,7 @@ function startRun({ storyId, repoDir, manual, baseBranch, permissionMode, allowe
           cost: run.cost,
           turnCost: Number.isFinite(turnCost) ? turnCost : null,
           turns: run.turns,
-          text: typeof msg.result === 'string' ? msg.result.slice(0, 4000) : null,
+          text: resultText ? resultText.slice(0, 4000) : null,
           at: Date.now(),
         });
       }

@@ -944,20 +944,19 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
           <div class="card-head"><h2>Permisos y herramientas</h2>
             <span class="sub">qué puede hacer la sesión</span></div>
           <div class="card-body">
-            <div class="notice warn" style="margin-bottom:18px">
-              <span>El run corre con <code>claude -p</code>, que no es interactivo: no hay dónde
-                aceptar un permiso, así que todo lo que no esté autorizado de antemano se deniega.
-                El ciclo necesita <code>Bash</code> desde la fase 0, por eso <code>acceptEdits</code>
-                solo no alcanza.</span>
+            <div class="notice" style="margin-bottom:18px">
+              <span><b>Recomendado: Sin preguntar.</b> El ciclo puede crear archivos y ejecutar
+                comandos sin frenar para pedir permisos. Las reglas de seguridad del plugin
+                siguen activas.</span>
             </div>
             <div class="form-grid">
               <div class="f f-wide">
                 <label class="f-label" for="permMode">Modo de permisos <code>--permission-mode</code></label>
                 <select class="field" id="permMode">
-                  <option value="">Por defecto — deniega lo que no esté autorizado</option>
-                  <option value="acceptEdits">acceptEdits — acepta editar archivos (no Bash)</option>
-                  <option value="bypassPermissions">bypassPermissions — sin preguntar</option>
-                  <option value="plan">plan — analiza, no ejecuta</option>
+                  <option value="bypassPermissions" selected>Sin preguntar — recomendado</option>
+                  <option value="">Preguntar cuando haga falta</option>
+                  <option value="acceptEdits">Editar sin preguntar, pero pedir permiso para comandos</option>
+                  <option value="plan">Solo analizar, sin hacer cambios</option>
                 </select>
               </div>
               <div class="f">
@@ -2884,8 +2883,9 @@ async function resetStudio() {
   } catch { /* sin storage */ }
 
   $('source').selectedIndex = 0;
-  for (const id of ['story', 'repoUrl', 'permMode', 'allowedTools', 'extraFlags',
+  for (const id of ['story', 'repoUrl', 'allowedTools', 'extraFlags',
                     'stTitle', 'stDesc', 'stAc', 'sendText']) $(id).value = '';
+  $('permMode').value = 'bypassPermissions';
   $('repoDir').value = PLUGIN?.targetRepo || '';
   $('baseBranch').innerHTML = '<option value="">—</option>';
   $('baseBranch').disabled = true;

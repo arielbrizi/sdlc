@@ -121,6 +121,11 @@ esa actividad reactiva de inmediato el estado **En ejecución** y la fase actual
 en el mapa. Así el encabezado nunca puede decir “en pausa” mientras el chat sigue
 recibiendo contenido, incluso después de recuperar un run con F5.
 
+Una pregunta o un pedido de aprobación en el resultado final también es estado:
+el Studio lo convierte en **Acción requerida**, abre el diálogo para responder y
+marca la fase bloqueada. Nunca muestra “Sin acciones pendientes” si Claude cerró
+el turno esperando una respuesta escrita en el chat.
+
 **Un bloqueo abre una acción, no solo un mensaje.** El studio identifica qué
 subagente bloqueó, marca su fase real y muestra sus `blocking_questions` en un
 diálogo que se abre solo. Si se cierra, queda una franja roja persistente arriba
@@ -304,7 +309,8 @@ mensaje. Eso es lo que convierte el panel de ejecución en una consola.
 
 ## Permisos
 
-**Desde el studio no se puede aceptar un permiso.** El run corre con `claude -p`,
+**Desde el studio no se puede aceptar un permiso interactivo.** Por eso el modo
+inicial es **Sin preguntar** (`bypassPermissions`). El run corre con `claude -p`,
 que no es interactivo: no hay dónde clickear "sí", así que todo lo que no esté
 autorizado de antemano se deniega y el ciclo se queda a mitad de camino. Los
 permisos se resuelven **antes** de ejecutar, de tres formas.
@@ -313,9 +319,9 @@ permisos se resuelven **antes** de ejecutar, de tres formas.
 
 | Modo | Qué habilita |
 |---|---|
-| por defecto | Nada. Con `-p` equivale a denegar todo lo que requiera permiso. |
+| `bypassPermissions` (**inicial**) | Todo, sin preguntar. |
+| por defecto | Pregunta cuando hace falta; con `-p` puede frenar el ciclo. |
 | `acceptEdits` | Escribir y editar archivos. **No** habilita `Bash`. |
-| `bypassPermissions` | Todo, sin preguntar. |
 | `plan` | Nada: analiza y propone, no ejecuta. |
 
 El ciclo `/us` necesita `Bash` desde la fase 0 —`resolve-story.sh` es un script—,
