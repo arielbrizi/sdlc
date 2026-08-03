@@ -77,25 +77,74 @@ su cuenta.
 
 ### Instalar el plugin
 
+Estos comandos se escriben en una terminal. No ejecutan una historia ni cambian
+el código del producto: solamente conectan e instalan la herramienta.
+
+#### 1. Conectar el catálogo
+
 ```bash
 claude plugin marketplace add arielbrizi/sdlc
+```
+
+Le indica a Claude Code dónde está el catálogo de Globant. Es parecido a
+agregar una tienda de aplicaciones: a partir de este momento Claude Code sabe
+dónde buscar `globant-sdlc`, pero todavía no lo instala en ningún proyecto.
+
+Este paso se hace una sola vez por computadora.
+
+#### 2. Instalarlo en el proyecto
+
+Primero abrí la terminal dentro de la carpeta del proyecto donde querés trabajar
+y ejecutá:
+
+```bash
 claude plugin install globant-sdlc@globant --scope project
+```
+
+Descarga el plugin y lo asocia con ese proyecto. `--scope project` significa
+“para este proyecto y para todo el equipo”, no solamente para la persona que lo
+instala. La referencia queda registrada en `.claude/settings.json` y puede
+compartirse junto con el resto del código.
+
+Este comando no inicia agentes, no crea una branch y no modifica archivos del
+producto. Solo deja el plugin disponible para cuando se ejecute una historia.
+
+#### 3. Comprobar que quedó instalado
+
+```bash
 claude plugin details globant-sdlc
 ```
 
-`--scope project` registra el plugin en `.claude/settings.json`, para que el
-equipo comparta la misma instalación al clonar el repositorio.
+Muestra la ficha del plugin: versión, componentes y estado de carga. Es una
+consulta de diagnóstico; no cambia ninguna configuración. Si devuelve los
+datos de `globant-sdlc` sin errores, la instalación está lista.
+
+| Término | Explicación simple |
+|---|---|
+| Plugin | El paquete que contiene el proceso, los agentes y las reglas de seguridad |
+| Marketplace | El catálogo desde donde Claude Code encuentra el plugin |
+| Proyecto | El repositorio o carpeta de código sobre la que va a trabajar el equipo |
+| `globant-sdlc@globant` | El plugin `globant-sdlc`, obtenido del catálogo llamado `globant` |
 
 ### Ejecutar una historia
 
-```bash
+Estos comandos se escriben dentro de una conversación de Claude Code, no en la
+terminal del sistema. Todos inician el mismo ciclo; lo único que cambia es el
+tipo de identificador de la historia.
+
+```text
 /globant-sdlc:us GLOB-1234   # Jira
 /globant-sdlc:us 8891        # Azure DevOps
 /globant-sdlc:us #245        # GitHub Issues
 ```
 
-La skill también se activa por intención: pedidos como `implementá GLOB-1234`
-o `arrancá con el ticket 8891` disparan el mismo ciclo.
+`/globant-sdlc:us` significa “usar el flujo de historias del plugin”. Lo que
+aparece después —por ejemplo `GLOB-1234`— identifica la historia que Claude debe
+leer e implementar.
+
+No hace falta memorizar el comando completo. También podés escribir pedidos
+normales como `implementá GLOB-1234` o `arrancá con el ticket 8891`; Claude Code
+reconoce la intención y dispara el mismo ciclo.
 
 ## Trabajar sobre un proyecto existente
 
