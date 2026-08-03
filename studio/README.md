@@ -287,6 +287,14 @@ la fase 3. Para Figma se pega un único link al frame: el studio deriva
 como opción separada porque responde otra pregunta: qué componentes ya existen
 en código. Sus campos técnicos están plegados como opciones avanzadas.
 
+El link y el acceso son dos cosas distintas: pegar el frame no autentica el MCP.
+La misma sección muestra el estado real de `plugin:globant-sdlc:figma` y ofrece
+**Conectar Figma**. El Studio ejecuta `claude mcp login` antes del run, abre el
+OAuth en el navegador y confirma el resultado con `claude mcp get`. Si el
+callback local no carga, se puede pegar la URL completa que quedó en la barra
+del navegador. La URL se envía al proceso y no se guarda. Cuando `@ux` y Figma
+están habilitados, el preflight no permite ejecutar hasta confirmar el acceso.
+
 ## Editar
 
 Un clic en cualquier nodo del grafo, o en cualquier fila del catálogo, abre el
@@ -344,6 +352,10 @@ CLI, que es donde ya viven: el botón Iniciar sesión levanta `claude auth login
 muestra la URL del flujo OAuth como link y deja un campo para pegar el código si
 el proceso lo pide. Cerrar sesión corre `claude auth logout`. Un token escrito en
 un input web sería exactamente lo que `guard-secrets.sh` existe para impedir.
+
+La sesión de Claude y los MCP son autenticaciones independientes. Estar
+conectado a Claude.ai no significa que Figma esté autorizado; por eso Figma
+tiene estado y acción propios en Configuración.
 
 ## Ejecutar
 

@@ -87,9 +87,11 @@ Para desarrollo local del propio plugin:
 claude --plugin-dir ./globant-sdlc
 ```
 
-Antes de ejecutar un run headless desde el Studio, abrí una sesión interactiva,
-ejecutá `/mcp` y autorizá Atlassian y Figma si el proyecto los usa. GitHub toma
-`GITHUB_TOKEN`; Azure DevOps abre su login la primera vez que inicia el servidor.
+Antes de ejecutar un run headless, usá **Conectar Figma** en la configuración
+del Studio. El panel abre el OAuth mediante Claude Code, permite recuperar un
+callback fallido y verifica la conexión antes de comenzar. Como alternativa,
+podés correr `claude --plugin-dir <plugin> mcp login plugin:globant-sdlc:figma`.
+GitHub toma `GITHUB_TOKEN`; Azure DevOps abre su login inicial.
 
 **Los scripts necesitan permiso de ejecución** después de clonar:
 
@@ -101,7 +103,7 @@ chmod +x scripts/*.sh
 
 | Variable | Para qué |
 |---|---|
-| — | Jira se autoriza por OAuth desde `/mcp`; el plugin no guarda tokens |
+| — | Jira y Figma usan OAuth de Claude Code; el plugin no guarda tokens |
 | `ADO_ORG` | Organización de Azure DevOps |
 | `GITHUB_TOKEN` | Auth del MCP de GitHub |
 | `GLOBANT_PROTECTED_BRANCHES` | Regex de branches protegidas (default: `main\|master\|develop\|release/.*`) |

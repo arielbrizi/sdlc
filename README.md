@@ -243,14 +243,16 @@ del modelo.
 
 | Integración | Uso | Autenticación |
 |---|---|---|
-| Jira | Leer historias y comentar el resultado | OAuth desde `/mcp` |
+| Jira | Leer historias y comentar el resultado | OAuth de Claude Code |
 | Azure DevOps | Leer work items y actualizar el ticket | `ADO_ORG` y login inicial |
 | GitHub | Leer issues y abrir PRs | `GITHUB_TOKEN` |
-| Figma | Obtener el frame y el contrato visual de la feature | OAuth desde `/mcp` |
+| Figma | Obtener el frame y el contrato visual de la feature | Botón **Conectar Figma** del Studio |
 | Storybook | Detectar componentes y variantes existentes | Configuración local del repo |
 
-Antes de un run headless, abrí una sesión interactiva y autorizá desde
-`/mcp` las integraciones que use el proyecto.
+El Studio comprueba Figma antes del run y abre el OAuth fuera de la ejecución
+headless. La autorización se hace una sola vez por computadora; Claude Code
+guarda y renueva la credencial. Como alternativa técnica, se puede ejecutar
+`claude --plugin-dir plugins/globant-sdlc mcp login plugin:globant-sdlc:figma`.
 
 ## Evidencia de cada run
 

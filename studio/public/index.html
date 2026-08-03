@@ -607,6 +607,17 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
   padding:10px 12px;font-family:var(--mono);font-size:11.5px;
   white-space:pre-wrap;word-break:break-word;max-height:200px;overflow-y:auto;
 }
+.mcp-connect{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:11px 12px;
+  border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface-2)}
+.mcp-connect .mcp-copy{display:flex;flex-direction:column;gap:2px;flex:1;min-width:220px}
+.mcp-connect .mcp-copy b{font-size:12.5px;color:var(--text)}
+.mcp-connect .mcp-copy span{font-size:11.5px;color:var(--muted);line-height:1.45}
+.mcp-connect[data-s="connected"]{border-color:color-mix(in srgb,var(--ok) 55%,var(--border))}
+.mcp-connect[data-s="auth_required"],.mcp-connect[data-s="approval_required"]{
+  border-color:color-mix(in srgb,var(--warn) 65%,var(--border))}
+.mcp-connect[data-s="unavailable"]{border-color:color-mix(in srgb,var(--danger) 45%,var(--border))}
+.oauth-link{display:block;padding:11px 12px;border:1px solid var(--accent);border-radius:var(--r-md);
+  background:color-mix(in srgb,var(--accent) 10%,var(--surface));font-weight:700}
 .glos{display:grid;gap:14px}
 .glos-row{display:grid;grid-template-columns:120px 1fr;gap:14px;align-items:start}
 .glos-row p{margin:0;font-size:12.5px;color:var(--muted);line-height:1.6}
@@ -1050,6 +1061,14 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
                          placeholder="https://www.figma.com/design/...?...node-id=..." autocomplete="off">
                   <span class="f-help" id="hFgUrl">En Figma seleccioná el frame de la feature, elegí <b>Copy link to selection</b> y pegalo completo. Al guardar se habilitan Figma y <code>@ux</code>.</span>
                   <span class="input-state" id="fgUrlState" aria-live="polite">Sin link: Figma no participa del ciclo.</span>
+                  <div class="mcp-connect" id="figmaMcpState" data-s="checking">
+                    <span class="mcp-copy">
+                      <b id="figmaMcpTitle">Comprobando acceso a Figma…</b>
+                      <span id="figmaMcpDetail">El link indica qué pantalla usar; esta conexión permite que Claude pueda leerla.</span>
+                    </span>
+                    <button class="btn sm" id="btnFigmaMcpCheck">Comprobar</button>
+                    <button class="btn sm primary" id="btnFigmaMcpConnect">Conectar Figma</button>
+                  </div>
                 </div>
               </div>
 
@@ -1215,6 +1234,38 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
     <button class="btn" id="btnAuthLogout">Cerrar sesión</button>
     <button class="btn primary" id="btnAuthLogin">Iniciar sesión</button>
     <button class="btn ghost" id="btnAuthClose">Salir</button>
+  </div>
+</dialog>
+
+<!-- ---------------------------------------------------------- OAuth de MCP -->
+<dialog id="dlgMcpAuth" aria-labelledby="dlgMcpAuthTitle">
+  <div class="dlg-head"><h2 id="dlgMcpAuthTitle">Conectar Figma</h2></div>
+  <div class="dlg-body">
+    <div class="notice">
+      <span><b>Se hace una sola vez en esta computadora.</b><br>
+        Claude Code guarda y renueva el acceso de forma segura; el Studio no ve ni almacena el token.</span>
+    </div>
+    <ol class="prose" style="margin:0;padding-left:20px;line-height:1.7">
+      <li>Presioná <b>Abrir autenticación</b>.</li>
+      <li>Autorizá el acceso en Figma.</li>
+      <li>Volvé acá: el estado se actualiza automáticamente.</li>
+    </ol>
+    <p class="prose">Si el navegador termina en una página de <code>localhost</code> que no carga,
+      copiá <b>la URL completa de la barra de direcciones</b> y pegala abajo.</p>
+    <div id="mcpAuthLink"></div>
+    <div class="auth-out" id="mcpAuthOut" hidden></div>
+    <div class="f" id="mcpAuthInputRow" hidden>
+      <label class="f-label" for="mcpAuthInput">URL completa del callback</label>
+      <div class="f-row">
+        <input class="field mono" id="mcpAuthInput" placeholder="http://localhost:…/callback?code=…" autocomplete="off">
+        <button class="btn" id="btnMcpAuthSend">Continuar</button>
+      </div>
+    </div>
+  </div>
+  <div class="dlg-foot">
+    <button class="btn ghost" id="btnMcpAuthClose">Cerrar</button>
+    <span class="grow"></span>
+    <button class="btn primary" id="btnMcpAuthStart">Abrir autenticación</button>
   </div>
 </dialog>
 
@@ -1421,7 +1472,8 @@ function kindOf(path) {
 const kindBadge = k => (KINDS[k] ? `<span class="kind" data-k="${k}">${esc(KINDS[k].label)}</span>` : '');
 
 let PLUGIN = null, PHASES = [], current = null, original = '', run = null, es = null;
-let authES = null, isReplaying = false;
+let authES = null, mcpAuthES = null, isReplaying = false;
+let MCP_STATUS = {};
 let RUN_MODEL = {
   status: 'none', phase: null, blocked: null, complete: false,
   connection: 'closed', sessionReady: false,
@@ -2254,6 +2306,19 @@ async function start() {
   if (!$('repoDir').value.trim()) {
     showView('config');
     return banner('err', 'Prepará un repositorio antes de ejecutar');
+  }
+
+  // El OAuth de un MCP no puede resolverse dentro del run headless. Si Figma
+  // es parte del contrato, se autentica antes o el agente UX trabajaría sin la
+  // fuente que el usuario cree haber configurado.
+  if (!consola && CONFIG && agenteOn('ux') && figmaConfigurado()) {
+    const figmaAccess = await refreshMcpStatus('figma');
+    if (figmaAccess?.status !== 'connected') {
+      showView('config');
+      openMcpAuth('figma');
+      banner('err', 'Conectá Figma antes de ejecutar: el OAuth no puede completarse dentro del ciclo.');
+      return;
+    }
   }
 
   if (!consola) {
@@ -3175,6 +3240,124 @@ async function vcsLogin(provider) {
 
 /* ------------------------------------------- sesión de Claude Code (login) */
 
+const MCP_COPY = {
+  checking: ['Comprobando acceso a Figma…', 'Consultando el estado guardado por Claude Code.'],
+  connected: ['Figma conectado', 'Claude Code puede leer el frame configurado.'],
+  auth_required: ['Figma necesita autenticación', 'Conectalo una vez antes de ejecutar el ciclo.'],
+  approval_required: ['Falta aprobar Figma', 'Aprobá el MCP para este proyecto antes de ejecutar.'],
+  unavailable: ['No se pudo conectar con Figma', 'Revisá la red o volvé a intentar la autenticación.'],
+  not_configured: ['Figma no está disponible', 'El plugin no cargó la definición del MCP de Figma.'],
+  unknown: ['No se pudo confirmar el acceso', 'Volvé a comprobar o iniciá la autenticación.'],
+};
+
+function renderMcpStatus(server, state) {
+  if (server !== 'figma') return;
+  MCP_STATUS[server] = state;
+  const copy = MCP_COPY[state.status] || MCP_COPY.unknown;
+  $('figmaMcpState').dataset.s = state.status;
+  $('figmaMcpTitle').textContent = copy[0];
+  $('figmaMcpDetail').textContent = state.detail && state.status !== 'connected'
+    ? `${copy[1]} ${state.detail}` : copy[1];
+  $('btnFigmaMcpConnect').hidden = state.status === 'connected';
+  $('btnFigmaMcpCheck').textContent = state.status === 'connected' ? 'Verificar de nuevo' : 'Comprobar';
+}
+
+async function refreshMcpStatus(server = 'figma') {
+  renderMcpStatus(server, { status: 'checking' });
+  try {
+    const state = await api(`/api/mcp/status?server=${encodeURIComponent(server)}`);
+    renderMcpStatus(server, state);
+    return state;
+  } catch (e) {
+    const state = { server, status: 'unavailable', detail: e.message };
+    renderMcpStatus(server, state);
+    return state;
+  }
+}
+
+function mcpAuthLog(html) {
+  $('mcpAuthOut').hidden = false;
+  $('mcpAuthOut').insertAdjacentHTML('beforeend', html);
+  $('mcpAuthOut').scrollTop = $('mcpAuthOut').scrollHeight;
+}
+
+function openMcpAuth(server = 'figma') {
+  $('dlgMcpAuth').dataset.server = server;
+  $('dlgMcpAuthTitle').textContent = `Conectar ${server === 'figma' ? 'Figma' : server}`;
+  $('mcpAuthOut').innerHTML = '';
+  $('mcpAuthOut').hidden = true;
+  $('mcpAuthLink').innerHTML = '';
+  $('mcpAuthInput').value = '';
+  $('mcpAuthInputRow').hidden = true;
+  $('btnMcpAuthStart').disabled = false;
+  $('btnMcpAuthStart').textContent = 'Abrir autenticación';
+  if (!$('dlgMcpAuth').open) $('dlgMcpAuth').showModal();
+}
+
+$('btnFigmaMcpCheck').addEventListener('click', () => refreshMcpStatus('figma'));
+$('btnFigmaMcpConnect').addEventListener('click', () => openMcpAuth('figma'));
+$('btnMcpAuthClose').addEventListener('click', () => $('dlgMcpAuth').close());
+
+$('btnMcpAuthStart').addEventListener('click', async () => {
+  const server = $('dlgMcpAuth').dataset.server || 'figma';
+  $('btnMcpAuthStart').disabled = true;
+  $('btnMcpAuthStart').textContent = 'Esperando autorización…';
+  $('mcpAuthInputRow').hidden = false;
+  mcpAuthLog('Iniciando el flujo seguro de Claude Code…\n');
+  try {
+    await api('/api/mcp/login', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ server }),
+    });
+  } catch (e) {
+    $('btnMcpAuthStart').disabled = false;
+    $('btnMcpAuthStart').textContent = 'Reintentar';
+    return mcpAuthLog(`\n${esc(e.message)}\n`);
+  }
+
+  mcpAuthES?.close();
+  mcpAuthES = new EventSource('/api/mcp/stream');
+  mcpAuthES.onmessage = async (e) => {
+    const ev = JSON.parse(e.data);
+    if (ev.t === 'url') {
+      $('mcpAuthLink').innerHTML = `<a class="oauth-link" href="${esc(ev.url)}" target="_blank" rel="noreferrer">Abrir Figma para autorizar →</a>`;
+    } else if (ev.t === 'out') {
+      mcpAuthLog(esc(ev.text));
+    } else if (ev.t === 'error') {
+      mcpAuthLog(`\n${esc(ev.message)}\n`);
+    } else if (ev.t === 'end') {
+      mcpAuthES.close(); mcpAuthES = null;
+      renderMcpStatus(server, ev.auth || { status: 'unknown' });
+      const ok = ev.auth?.status === 'connected';
+      $('btnMcpAuthStart').disabled = ok;
+      $('btnMcpAuthStart').textContent = ok ? 'Figma conectado ✓' : 'Reintentar';
+      $('mcpAuthInputRow').hidden = true;
+      mcpAuthLog(ok ? '\nConexión confirmada. Ya podés ejecutar el ciclo.\n'
+        : `\nNo se pudo confirmar la conexión${ev.auth?.detail ? `: ${esc(ev.auth.detail)}` : '.'}\n`);
+      if (ok) banner('ok', 'Figma quedó conectado a Claude Code.');
+    }
+  };
+  mcpAuthES.onerror = () => { mcpAuthES?.close(); mcpAuthES = null; };
+});
+
+async function sendMcpCallback() {
+  const text = $('mcpAuthInput').value.trim();
+  if (!text) return $('mcpAuthInput').focus();
+  $('mcpAuthInput').value = '';
+  try {
+    await api('/api/mcp/input', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    mcpAuthLog('\nCallback enviado; verificando acceso…\n');
+  } catch (e) { banner('err', e.message); }
+}
+
+$('btnMcpAuthSend').addEventListener('click', sendMcpCallback);
+$('mcpAuthInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); sendMcpCallback(); }
+});
+
 // El studio no guarda credenciales: pregunta y delega en el CLI, que es donde
 // ya viven. Todo lo que hace es mostrar el estado y levantar el flujo de login.
 async function refreshAuth() {
@@ -3401,6 +3584,7 @@ medirDock();
 syncSource();
 load().then(restaurar).catch(e => banner('err', e.message));
 refreshAuth();
+refreshMcpStatus('figma');
 </script>
 </body>
 </html>

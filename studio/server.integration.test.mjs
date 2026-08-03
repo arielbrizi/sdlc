@@ -29,6 +29,16 @@ test('prepara monorepo, confirma contexto y ejecuta en worktree aislado', { time
   fs.mkdirSync(bin, { recursive: true });
   fs.writeFileSync(path.join(repo, 'apps/web/package.json'), JSON.stringify({ scripts: { test: 'vitest' } }));
   fs.writeFileSync(path.join(bin, 'claude'), `#!/bin/sh
+case "$*" in
+  *"mcp get plugin:globant-sdlc:figma"*)
+    printf '%s\n' 'plugin:globant-sdlc:figma:' '  Status: ✓ Connected'
+    exit 0
+    ;;
+  *"mcp login plugin:globant-sdlc:figma"*)
+    printf '%s\n' 'Open https://www.figma.com/oauth/authorize?client_id=test'
+    exit 0
+    ;;
+esac
 printf '%s\n' '{"tool_input":{"command":"git status"}}' \\
   | CLAUDE_PROJECT_DIR="$PWD" CLAUDE_PLUGIN_ROOT="$FLOW360_TEST_PLUGIN_ROOT" \\
     "$FLOW360_TEST_PLUGIN_ROOT/scripts/guard-git.sh"
@@ -83,6 +93,19 @@ printf '%s\n' '{"type":"result","is_error":false,"result":"Turno terminado","num
     }).then(r => r.json());
     assert.equal(preflight.hint.status, 'match');
     assert.deepEqual(preflight.profile.technologies, ['Node.js']);
+
+    const mcpStatus = await fetch(`${baseUrl}/api/mcp/status?server=figma`).then(r => r.json());
+    assert.equal(mcpStatus.status, 'connected');
+    assert.equal(mcpStatus.qualified, 'plugin:globant-sdlc:figma');
+    const mcpLogin = await fetch(`${baseUrl}/api/mcp/login`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ server: 'figma' }),
+    });
+    assert.equal(mcpLogin.status, 200);
+    const mcpStream = await fetch(`${baseUrl}/api/mcp/stream`).then(r => r.text());
+    assert.match(mcpStream, /"t":"url"/);
+    assert.match(mcpStream, /figma\.com\/oauth\/authorize/);
+    assert.match(mcpStream, /"status":"connected"/);
 
     const response = await fetch(`${baseUrl}/api/run`, {
       method: 'POST', headers: { 'content-type': 'application/json' },

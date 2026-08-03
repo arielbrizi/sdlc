@@ -38,6 +38,7 @@ import {
 } from './repository.mjs';
 import { hookEventsSince } from './hook-events.mjs';
 import { toolActivity } from './tool-activity.mjs';
+import { parseMcpStatus, pluginMcpName } from './mcp-auth.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..');
@@ -566,12 +567,28 @@ async function vcsStatus(provider) {
 /** Igual que runClaude pero con binario arbitrario. */
 function runClaudeLike(bin, args, opts = {}) {
   return new Promise((resolve) => {
+    const { timeoutMs = 0, ...spawnOpts } = opts;
     let stdout = '', stderr = '';
-    const c = spawn(bin, args, { cwd: REPO_ROOT, ...opts });
+    let settled = false, timedOut = false, timer = null;
+    const finish = result => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      resolve(result);
+    };
+    const c = spawn(bin, args, { cwd: REPO_ROOT, ...spawnOpts });
     c.stdout.on('data', d => stdout += d);
     c.stderr.on('data', d => stderr += d);
-    c.on('error', () => resolve({ code: -1, stdout: '', stderr: `no se encontró ${bin}` }));
-    c.on('close', code => resolve({ code, stdout, stderr }));
+    c.on('error', () => finish({ code: -1, stdout: '', stderr: `no se encontró ${bin}` }));
+    c.on('close', code => finish({
+      code: timedOut ? 124 : code,
+      stdout,
+      stderr: timedOut ? `${stderr}\nLa comprobación tardó demasiado.`.trim() : stderr,
+    }));
+    if (timeoutMs > 0) timer = setTimeout(() => {
+      timedOut = true;
+      c.kill('SIGTERM');
+    }, timeoutMs);
   });
 }
 
@@ -813,6 +830,66 @@ function push(channel, event, cap = 3000) {
  * Es un proceso único: dos logins en paralelo compiten por las mismas credenciales.
  */
 const login = { child: null, status: 'idle', events: [], clients: new Set() };
+
+const OAUTH_MCP = new Set(['figma', 'jira']);
+const mcpLogin = {
+  child: null, server: null, status: 'idle', events: [], clients: new Set(),
+};
+
+const mcpServerName = server => pluginMcpName(PLUGIN_NAME, server);
+
+async function mcpAuthStatus(server) {
+  if (!OAUTH_MCP.has(server)) {
+    throw Object.assign(new Error(`MCP no soportado para OAuth: ${server}`), { code: 400 });
+  }
+  const qualified = mcpServerName(server);
+  const out = await runClaude([
+    '--plugin-dir', PLUGIN_DIR, 'mcp', 'get', qualified,
+  ], { timeoutMs: 12_000 });
+  return { server, qualified, ...parseMcpStatus(out.stdout, out.stderr, out.code) };
+}
+
+function startMcpLogin(server) {
+  if (!OAUTH_MCP.has(server)) return { error: `MCP no soportado para OAuth: ${server}` };
+  if (mcpLogin.child) return { error: `ya hay un login de ${mcpLogin.server} en curso` };
+
+  const qualified = mcpServerName(server);
+  const args = ['--plugin-dir', PLUGIN_DIR, 'mcp', 'login', qualified];
+  mcpLogin.events = [];
+  mcpLogin.server = server;
+  mcpLogin.status = 'running';
+  push(mcpLogin, { t: 'start', server, at: Date.now() });
+
+  const child = spawn('claude', args, { cwd: REPO_ROOT, stdio: ['pipe', 'pipe', 'pipe'] });
+  mcpLogin.child = child;
+  const scan = (text) => {
+    push(mcpLogin, { t: 'out', text: text.slice(0, 2000), at: Date.now() });
+    for (const raw of text.match(/https?:\/\/[^\s'"<>]+/g) || []) {
+      push(mcpLogin, { t: 'url', url: raw.replace(/[),.;]+$/, ''), at: Date.now() });
+    }
+  };
+  child.stdout.on('data', d => scan(d.toString('utf8')));
+  child.stderr.on('data', d => scan(d.toString('utf8')));
+  child.on('error', e => {
+    mcpLogin.status = 'error';
+    push(mcpLogin, {
+      t: 'error', server,
+      message: e.code === 'ENOENT' ? 'No se encontró el binario `claude` en el PATH.' : e.message,
+      at: Date.now(),
+    });
+  });
+  child.on('close', async (code) => {
+    mcpLogin.child = null;
+    mcpLogin.status = code === 0 ? 'done' : 'error';
+    let auth;
+    try { auth = await mcpAuthStatus(server); }
+    catch (e) { auth = { server, status: 'unavailable', detail: e.message }; }
+    push(mcpLogin, { t: 'end', server, code, status: mcpLogin.status, auth, at: Date.now() });
+    for (const res of mcpLogin.clients) res.end();
+    mcpLogin.clients.clear();
+  });
+  return { ok: true, server };
+}
 
 async function authStatus() {
   const { code, stdout, stderr } = await runClaude(['auth', 'status', '--json']);
@@ -1590,6 +1667,46 @@ const server = http.createServer(async (req, res) => {
       if (login.child) {
         login.clients.add(res);
         req.on('close', () => login.clients.delete(res));
+      } else {
+        res.end();
+      }
+      return;
+    }
+
+    if (p === '/api/mcp/status' && req.method === 'GET') {
+      const server = String(url.searchParams.get('server') || '');
+      try { return json(res, 200, await mcpAuthStatus(server)); }
+      catch (e) { return json(res, e.code || 500, { error: e.message }); }
+    }
+
+    if (p === '/api/mcp/login' && req.method === 'POST') {
+      const { server } = JSON.parse(await readBody(req) || '{}');
+      const out = startMcpLogin(String(server || ''));
+      return json(res, out.error ? 409 : 200, out.error ? { error: out.error } : out);
+    }
+
+    if (p === '/api/mcp/input' && req.method === 'POST') {
+      const { text } = JSON.parse(await readBody(req) || '{}');
+      if (!mcpLogin.child) return json(res, 409, { error: 'no hay un login MCP en curso' });
+      mcpLogin.child.stdin.write(String(text || '') + '\n');
+      return json(res, 200, { ok: true });
+    }
+
+    if (p === '/api/mcp/cancel' && req.method === 'POST') {
+      mcpLogin.child?.kill('SIGTERM');
+      return json(res, 200, { ok: true });
+    }
+
+    if (p === '/api/mcp/stream' && req.method === 'GET') {
+      res.writeHead(200, {
+        'content-type': 'text/event-stream; charset=utf-8',
+        'cache-control': 'no-cache',
+        connection: 'keep-alive',
+      });
+      for (const ev of mcpLogin.events) res.write(`data: ${JSON.stringify(ev)}\n\n`);
+      if (mcpLogin.child) {
+        mcpLogin.clients.add(res);
+        req.on('close', () => mcpLogin.clients.delete(res));
       } else {
         res.end();
       }
