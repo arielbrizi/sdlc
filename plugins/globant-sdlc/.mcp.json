@@ -7,7 +7,7 @@
     },
     "ado": {
       "command": "npx",
-      "args": ["-y", "@azure-devops/mcp", "--org", "${ADO_ORG}"]
+      "args": ["-y", "@azure-devops/mcp", "${ADO_ORG}", "-a", "azcli"]
     },
     "github": {
       "command": "npx",

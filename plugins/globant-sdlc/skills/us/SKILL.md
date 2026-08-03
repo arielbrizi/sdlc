@@ -135,10 +135,15 @@ contexto, leer su salida y encadenar la fase siguiente.
 
 ## Fase 5 — Verificación (en paralelo)
 
-Delegá simultáneamente en:
+Delegá en `qa` y `seguridad` **en un solo mensaje, con las dos invocaciones en
+el mismo bloque de tool calls**:
 
 - `qa` — cobertura de los criterios de aceptación, casos de borde, regresión
 - `seguridad` — OWASP, secretos, authz, dependencias
+
+No alcanza con la intención de que corran juntos: dos invocaciones en mensajes
+separados se ejecutan una después de la otra, y como no dependen entre sí eso
+duplica el tiempo de la fase sin cambiar el resultado.
 
 Ninguno de los dos modifica código: reportan. Las correcciones vuelven a
 `desarrollador`, con los hallazgos de ambos en una sola pasada — invocarlo dos
@@ -148,6 +153,12 @@ Iterá hasta que ambos devuelvan `PASS`, con un **máximo de 3 ciclos**. Si al
 tercero sigue habiendo hallazgos de severidad alta, abrí el PR igual pero
 marcándolo con el hallazgo abierto y visible en la descripción. Nunca silencies
 un hallazgo para poder cerrar el flujo.
+
+A partir del segundo ciclo, pasales el **diff de la corrección** y la lista de
+hallazgos que motivaron el ciclo, no el repo entero. Re-auditar de cero código
+que ya pasó no encuentra nada nuevo: lo único que cambió es lo que
+`desarrollador` acaba de tocar. Un hallazgo que reaparece idéntico dos ciclos
+seguidos no se reintenta un tercero — va abierto a la descripción del PR.
 
 ## Fase 6 — Revisión adversarial
 
