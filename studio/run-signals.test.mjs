@@ -6,6 +6,7 @@ import {
   RECOVERY_PROMPT,
   correctionRoundForTransition,
   finalCycleCompletion,
+  humanInputRequest,
   prCommand,
   prTool,
   technicalToolInterruption,
@@ -19,16 +20,28 @@ test('cuenta sólo regresos reales a implementación', () => {
   assert.equal(correctionRoundForTransition(5, 2, 'qa'), 2);
 });
 
-test('reconoce solo el marcador técnico de interrupción', () => {
+test('reconoce marcadores e informes técnicos de interrupción', () => {
   assert.equal(technicalToolInterruption('[Request interrupted by user for tool use]'), true);
   assert.equal(technicalToolInterruption('Request interrupted by user'), true);
   assert.equal(technicalToolInterruption('El usuario pidió detener el ciclo'), false);
+  assert.equal(technicalToolInterruption(
+    'El desarrollador construyó las 4 pantallas, pero no había commiteado ni devuelto el veredicto formal; probablemente se cortó a mitad de correr los tests. Sigo esperando esa confirmación.',
+  ), true);
+});
+
+test('no confunde la confirmación de un subagente con aprobación humana', () => {
+  assert.equal(humanInputRequest('Sigo esperando esa confirmación del subagente.'), null);
+  assert.equal(humanInputRequest('Claude necesita tu aprobación para continuar')?.reason,
+    'Claude necesita tu aprobación para continuar');
+  assert.deepEqual(humanInputRequest('¿Qué endpoint querés usar?')?.questions,
+    ['¿Qué endpoint querés usar?']);
 });
 
 test('la recuperación exige reconciliar efectos antes de repetir', () => {
   assert.match(RECOVERY_PROMPT, /Antes de repetir nada, reconciliá/);
   assert.match(RECOVERY_PROMPT, /no la repitas/);
-  assert.match(RECOVERY_PROMPT, /Reintentá.+únicamente si confirmás que no se completó/);
+  assert.match(RECOVERY_PROMPT, /No afirmes que faltan commits o archivos sin verificar/);
+  assert.match(RECOVERY_PROMPT, /reinvocalo solo para inspeccionar lo existente/);
 });
 
 test('clasifica creación y actualización de PR', () => {

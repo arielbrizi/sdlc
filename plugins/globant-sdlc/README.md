@@ -148,7 +148,12 @@ auditoría y `desarrollador` aplica cambios de producto. Los auditores no tienen
 `Write` ni `Edit`; arquitectura, UX y reviewer tampoco tienen `Bash`. QA y
 seguridad conservan Bash exclusivamente para ejecutar verificaciones, por lo que
 esa parte del límite es contractual y queda reforzada por los hooks de Git y
-secretos, no se presenta como una garantía absoluta del runtime.
+secretos, aunque no se presenta como una garantía absoluta del runtime.
+
+La recuperación también conserva esa separación. Si una invocación termina
+después de escribir código pero antes del JSON final, el ciclo verifica archivos
+y commits y vuelve a pedir solamente el cierre; no repite la implementación ni
+transforma una interrupción técnica en una decisión humana.
 
 ## Qué es hook y qué es prompt
 

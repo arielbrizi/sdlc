@@ -111,9 +111,16 @@ cambios del desarrollador y existe solo como referencia de procedencia.
 
 Cada subagente debe devolver exactamente un objeto JSON parseable con un campo
 `verdict`. Guardá la respuesta completa en el artefacto correspondiente antes de
-ramificar. Si no parsea, falta `verdict` o usa un valor fuera del contrato,
-detenete y escribí `blocked.md`: continuar sería interpretar una salida que el
-flujo no entiende.
+ramificar.
+
+Si no parsea, falta `verdict` o usa un valor fuera del contrato, tratá primero el
+caso como **cierre técnico incompleto**, no como una decisión humana. Reconciliá
+los efectos persistidos (`git status`, `git diff`, `git log`, artefactos y tests)
+y reinvocá una vez al mismo subagente con un pedido de cierre: debe inspeccionar
+lo existente, completar solo lo estrictamente pendiente y devolver el JSON, sin
+repetir la implementación. Nunca afirmes que no hubo commits sin mirar Git. Solo
+si el segundo cierre vuelve a ser inválido detené el ciclo con un error técnico;
+no inventes preguntas bloqueantes ni pidas aprobación para continuar.
 
 ## Fase 1 — Refinamiento (circuit breaker)
 

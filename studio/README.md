@@ -189,12 +189,19 @@ completo** (o **listo para revisión humana**) y tenga la URL marca las fases co
 listas. La prosa sola no puede cerrar el ciclo.
 
 Si Claude Code devuelve el marcador técnico `Request interrupted by user for
-tool use`, el Studio no lo trata como una decisión humana: retoma el mismo ciclo
-automáticamente y deja una línea **recuperación** visible en la consola. Antes de
-repetir una herramienta le ordena reconciliar archivos, commits, artefactos del
-run, subagentes y PR: si el efecto ya ocurrió, continúa sin duplicarlo. Hace hasta
-tres recuperaciones consecutivas para no entrar en un bucle; solo si las tres
-fallan expone el problema como acción.
+tool use`, o informa que un subagente terminó sin entregar su JSON/veredicto, el
+Studio no lo trata como una decisión humana: retoma el mismo ciclo automáticamente
+y deja una línea **recuperación** visible en la consola. Antes de repetir una
+herramienta le ordena reconciliar archivos, `git status`, `git diff`, commits,
+artefactos del run, subagentes y PR. No puede afirmar que faltó un commit sin
+consultar Git. Si el efecto ya ocurrió, pide únicamente el cierre contractual y
+continúa sin duplicarlo. Hace hasta tres recuperaciones consecutivas para no
+entrar en un bucle; solo si las tres fallan expone el problema como acción.
+
+La detección de acciones humanas exige lenguaje dirigido al usuario —por ejemplo
+“necesito tu aprobación” o una pregunta concreta—. Una frase como “espero la
+confirmación del subagente” es estado interno del ciclo y nunca abre el diálogo
+**Necesitamos una decisión tuya**.
 
 **Editar abre una ventana a pantalla completa**, con la configuración en una
 columna y las instrucciones en la otra. Editar es una tarea enfocada y no tiene

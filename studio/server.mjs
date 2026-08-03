@@ -24,6 +24,7 @@ import {
   RECOVERY_PROMPT,
   correctionRoundForTransition,
   finalCycleCompletion,
+  humanInputRequest,
   prCommand,
   prTool,
   technicalToolInterruption,
@@ -1090,32 +1091,6 @@ function blockRun(run, { phase, agent, reason, questions = [], sourceId = null }
  */
 function queueBlock(run, block) {
   if (!run.pendingBlock && !run.blocked) run.pendingBlock = block;
-}
-
-/**
- * Una pregunta en el resultado final significa que el turno terminó esperando
- * al usuario. Claude no siempre la expresa mediante un subagente `BLOCKED`:
- * los pedidos de aprobación de permisos, por ejemplo, llegan como texto común.
- * Se detectan acá para que nunca se traduzcan como "sin acciones pendientes".
- */
-function humanInputRequest(text) {
-  const clean = String(text || '').trim();
-  if (!clean) return null;
-
-  const lines = clean.split(/\n+/)
-    .map(line => line.replace(/^\s*[-*#>]+\s*/, '').trim())
-    .filter(Boolean);
-  const questions = lines.filter(line => /[?？]/.test(line)).slice(-3);
-  const approval = /(?:aprobaci[oó]n|aprobar|apruebo|aprob[aá]s|confirmaci[oó]n|confirm[aá]s|permiso para)/i.test(clean);
-  const explicitRequest = /(?:para continuar|necesito que|indicame|ind[ií]came|respond[eé]|eleg[ií]|decid[ií])/i.test(clean);
-
-  if (!questions.length && !approval && !explicitRequest) return null;
-  return {
-    reason: approval
-      ? 'Claude necesita tu aprobación para continuar'
-      : 'Claude necesita una respuesta tuya para continuar',
-    questions: questions.length ? questions : [clean.slice(-600)],
-  };
 }
 
 function completeCycle(run, detail = 'PR listo') {
