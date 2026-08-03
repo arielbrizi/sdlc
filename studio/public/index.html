@@ -1503,14 +1503,23 @@ async function load() {
   const [plugin, ph] = await Promise.all([api('/api/plugin'), api('/api/phases')]);
   PLUGIN = plugin; PHASES = ph.phases;
 
-  renderRepoMeta();
+  // `--repo` y GLOBANT_TARGET_REPO son selecciones explícitas del usuario, no
+  // defaults del Studio. En ese caso se carga la config al abrir para que el
+  // estado de @ux y el warning de Figma sean correctos desde el primer render.
+  // Sin una selección explícita, repo, branch y alcance siguen vacíos.
+  const initialRepo = plugin.targetRepoExplicit ? plugin.targetRepo : '';
+  $('repoDir').value = initialRepo;
+  renderRepoMeta(initialRepo);
 
   // El comando que hay que tipear es el calificado: /us solo da "Unknown command".
   const cmd = plugin.skills[0]?.command;
   $('cicloSub').textContent = cmd ? `se dispara con /${cmd}` : '';
 
-  renderGraph();
-  renderCatalog();
+  if (initialRepo) await loadConfig();
+  else {
+    renderGraph();
+    renderCatalog();
+  }
 
   if (plugin.problems.length) {
     $('catProblems').innerHTML = `<div class="notice err"><div>
@@ -1594,7 +1603,9 @@ function catalogItems() {
 // cambia según quién corra el ciclo.
 let CONFIG = null;
 
-const agenteOn = nombre => (CONFIG ? CONFIG.agents?.[nombre] !== false : true);
+// Sin repo todavía no hay configuración para evaluar. Se muestran los defaults
+// efectivos del plugin: UX apagado y los controles del ciclo encendidos.
+const agenteOn = nombre => (CONFIG ? CONFIG.agents?.[nombre] !== false : nombre !== 'ux');
 
 // @ux habilitado sin una pantalla concreta de Figma es una configuración
 // incompleta: el agente puede revisar el repo, pero no sabe qué interfaz debe

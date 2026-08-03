@@ -44,6 +44,9 @@ test('prepara monorepo, confirma contexto y ejecuta en worktree aislado', { time
   try {
     const baseUrl = `http://127.0.0.1:${port}`;
     await waitFor(`${baseUrl}/api/plugin`);
+    const plugin = await fetch(`${baseUrl}/api/plugin`).then(r => r.json());
+    assert.equal(plugin.targetRepo, path.resolve(repo));
+    assert.equal(plugin.targetRepoExplicit, true);
     const prepare = await fetch(`${baseUrl}/api/repo/prepare`, {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ url: path.join(repo, 'apps/web') }),

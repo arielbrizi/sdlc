@@ -48,7 +48,9 @@ function arg(name, fallback) {
 }
 
 const PLUGIN_DIR = path.resolve(arg('plugin', path.join(REPO_ROOT, 'plugins/globant-sdlc')));
-const TARGET_REPO = path.resolve(arg('repo', process.env.GLOBANT_TARGET_REPO || process.cwd()));
+const TARGET_REPO_INPUT = arg('repo', process.env.GLOBANT_TARGET_REPO || '');
+const TARGET_REPO_EXPLICIT = !!TARGET_REPO_INPUT;
+const TARGET_REPO = path.resolve(TARGET_REPO_INPUT || process.cwd());
 const PORT = Number(arg('port', 4477));
 const PUBLIC_DIR = path.join(HERE, 'public');
 // Dónde se clonan los repos que se piden por URL. Fuera del repo del plugin a
@@ -169,6 +171,7 @@ async function scanPlugin() {
   const out = {
     pluginDir: PLUGIN_DIR,
     targetRepo: TARGET_REPO,
+    targetRepoExplicit: TARGET_REPO_EXPLICIT,
     manifest: null,
     skills: [],
     agents: [],

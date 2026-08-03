@@ -12,8 +12,12 @@ node studio/server.mjs --repo ~/repos/mi-proyecto
 | Flag | Default |
 |---|---|
 | `--plugin <dir>` | `plugins/globant-sdlc` |
-| `--repo <dir>` | `$GLOBANT_TARGET_REPO`, o el cwd |
+| `--repo <dir>` | `$GLOBANT_TARGET_REPO`, o sin selección explícita |
 | `--port <n>` | `4477` |
+
+El servidor conserva el cwd como fallback técnico para sus endpoints, pero la
+interfaz no lo toma como repo seleccionado. Solo `--repo`,
+`GLOBANT_TARGET_REPO` o la acción **Preparar** expresan una elección del usuario.
 
 ## Por qué es una app local y no una web
 
@@ -81,6 +85,12 @@ restauran desde `localStorage`. Studio tampoco intenta leer una configuración
 apenas abre. Una ruta ausente o inválida se informa al presionar **Ejecutar**;
 **Preparar** conserva sus propios errores porque esa acción sí intenta acceder
 explícitamente al repositorio.
+
+La excepción es una selección explícita al iniciar el servidor: `--repo` o
+`GLOBANT_TARGET_REPO`. En ese caso el Studio carga únicamente la configuración
+de agentes e integraciones de ese repo para que, si `@ux` está habilitado sin un
+frame de Figma, el warning aparezca desde el primer render. Branch base y alcance
+siguen sin valores predeterminados.
 
 **Reiniciar Studio** está disponible tanto en Inicio como en Configuración. La
 acción limpia la historia, el run visible, el chat, el mapa, el costo y los
