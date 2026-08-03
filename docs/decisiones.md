@@ -69,10 +69,12 @@ que requiera juicio es agente.
 prompt es una sugerencia fuerte. Las reglas que nunca deberían poder saltearse
 no pueden depender de que el modelo las recuerde en el turno 40.
 
-## D6 — Marketplace propio, no `.claude/` suelto
+## D6 — Distribución como plugin, no `.claude/` suelto
 
-**Decisión.** Distribuir como plugin desde un marketplace interno, en vez de
-copiar un `.claude/` en cada repo.
+**Decisión.** Distribuir como plugin desde este repositorio, usando el mecanismo
+que Claude Code denomina `marketplace`, en vez de copiar un `.claude/` en cada
+repo. En este contexto `marketplace` es solamente el índice técnico que permite
+instalar el plugin: no existe ni se consulta un catálogo corporativo de Globant.
 
 **Por qué.** Versionado, actualización centralizada y un solo lugar donde
 corregir un agente. El costo es el namespacing de las skills

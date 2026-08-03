@@ -71,7 +71,7 @@ Ver `skills/us/references/design.md` para configurar Storybook y Figma.
 ## Instalación
 
 ```bash
-# 1. Publicar en el marketplace interno y instalar a nivel proyecto
+# 1. Instalar desde la fuente registrada, a nivel proyecto
 claude plugin install globant-sdlc@globant --scope project
 
 # 2. Verificar
@@ -222,6 +222,6 @@ Vale la pena saberlo igual.
 
 - [ ] Piloto en un repo con un squad
 - [ ] `.claude/rules/` por stack (Java/Spring, Node, .NET, Python)
-- [ ] Marketplace interno de Globant
+- [ ] Distribución estable y versionada del plugin
 - [ ] `/auditoria-seguridad` y `/migrar` como workflows dinámicos
 - [ ] Managed settings a nivel organización para las políticas no negociables

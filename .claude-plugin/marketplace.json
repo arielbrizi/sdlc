@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
   "name": "globant",
-  "description": "Marketplace interno de Globant: plugins de ciclo de desarrollo asistido por agentes.",
+  "description": "Fuente de instalación versionada para el plugin globant-sdlc de Claude Code.",
   "owner": {
     "name": "Globant - Tech Direction",
     "email": "tech-direction@globant.com"

@@ -8,7 +8,7 @@
 ![Studio](https://img.shields.io/badge/Studio-Node.js_20%2B-2563eb)
 ![License](https://img.shields.io/badge/license-internal-lightgrey)
 
-`globant-ai-sdlc` es el marketplace interno que distribuye
+Este repositorio publica
 [`globant-sdlc`](./plugins/globant-sdlc), un plugin de Claude Code que coordina
 el ciclo completo de una historia: entiende el requerimiento, analiza el
 repositorio, diseña la solución, implementa, verifica y abre el PR.
@@ -80,15 +80,20 @@ su cuenta.
 Estos comandos se escriben en una terminal. No ejecutan una historia ni cambian
 el código del producto: solamente conectan e instalan la herramienta.
 
-#### 1. Conectar el catálogo
+#### 1. Registrar este repositorio como fuente
 
 ```bash
 claude plugin marketplace add arielbrizi/sdlc
 ```
 
-Le indica a Claude Code dónde está el catálogo de Globant. Es parecido a
-agregar una tienda de aplicaciones: a partir de este momento Claude Code sabe
-dónde buscar `globant-sdlc`, pero todavía no lo instala en ningún proyecto.
+Registra `arielbrizi/sdlc` como la ubicación desde la que Claude Code puede
+descargar `globant-sdlc`. No se conecta a un catálogo de Globant ni a otro
+servicio corporativo. La palabra `marketplace` aparece porque es el nombre
+técnico que usa el comando de Claude Code para registrar un repositorio que
+publica plugins.
+
+Después de este paso Claude Code conoce la fuente, pero todavía no instala el
+plugin en ningún proyecto.
 
 Este paso se hace una sola vez por computadora.
 
@@ -122,9 +127,9 @@ datos de `globant-sdlc` sin errores, la instalación está lista.
 | Término | Explicación simple |
 |---|---|
 | Plugin | El paquete que contiene el proceso, los agentes y las reglas de seguridad |
-| Marketplace | El catálogo desde donde Claude Code encuentra el plugin |
+| Marketplace | Nombre técnico que usa Claude Code para una fuente de plugins; acá es este repositorio de GitHub |
 | Proyecto | El repositorio o carpeta de código sobre la que va a trabajar el equipo |
-| `globant-sdlc@globant` | El plugin `globant-sdlc`, obtenido del catálogo llamado `globant` |
+| `globant-sdlc@globant` | El plugin `globant-sdlc`; `globant` es el alias técnico declarado por este repositorio, no un catálogo externo |
 
 ### Ejecutar una historia
 
@@ -275,7 +280,7 @@ evidencia de compliance. La decisión es del repositorio objetivo.
 
 ```text
 .
-├── .claude-plugin/marketplace.json    # catálogo de plugins
+├── .claude-plugin/marketplace.json    # índice de instalación para Claude Code
 ├── plugins/globant-sdlc/
 │   ├── .claude-plugin/plugin.json   # manifiesto y versión
 │   ├── skills/us/                    # skill orquestadora
