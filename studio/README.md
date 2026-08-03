@@ -141,7 +141,9 @@ Cuando `@ux` está habilitado pero falta el frame de Figma, su caja muestra
 el problema y ofrece ir directamente a Configurar diseño; un agente encendido
 sin su fuente principal no puede parecer correctamente configurado.
 Al lado del nodo aparece además un botón **Configurar** que abre esa sección y
-deja el foco en el campo del link, para resolverlo sin recorrer el panel.
+deja el foco en el campo del link, para resolverlo sin recorrer el panel. Ese
+acceso queda visible aunque `@ux` esté deshabilitado o Figma ya esté completo;
+solo adopta el color de warning cuando UX está habilitado y falta el link.
 
 **Mapa, barra de ejecución y consola reducen el mismo stream de eventos.** La
 consola tiene un resumen fijo con el estado y la fase actuales: el log de abajo

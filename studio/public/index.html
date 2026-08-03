@@ -471,6 +471,12 @@ table.cat tbody tr[data-open="1"]{background:color-mix(in srgb,var(--accent) 9%,
 .gquick rect{fill:color-mix(in srgb,var(--warn) 14%,var(--surface));stroke:var(--warn);stroke-width:1;rx:11}
 .gquick text{font-family:var(--sans);font-size:10px;font-weight:700;text-anchor:middle;fill:var(--warn)}
 .gquick:hover rect,.gquick:focus-visible rect{fill:color-mix(in srgb,var(--warn) 24%,var(--surface));stroke-width:2}
+.gquick[data-warning="0"] rect{fill:var(--surface);stroke:var(--border-strong)}
+.gquick[data-warning="0"] text{fill:var(--muted)}
+.gquick[data-warning="0"]:hover rect,.gquick[data-warning="0"]:focus-visible rect{
+  fill:var(--surface-2);stroke:var(--accent)
+}
+.gquick[data-warning="0"]:hover text,.gquick[data-warning="0"]:focus-visible text{fill:var(--accent)}
 .gquick:focus{outline:none}
 
 .detail-toggle{display:flex;flex-direction:column;gap:4px;padding:10px 12px;
@@ -2781,10 +2787,11 @@ function renderGraph() {
 
   const figmaQuickSvg = () => {
     const n = byId['agent:ux'];
-    if (!n || !uxSinFigma()) return '';
+    if (!n) return '';
+    const warning = uxSinFigma();
     const x = n.x + n.w + 8, y = n.y + 13, w = 78, h = 24;
-    return `<g class="gquick" data-action="figma" role="button" tabindex="0"
-      aria-label="Configurar el link de Figma para @ux">
+    return `<g class="gquick" data-action="figma" data-warning="${warning ? 1 : 0}"
+      role="button" tabindex="0" aria-label="Configurar Figma para @ux">
       <rect x="${x}" y="${y}" width="${w}" height="${h}"/>
       <text x="${x + w / 2}" y="${y + 16}">Configurar</text>
     </g>`;
