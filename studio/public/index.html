@@ -475,7 +475,13 @@ table.cat tbody tr[data-open="1"]{background:color-mix(in srgb,var(--accent) 9%,
 .gedge.dashed{stroke-dasharray:4 4}
 .glabel{font-family:var(--sans);font-size:11px;font-weight:700;letter-spacing:.07em;
   text-transform:uppercase;fill:var(--subtle)}
-.gloop{fill:var(--warn);font-size:10px;text-anchor:middle;font-weight:600}
+.gloop{fill:var(--warn);font-size:9px;text-anchor:middle;font-weight:700;
+  letter-spacing:.08em;text-transform:uppercase}
+.gcycle rect{fill:var(--surface);stroke:var(--warn);stroke-width:1.5}
+.gcycle text{font-family:var(--mono);font-size:12px;font-weight:800;
+  text-anchor:middle;fill:var(--warn)}
+.gcycle[data-over="1"] rect{stroke:var(--danger)}
+.gcycle[data-over="1"] text{fill:var(--danger)}
 
 /* ------------------------------------------------------- panel de detalle */
 .detail{display:flex;flex-direction:column;gap:12px;padding:16px}
@@ -660,6 +666,12 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
 .notice.err{background:color-mix(in srgb,var(--danger) 10%,transparent);
   border:1px solid color-mix(in srgb,var(--danger) 35%,transparent);color:var(--text)}
 .notice ul{margin:6px 0 0;padding-left:18px}
+.preflight-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 18px}
+.preflight-item{padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--surface2)}
+.preflight-item b{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--subtle);margin-bottom:4px}
+.preflight-item code{overflow-wrap:anywhere}
+.preflight-wide{grid-column:1/-1}
+@media(max-width:700px){.preflight-grid{grid-template-columns:1fr}.preflight-wide{grid-column:auto}}
 
 .state-line{display:flex;gap:10px;align-items:center;flex-wrap:wrap;
   padding:11px 13px;border:1px solid var(--border);border-radius:var(--r-md);
@@ -889,6 +901,13 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
               </div>
 
               <div class="f f-wide">
+                <label class="f-label" for="stRepoHint">Repositorio o subproyecto esperado</label>
+                <input class="field mono" id="stRepoHint" autocomplete="off"
+                       placeholder="consumo-api o checkout-web">
+                <span class="f-help">Opcional. Si no coincide con el repo preparado, el ciclo se detiene antes de modificar código. Una historia multirepo debe dividirse por repositorio.</span>
+              </div>
+
+              <div class="f f-wide">
                 <label class="f-label" for="stAc">Criterios de aceptación</label>
                 <textarea class="field" id="stAc" rows="6" spellcheck="false" aria-describedby="hAc"
                           placeholder="Uno por línea.&#10;El botón Exportar aparece solo para usuarios con rol Analyst&#10;El CSV incluye las columnas fecha, usuario, consumo"></textarea>
@@ -942,6 +961,18 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
                 <label class="f-label" for="baseBranch">Branch base</label>
                 <select class="field" id="baseBranch" disabled><option value="">—</option></select>
                 <span class="f-help">Se llena al preparar el repositorio.</span>
+              </div>
+              <div class="f">
+                <label class="f-label" for="repoScope">Alcance en el repositorio</label>
+                <select class="field" id="repoScope" disabled><option value=".">Todo el repositorio</option></select>
+                <span class="f-help">En un monorepo, elegí el servicio o aplicación que modifica la historia.</span>
+              </div>
+              <div class="f">
+                <label class="f-label" for="isolateRepo">Checkout de trabajo</label>
+                <label class="notice" style="align-items:center;padding:9px 12px">
+                  <input id="isolateRepo" type="checkbox" checked>
+                  <span><b>Usar worktree aislado</b><br><small>No cambia tu branch ni mezcla modificaciones locales.</small></span>
+                </label>
               </div>
               <div class="f-wide"><div class="state-line" id="repoState" hidden></div></div>
             </div>
@@ -1110,6 +1141,25 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
     <button class="btn" id="btnActionConsole">Ver conversación</button><span class="grow"></span>
     <button class="btn ghost" id="btnActionLater">Resolver después</button>
     <button class="btn primary" id="btnResolveAction">Responder y continuar</button>
+  </div>
+</dialog>
+
+<dialog id="dlgPreflight" aria-labelledby="dlgPreflightTitle">
+  <div class="dlg-head"><h2 id="dlgPreflightTitle">Confirmar dónde se aplicará la historia</h2></div>
+  <div class="dlg-body">
+    <div class="preflight-grid" id="preflightSummary"></div>
+    <div class="notice warn" id="preflightWarnings" hidden style="margin-top:14px"></div>
+    <div class="f" id="branchStrategyWrap" hidden style="margin-top:14px">
+      <label class="f-label" for="branchStrategy">Ya existe trabajo para esta historia</label>
+      <select class="field" id="branchStrategy">
+        <option value="resume">Continuar la branch existente</option>
+        <option value="new">Crear una branch nueva con sufijo de run</option>
+      </select>
+    </div>
+  </div>
+  <div class="dlg-foot">
+    <button class="btn ghost" id="btnPreflightCancel">Cancelar</button><span class="grow"></span>
+    <button class="btn primary" id="btnPreflightConfirm">Confirmar y ejecutar</button>
   </div>
 </dialog>
 
@@ -1358,6 +1408,7 @@ let RUN_MODEL = {
   status: 'none', phase: null, blocked: null, complete: false,
   cost: 0, costReported: false, turns: null,
   elapsedMs: 0, activeSince: null, actions: {},
+  correctionRound: 0, maxCorrectionRounds: 3,
 };
 
 const openAction = () => Object.values(RUN_MODEL.actions).find(a => a.status === 'open');
@@ -2042,6 +2093,7 @@ const storyPayload = () => ({
   acceptanceCriteria: $('stAc').value,
   storyPoints: '',
   labels: '',
+  repoHint: $('stRepoHint').value.trim(),
 });
 
 /** Sin título no hay historia: es el único campo que el studio exige. */
@@ -2080,12 +2132,79 @@ $('btnStop').addEventListener('click', async () => {
   if (run) await api(`/api/run/${run}/stop`, { method: 'POST' }).catch(() => {});
 });
 
+function confirmPreflight(pf, storyLabel) {
+  const isolated = $('isolateRepo').checked;
+  const item = (label, value, wide = false) => `<div class="preflight-item${wide ? ' preflight-wide' : ''}"><b>${esc(label)}</b><code>${esc(value || '—')}</code></div>`;
+  $('preflightSummary').innerHTML =
+    item('Historia', storyLabel) +
+    item('Repositorio', pf.names.join(' · ')) +
+    item('Origen', pf.repoDir, true) +
+    item('Alcance', pf.scope === '.' ? 'Todo el repositorio' : pf.scope) +
+    item('Branch base', pf.baseRef) +
+    item('Checkout', isolated ? 'Worktree aislado' : 'Carpeta seleccionada') +
+    item('Estado remoto', `${pf.ahead} ahead · ${pf.behind} behind`) +
+    item('Proyecto detectado', (pf.profile.technologies || []).join(', ') || 'Sin stack reconocido') +
+    item('Verificación', Object.values(pf.profile.commands || {}).join(' · ') || 'Comandos por descubrir durante arquitectura');
+
+  const warnings = [];
+  if (pf.dirty.length) warnings.push(isolated
+    ? `${pf.dirty.length} cambio(s) locales quedan protegidos fuera del worktree.`
+    : `${pf.dirty.length} cambio(s) locales bloquean la ejecución sin aislamiento.`);
+  if (pf.hint.status === 'mismatch') warnings.push(`La historia espera ${pf.hint.hints[0]} y este repo se identifica como ${pf.names.join(', ')}.`);
+  if (pf.hint.status === 'multi-repo') warnings.push(`La historia declara varios repos: ${pf.hint.hints.join(', ')}.`);
+  if (!pf.profile.ready) warnings.push('No se detectó el stack en este alcance. Verificá que hayas elegido el subproyecto correcto.');
+  if (!(pf.profile.rules || []).length) warnings.push('El proyecto no tiene CLAUDE.md ni .claude/rules; los agentes usarán las convenciones que descubran en el código.');
+  $('preflightWarnings').hidden = !warnings.length;
+  $('preflightWarnings').innerHTML = `<div>${warnings.map(w => `<div>${esc(w)}</div>`).join('')}</div>`;
+
+  const hasExisting = pf.existingBranches.length > 0;
+  $('branchStrategyWrap').hidden = !hasExisting;
+  if (hasExisting) {
+    $('branchStrategyWrap').querySelector('.f-label').textContent = `Ya existe: ${pf.existingBranches.join(', ')}`;
+  }
+  $('branchStrategy').value = 'resume';
+  $('btnPreflightConfirm').disabled = pf.hint.status === 'mismatch' || pf.hint.status === 'multi-repo' || (!isolated && pf.dirty.length > 0);
+
+  const dlg = $('dlgPreflight');
+  dlg.showModal();
+  return new Promise(resolve => {
+    const done = value => { dlg.close(); resolve(value); };
+    $('btnPreflightCancel').onclick = () => done(false);
+    $('btnPreflightConfirm').onclick = () => done(true);
+    dlg.oncancel = e => { e.preventDefault(); done(false); };
+  });
+}
+
 async function start() {
   const manual = manualMode(), consola = consoleMode();
   const storyId = manual ? '' : $('story').value.trim();
 
   if (manual && !requireTitle()) return;
   if (!manual && !consola && !storyId) return $('story').focus();
+
+  if (!$('repoDir').value.trim()) {
+    showView('config');
+    return banner('err', 'Prepará un repositorio antes de ejecutar');
+  }
+
+  if (!consola) {
+    try {
+      const pf = await api('/api/repo/preflight', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          repoDir: $('repoDir').value.trim(), baseBranch: $('baseBranch').value,
+          scope: $('repoScope').value || '.', storyId,
+          title: manual ? $('stTitle').value.trim() : '',
+          repoHint: manual ? $('stRepoHint').value.trim() : '',
+        }),
+      });
+      const label = manual ? $('stTitle').value.trim() : storyId;
+      if (!await confirmPreflight(pf, label)) return;
+    } catch (e) {
+      showView('config');
+      return banner('err', `Preflight: ${e.message}`);
+    }
+  }
 
   showView('ciclo');
   resetPhases();
@@ -2094,6 +2213,7 @@ async function start() {
     status: 'running', phase: null, blocked: null, complete: false,
     cost: 0, costReported: false, turns: null,
     elapsedMs: 0, activeSince: consola ? null : Date.now(), actions: {},
+    correctionRound: 0, maxCorrectionRounds: 3,
   };
   renderRunSurfaces();
   NODE_OUT = {}; NODE_STATE = {}; renderGraph();
@@ -2109,6 +2229,9 @@ async function start() {
         repoDir: $('repoDir').value.trim(),
         permissionMode: $('permMode').value,
         baseBranch: $('baseBranch').value,
+        scope: $('repoScope').value || '.',
+        isolate: $('isolateRepo').checked,
+        branchStrategy: $('branchStrategy').value,
         allowedTools: $('allowedTools').value.trim(),
         extraFlags: $('extraFlags').value.trim(),
       }),
@@ -2120,7 +2243,7 @@ async function start() {
       if (!manual) $('story').value = r.storyId;
     }
     $('cmdHint').textContent = r.prompt
-      ? `${r.cmd}\n\nprimer mensaje: ${r.prompt}\ncwd: ${r.cwd}`
+      ? `${r.cmd}\n\nprimer mensaje: ${r.prompt}\nrepo fuente: ${r.sourceRepo}\ncwd aislado: ${r.cwd}`
       : `${r.cmd}\n\ncwd: ${r.cwd}`;
     setSession('running', 'Abriendo la sesión…');
 
@@ -2287,13 +2410,20 @@ function onEvent(ev) {
     RUN_MODEL.phase = ev.phase;
     for (const p of PHASES) PHASE_STATE[p.id] = 'done';
   }
+  if (ev.t === 'correction_round') {
+    RUN_MODEL.correctionRound = Math.max(0, Number(ev.round) || 0);
+    RUN_MODEL.maxCorrectionRounds = Math.max(1, Number(ev.max) || 3);
+  }
   if (ev.t === 'snapshot') {
+    RUN_MODEL.correctionRound = Math.max(0, Number(ev.correctionRound) || RUN_MODEL.correctionRound || 0);
+    RUN_MODEL.maxCorrectionRounds = Math.max(1, Number(ev.maxCorrectionRounds) || RUN_MODEL.maxCorrectionRounds || 3);
     syncClientElapsed(ev.elapsedMs, ev.status === 'running');
     isReplaying = false;
     if (openAction()) showAction();
   }
   if (ev.t === 'phase' || ev.t === 'agent' || ev.t === 'blocked' ||
-      ev.t === 'action_resolved' || ev.t === 'cycle_complete') renderGraph();
+      ev.t === 'action_resolved' || ev.t === 'cycle_complete' ||
+      ev.t === 'correction_round') renderGraph();
 
   if (ev.t === 'ready') setSession('idle', 'Sin acciones pendientes · chat opcional');
   if (ev.t === 'activity') {
@@ -2360,6 +2490,7 @@ const EV_LABEL = {
   tool: 'herramienta', output: 'salida', say: 'claude', ask: 'vos', artifact: 'archivo',
   blocked: 'bloqueo', result: 'turno', end: 'fin', error: 'error', stderr: 'stderr',
   action: 'acción', action_resolved: 'resuelta', cycle_complete: 'ciclo',
+  correction_round: 'ronda correctiva',
 };
 
 let evCount = 0;
@@ -2461,7 +2592,7 @@ const pushOut = (node, entry) => {
 function layout() {
   // PX deja el margen izquierdo donde entra el lazo de corrección sin pisar
   // las cajas.
-  const ROW = 92, TOP = 40, PX = 58, PW = 206, CX = 316, CW = 194, GAP = 18;
+  const ROW = 92, TOP = 40, PX = 130, PW = 206, CX = 388, CW = 194, GAP = 18;
   const nodes = [], edges = [];
 
   PHASES.forEach((p, i) => {
@@ -2592,8 +2723,17 @@ function renderGraph() {
   const svg = [
     ...g.edges.map(e => `<path class="gedge ${e.kind}${e.kind === 'loop' ? ' dashed' : ''}${
       done(e.b) && e.kind !== 'loop' ? ' done' : ''}" d="${edgePath(e)}"/>`),
-    // Vertical, sobre el lazo: horizontal se montaba encima de las fases.
-    `<text class="glabel gloop" transform="translate(22,${g.TOP + 4.6 * g.ROW}) rotate(-90)">corrige · hasta 3 ciclos</text>`,
+    (() => {
+      const round = Math.max(0, Number(RUN_MODEL.correctionRound) || 0);
+      const max = Math.max(1, Number(RUN_MODEL.maxCorrectionRounds) || 3);
+      const middle = g.TOP + 4.5 * g.ROW;
+      return `<text class="gloop" transform="translate(43,${middle}) rotate(-90)">correcciones</text>
+      <g class="gcycle" data-over="${round > max ? 1 : 0}">
+        <title>${round} de ${max} ciclos correctivos usados</title>
+        <rect x="68" y="${middle - 14}" width="58" height="28" rx="14"/>
+        <text x="97" y="${middle + 4}">${round} / ${max}</text>
+      </g>`;
+    })(),
     // Los hooks no se conectan a una fase: se marca con una línea punteada.
     `<path class="gedge dashed" d="M${g.hx - 28} 34 L${g.hx - 28} ${g.height - 30}"/>`,
     ...g.nodes.filter(n => n.kind === 'titulo').map(n =>
@@ -2806,10 +2946,17 @@ async function prepararRepo() {
       ).join('') || '<option value="">(sin branches)</option>';
       sel.disabled = !r.branches.length;
 
+      const scope = $('repoScope');
+      scope.innerHTML = (r.workspaces || ['.']).map(w =>
+        `<option value="${esc(w)}">${w === '.' ? 'Todo el repositorio' : esc(w)}</option>`,
+      ).join('');
+      scope.disabled = (r.workspaces || []).length <= 1;
+
       repoState(true,
         `${r.clonado ? 'Clonado' : 'Actualizado'} en <code>${esc(r.dir)}</code>` +
         `<span class="grow"></span><span class="tag">${r.branches.length} branches</span>` +
-        `<span class="tag">base: ${esc(r.porDefecto || '—')}</span>`);
+        `<span class="tag">base: ${esc(r.porDefecto || '—')}</span>` +
+        ((r.workspaces || []).length > 1 ? `<span class="tag">${r.workspaces.length - 1} subproyectos</span>` : ''));
     } catch (e) {
       repoState(false, esc(e.message));
     }
@@ -2943,8 +3090,8 @@ $('btnGlosClose').addEventListener('click', () => $('dlgGlosario').close());
 // eventos y los repite al reconectar, así que alcanza con recordar el id y
 // volver a engancharse: el replay reconstruye fases, grafo, log y sesión.
 const LS = 'globant-sdlc-studio';
-const CAMPOS = ['source', 'story', 'repoUrl', 'repoDir', 'baseBranch',
-                'permMode', 'allowedTools', 'extraFlags', 'stTitle', 'stDesc', 'stAc'];
+const CAMPOS = ['source', 'story', 'repoUrl', 'repoDir', 'baseBranch', 'repoScope',
+                'permMode', 'allowedTools', 'extraFlags', 'stTitle', 'stDesc', 'stAc', 'stRepoHint'];
 
 function requestReset() {
   if (RUN_MODEL.status === 'running') {
@@ -2974,11 +3121,14 @@ async function resetStudio() {
 
   $('source').selectedIndex = 0;
   for (const id of ['story', 'repoUrl', 'allowedTools', 'extraFlags',
-                    'stTitle', 'stDesc', 'stAc', 'sendText']) $(id).value = '';
+                    'stTitle', 'stDesc', 'stAc', 'stRepoHint', 'sendText']) $(id).value = '';
   $('permMode').value = 'bypassPermissions';
   $('repoDir').value = PLUGIN?.targetRepo || '';
   $('baseBranch').innerHTML = '<option value="">—</option>';
   $('baseBranch').disabled = true;
+  $('repoScope').innerHTML = '<option value=".">Todo el repositorio</option>';
+  $('repoScope').disabled = true;
+  $('isolateRepo').checked = true;
   $('cmdHint').textContent = 'Todavía no se ejecutó ningún run en esta sesión del studio.';
   $('cfgStatus').textContent = '';
   $('log').innerHTML = '';
@@ -2988,6 +3138,7 @@ async function resetStudio() {
     status: 'none', phase: null, blocked: null, complete: false,
     cost: 0, costReported: false, turns: null,
     elapsedMs: 0, activeSince: null, actions: {},
+    correctionRound: 0, maxCorrectionRounds: 3,
   };
   NODE_OUT = {}; NODE_STATE = {}; selectedNode = null;
   $('detailCard').hidden = true;
@@ -3008,12 +3159,13 @@ $('btnResetCancel').addEventListener('click', () => $('dlgReset').close());
 $('btnResetConfirm').addEventListener('click', resetStudio);
 
 function guardar() {
-  const datos = { run };
+  const datos = { run, isolateRepo: $('isolateRepo').checked };
   for (const c of CAMPOS) datos[c] = $(c).value;
   try { localStorage.setItem(LS, JSON.stringify(datos)); } catch { /* sin storage */ }
 }
 
 for (const c of CAMPOS) $(c).addEventListener('change', guardar);
+$('isolateRepo').addEventListener('change', guardar);
 
 async function restaurar() {
   let datos;
@@ -3022,12 +3174,13 @@ async function restaurar() {
   for (const c of CAMPOS) {
     if (!datos[c]) continue;
     // El desplegable de branches se llena recién al preparar el repo.
-    if (c === 'baseBranch' && !$(c).querySelector(`option[value="${CSS.escape(datos[c])}"]`)) {
+    if ((c === 'baseBranch' || c === 'repoScope') && !$(c).querySelector(`option[value="${CSS.escape(datos[c])}"]`)) {
       $(c).insertAdjacentHTML('beforeend', `<option value="${esc(datos[c])}" selected>${esc(datos[c])}</option>`);
       $(c).disabled = false;
     }
     $(c).value = datos[c];
   }
+  if (typeof datos.isolateRepo === 'boolean') $('isolateRepo').checked = datos.isolateRepo;
   syncSource();
   if (!datos.run) return;
 
@@ -3043,6 +3196,8 @@ async function restaurar() {
     turns: info.turns ?? null, elapsedMs: Number(info.elapsedMs) || 0,
     activeSince: info.status === 'running' ? Date.now() : null,
     actions: Object.fromEntries((info.actions || []).map(a => [a.id, a])),
+    correctionRound: Math.max(0, Number(info.correctionRound) || 0),
+    maxCorrectionRounds: Math.max(1, Number(info.maxCorrectionRounds) || 3),
   };
   NODE_OUT = {}; NODE_STATE = {}; PHASE_STATE = {}; PHASE_NOTE = {};
   $('log').innerHTML = '';

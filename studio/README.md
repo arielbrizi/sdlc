@@ -401,6 +401,12 @@ decisión, pedirle que corrija algo, revisar el diff—. `Cerrar` la termina;
 Con **Solo consola, sin historia** la sesión se abre vacía, sin invocar `/us`:
 sirve para usar el repo objetivo de forma interactiva sin arrancar el ciclo.
 
+El lazo entre Verificación/Revisión e Implementación muestra la etiqueta
+`Correcciones` y un contador compacto `N / 3`. La implementación inicial no consume una ronda:
+el contador aumenta únicamente cuando `@desarrollador` vuelve a intervenir
+después de QA, seguridad o reviewer. El valor forma parte del estado del run y
+se conserva al recargar o reconectar el Studio.
+
 Ojo: mientras la sesión esté abierta hay un proceso `claude` vivo. El botón
 Ejecutar queda deshabilitado hasta que la cierres — un run a la vez.
 
@@ -447,6 +453,32 @@ desprefija antes de mapear. Para tracking exacto,
 la opción limpia es que el skill escriba un `phase.json` en el directorio del
 run y que el studio lo lea.
 
+## Trabajar sobre un proyecto existente
+
+**Preparar** acepta una URL, el root de un repo local o un directorio dentro de
+un monorepo. Siempre actualiza y poda los remotos antes de listar branches. En
+un monorepo detecta aplicaciones y servicios por sus manifests y permite elegir
+un alcance; ese alcance queda en `repo-context.json` y acompaña a todos los
+agentes.
+
+Antes de ejecutar, Studio muestra un preflight con historia, repo, remoto,
+branch base, cambios locales, ahead/behind, stack, comandos de verificación y
+branches previas de la misma historia. Si ya hay trabajo, el usuario elige entre
+continuarlo o crear una branch nueva.
+
+Por defecto el run ocurre en un `git worktree` estable por repositorio e
+historia dentro de `--workspace`. Así no cambia la branch abierta por el dev ni
+mezcla sus modificaciones sin commit. El skill conserva el contrato de branch
+y trabaja exclusivamente en ese checkout aislado. Desactivar el aislamiento es
+posible, pero un working tree sucio vuelve a bloquear el preflight.
+
+Después de resolver la historia, `validate-repo.sh` compara `repo_hint` con el
+remoto, el nombre local y el subproyecto. Un mismatch corta antes de invocar
+agentes. Una historia multirepo también corta de forma explícita: cada run
+automático produce exactamente una branch y un PR, por lo que primero se divide
+el alcance y después se coordinan sus runs. Esto evita que un agente interprete
+por su cuenta qué parte aplicar en cada repositorio.
+
 ## Seguridad
 
 El endpoint de run ejecuta un binario en la máquina donde corre el servidor. Las
@@ -478,6 +510,9 @@ responsabilidad lo que pongas ahí.
 - El parser de frontmatter cubre `clave: valor` y listas inline `[a, b]`. Si un
   archivo usa YAML anidado, la UI cae al editor de texto plano.
 - No hay historial de runs entre reinicios del servidor: viven en memoria.
+- Los worktrees aislados se conservan para poder reanudar la historia. Studio
+  todavía no ofrece una acción de limpieza; se administran con
+  `git worktree list` y `git worktree remove` desde el repo fuente.
 - La historia escrita a mano vive en `.claude/run/<ID>/`, que suele estar
   ignorado por git: es estado del run, no documentación del backlog. Si querés
   conservarla, versioná el directorio o copiala a otro lado.

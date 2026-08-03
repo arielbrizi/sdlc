@@ -20,12 +20,22 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import os from 'node:os';
 import {
+  MAX_CORRECTION_ROUNDS,
   RECOVERY_PROMPT,
+  correctionRoundForTransition,
   finalCycleCompletion,
   prCommand,
   prTool,
   technicalToolInterruption,
 } from './run-signals.mjs';
+import {
+  discoverWorkspaces,
+  discoverProjectProfile,
+  isolatedWorktreePath,
+  repoHintVerdict,
+  repoNames,
+  safeScope,
+} from './repository.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..');
@@ -434,7 +444,7 @@ const toList = (v, sep) => (Array.isArray(v) ? v : String(v || '').split(sep))
  * No valida los criterios de aceptación: eso lo decide `refinamiento`, que es el
  * circuit breaker del flujo. Escribir la historia acá no saltea ese gate.
  */
-async function writeManualStory(repoDir, input) {
+function manualStory(input) {
   const title = String(input.title || '').trim();
   if (!title) {
     throw Object.assign(new Error('La historia necesita un título'), { code: 400 });
@@ -447,7 +457,7 @@ async function writeManualStory(repoDir, input) {
   }
 
   const points = Number(input.storyPoints);
-  const story = {
+  return {
     id,
     tracker: 'manual',
     url: null,
@@ -460,9 +470,14 @@ async function writeManualStory(repoDir, input) {
     labels: toList(input.labels, ','),
     attachments: [],
     linked_issues: [],
-    repo_hint: null,
+    repo_hint: String(input.repoHint || '').trim() || null,
     raw: { source: 'studio', authored_at: new Date().toISOString() },
   };
+}
+
+async function writeManualStory(repoDir, input) {
+  const story = manualStory(input);
+  const { id } = story;
 
   const dir = runDirFor(repoDir, id);
   await fsp.mkdir(dir, { recursive: true });
@@ -608,10 +623,24 @@ function startVcsLogin(provider) {
  * hace fetch después: reclonar en cada run sería lento y perdería el trabajo.
  */
 async function prepararRepo(raw) {
-  // Una carpeta local que ya existe se usa tal cual.
+  // Una carpeta local existente puede ser el root o cualquier directorio de un
+  // monorepo. Se actualiza igual que un clone administrado por Studio: mostrar
+  // branches viejas en el preflight termina creando features desde una base
+  // distinta de la que el usuario eligió.
   const comoPath = path.resolve(String(raw || '').trim());
-  if (fs.existsSync(path.join(comoPath, '.git'))) {
-    return { dir: comoPath, clonado: false, ...(await ramas(comoPath)) };
+  if (fs.existsSync(comoPath)) {
+    const root = await runClaudeLike('git', ['rev-parse', '--show-toplevel'], { cwd: comoPath });
+    if (root.code === 0) {
+      const dir = root.stdout.trim();
+      const remotes = await runClaudeLike('git', ['remote'], { cwd: dir });
+      if (remotes.stdout.trim()) {
+        const fetched = await runClaudeLike('git', ['fetch', '--all', '--prune'], { cwd: dir });
+        if (fetched.code !== 0) {
+          throw Object.assign(new Error(`git fetch falló: ${fetched.stderr.slice(0, 300)}`), { code: 502 });
+        }
+      }
+      return { dir, clonado: false, local: true, ...(await ramas(dir)), workspaces: await discoverWorkspaces(dir) };
+    }
   }
 
   const info = parseRepoUrl(raw);
@@ -624,7 +653,7 @@ async function prepararRepo(raw) {
   if (fs.existsSync(path.join(dir, '.git'))) {
     const r = await runClaudeLike('git', ['fetch', '--all', '--prune'], { cwd: dir });
     if (r.code !== 0) throw Object.assign(new Error(`git fetch falló: ${r.stderr.slice(0, 300)}`), { code: 502 });
-    return { dir, clonado: false, provider: info.provider, ...(await ramas(dir)) };
+    return { dir, clonado: false, provider: info.provider, ...(await ramas(dir)), workspaces: await discoverWorkspaces(dir) };
   }
 
   await fsp.mkdir(WORKSPACE, { recursive: true });
@@ -635,7 +664,7 @@ async function prepararRepo(raw) {
       { code: 502 },
     );
   }
-  return { dir, clonado: true, provider: info.provider, ...(await ramas(dir)) };
+  return { dir, clonado: true, provider: info.provider, ...(await ramas(dir)), workspaces: await discoverWorkspaces(dir) };
 }
 
 /** Branches remotas y la branch por defecto del repo. */
@@ -661,11 +690,101 @@ async function ramas(dir) {
   }
 
   const head = await runClaudeLike('git', ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], { cwd: dir });
-  const porDefecto = head.code === 0
+  // En clones viejos origin/HEAD puede quedar apuntando a una branch temporal
+  // aunque el repo ya haya vuelto a main. Una base estable conocida gana sobre
+  // ese puntero local; el usuario conserva el selector para repos con otra
+  // convención.
+  const estable = ['main', 'master', 'develop'].find(b => branches.includes(b));
+  const porDefecto = estable || (head.code === 0
     ? head.stdout.trim().replace(/^origin\//, '')
-    : ['main', 'master', 'develop'].find(b => branches.includes(b)) || branches[0] || null;
+    : branches[0] || null);
 
   return { branches, porDefecto };
+}
+
+async function gitValue(dir, args) {
+  const out = await runClaudeLike('git', args, { cwd: dir });
+  return out.code === 0 ? out.stdout.trim() : '';
+}
+
+/** Estado verificable que se muestra antes de autorizar un run. */
+async function repositoryPreflight({ repoDir, baseBranch, scope = '.', storyId = '', title = '', repoHint = '' }) {
+  const selected = path.resolve(repoDir || TARGET_REPO);
+  const root = await gitValue(selected, ['rev-parse', '--show-toplevel']);
+  if (!root) throw Object.assign(new Error(`${selected} no es un repositorio Git`), { code: 400 });
+  const scopedDir = safeScope(root, scope);
+  const base = String(baseBranch || '').trim();
+  if (!base) throw Object.assign(new Error('elegí una branch base'), { code: 400 });
+  if (base.startsWith('feature/')) {
+    throw Object.assign(new Error('una feature no puede ser la base del modo automático'), { code: 400 });
+  }
+  const remote = await gitValue(root, ['remote', 'get-url', 'origin']);
+  if (remote) {
+    const fetched = await runClaudeLike('git', ['fetch', '--quiet', 'origin', base], { cwd: root });
+    if (fetched.code !== 0) {
+      throw Object.assign(new Error(`no se pudo actualizar origin/${base}: ${fetched.stderr.slice(0, 300)}`), { code: 502 });
+    }
+  }
+  const baseRef = remote ? `origin/${base}` : base;
+  if (!await gitValue(root, ['rev-parse', '--verify', `${baseRef}^{commit}`])) {
+    throw Object.assign(new Error(`la branch base no existe: ${baseRef}`), { code: 400 });
+  }
+  const dirtyRaw = await gitValue(root, ['status', '--porcelain', '--untracked-files=all']);
+  const dirty = dirtyRaw.split('\n').filter(Boolean)
+    .filter(line => !/^.. \.claude\/(run\/|globant-sdlc\.json$)/.test(line));
+  const current = await gitValue(root, ['branch', '--show-current']);
+  const counts = (await gitValue(root, ['rev-list', '--left-right', '--count', `${baseRef}...HEAD`]))
+    .split(/\s+/).map(Number);
+  const names = repoNames(root, remote, scope === '.' ? '' : scope);
+  const hint = repoHintVerdict(repoHint, names);
+  const cleanId = String(storyId || (title ? `LOCAL-${slugify(title)}` : '')).replace(/^#/, '');
+  const candidate = cleanId && title
+    ? `feature/${cleanId}-${slugify(title, 48)}`
+    : cleanId ? `feature/${cleanId}` : '';
+  const branches = (await gitValue(root, ['branch', '-a', '--format=%(refname:short)'])).split('\n').filter(Boolean);
+  const related = cleanId
+    ? branches.filter(branch => branch.replace(/^(?:remotes\/)?origin\//, '').startsWith(`feature/${cleanId}`))
+    : [];
+  return {
+    repoDir: root, scopedDir, scope, remote, names, baseBranch: base, baseRef,
+    currentBranch: current || '(detached)', dirty, ahead: counts[1] || 0, behind: counts[0] || 0,
+    hint, candidateBranch: candidate, existingBranches: [...new Set(related)],
+    workspaces: await discoverWorkspaces(root), profile: await discoverProjectProfile(scopedDir),
+  };
+}
+
+async function copyRunConfig(sourceScope, targetScope) {
+  const source = path.join(sourceScope, '.claude', 'globant-sdlc.json');
+  if (!fs.existsSync(source)) return;
+  const targetDir = path.join(targetScope, '.claude');
+  await fsp.mkdir(targetDir, { recursive: true });
+  await fsp.copyFile(source, path.join(targetDir, 'globant-sdlc.json'));
+}
+
+/** Crea o reutiliza un checkout aislado estable para repo + historia. */
+async function prepareRunWorkspace(preflight, storyId, isolate = true, branchStrategy = 'resume') {
+  if (!isolate) return { cwd: preflight.scopedDir, isolated: false, worktree: null };
+  const cleanId = String(storyId).replace(/^#/, '');
+  const workspaceId = branchStrategy === 'new' ? `${cleanId}-new-${Date.now()}` : cleanId;
+  const worktree = isolatedWorktreePath(WORKSPACE, preflight.repoDir, workspaceId, preflight.scope);
+  const scope = preflight.scope === '.' ? '.' : preflight.scope;
+  let reused = false;
+  const existing = await gitValue(worktree, ['rev-parse', '--show-toplevel']);
+  if (existing) {
+    reused = true;
+  } else {
+    if (fs.existsSync(worktree)) {
+      throw Object.assign(new Error(`el destino del worktree existe pero no es Git: ${worktree}`), { code: 409 });
+    }
+    await fsp.mkdir(path.dirname(worktree), { recursive: true });
+    const added = await runClaudeLike('git', ['worktree', 'add', '--detach', worktree, preflight.baseRef], { cwd: preflight.repoDir });
+    if (added.code !== 0) {
+      throw Object.assign(new Error(`no se pudo crear el worktree: ${added.stderr.slice(0, 400)}`), { code: 502 });
+    }
+  }
+  const targetScope = safeScope(worktree, scope);
+  await copyRunConfig(preflight.repoDir, targetScope);
+  return { cwd: targetScope, isolated: true, worktree, reused };
 }
 
 // ------------------------------------------------------------------- auth
@@ -949,6 +1068,16 @@ function inferPhase(run, msg) {
         // Los subagentes de un plugin llegan calificados: `globant-sdlc:qa`.
         const phase = AGENT_PHASE[agent];
         if (phase !== undefined) {
+          const nextRound = correctionRoundForTransition(
+            run.phase, run.correctionRound, agent,
+          );
+          if (!run.blocked && !run.pendingBlock && nextRound > run.correctionRound) {
+            run.correctionRound = nextRound;
+            emit(run, {
+              t: 'correction_round', round: run.correctionRound,
+              max: MAX_CORRECTION_ROUNDS, phase, at: Date.now(),
+            });
+          }
           if (setPhase(run, phase, `@${agent}`)) {
             emit(run, { t: 'agent', agent, phase, at: Date.now() });
           }
@@ -1036,7 +1165,7 @@ function setPhase(run, phase, detail) {
 /** Confirma el avance leyendo los artefactos que el flujo deja en disco. */
 async function pollArtifacts(run) {
   if (!run.storyId) return; // sesión de consola: no hay run de historia que auditar
-  const dir = path.join(TARGET_REPO, '.claude/run', run.storyId);
+  const dir = path.join(run.cwd, '.claude/run', run.storyId.replace(/^#/, ''));
   const map = [
     ['story.json', 0], ['config.json', 0], ['git.json', 0],
     ['refinement.json', 1], ['architecture.json', 2], ['plan.md', 2],
@@ -1106,7 +1235,7 @@ function markRunActive(run) {
   emit(run, { t: 'activity', phase: run.phase, at: Date.now() });
 }
 
-function startRun({ storyId, repoDir, manual, baseBranch, permissionMode, allowedTools, extraFlags }) {
+function startRun({ storyId, repoDir, sourceRepo, manual, baseBranch, permissionMode, allowedTools, extraFlags, workspaceInfo, branchStrategy }) {
   const id = randomUUID();
   // El tracker va explícito: story.json ya dice `manual`, pero decirlo también en
   // la invocación evita que el resolver tenga que adivinar por la forma del ID.
@@ -1134,7 +1263,7 @@ function startRun({ storyId, repoDir, manual, baseBranch, permissionMode, allowe
 
   const startedAt = Date.now();
   const run = {
-    id, storyId, prompt, args, cwd: repoDir,
+    id, storyId, prompt, args, cwd: repoDir, sourceRepo, workspaceInfo,
     startedAt, status: 'running', elapsedMs: 0,
     activeStartedAt: prompt ? startedAt : null,
     phase: null, phaseHistory: [], blocked: null, pendingBlock: null, cycleComplete: false,
@@ -1142,6 +1271,7 @@ function startRun({ storyId, repoDir, manual, baseBranch, permissionMode, allowe
     artifacts: {}, events: [], clients: new Set(), child: null, stdinClosed: false,
     pending: new Map(), // tool_use_id -> herramienta/agente/nodo, para atribuir resultados
     actions: new Map(), autoRecoveryCount: 0, prConfirmed: false,
+    correctionRound: 0,
   };
   runs.set(id, run);
 
@@ -1151,6 +1281,9 @@ function startRun({ storyId, repoDir, manual, baseBranch, permissionMode, allowe
     // elegir la branch base en el panel alcanza para que el ciclo la respete.
     const env = { ...process.env };
     if (baseBranch) env.CLAUDE_PLUGIN_OPTION_BASE_BRANCH = baseBranch;
+    if (sourceRepo) env.FLOW360_SOURCE_REPO = sourceRepo;
+    if (workspaceInfo?.isolated) env.FLOW360_ISOLATED_WORKTREE = '1';
+    if (branchStrategy === 'new') env.FLOW360_FORCE_NEW_BRANCH = '1';
     child = spawn('claude', args, { cwd: repoDir, env, stdio: ['pipe', 'pipe', 'pipe'] });
   } catch (e) {
     pauseRunWork(run);
@@ -1365,6 +1498,12 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, out);
     }
 
+    if (p === '/api/repo/preflight' && req.method === 'POST') {
+      const body = JSON.parse(await readBody(req));
+      const out = await repositoryPreflight(body);
+      return json(res, 200, out);
+    }
+
     if (p === '/api/vcs/login' && req.method === 'POST') {
       const { provider } = JSON.parse(await readBody(req));
       const { error } = startVcsLogin(provider);
@@ -1455,9 +1594,9 @@ const server = http.createServer(async (req, res) => {
 
     if (p === '/api/run' && req.method === 'POST') {
       const body = JSON.parse(await readBody(req));
-      const repoDir = path.resolve(body.repoDir || TARGET_REPO);
-      if (!fs.existsSync(repoDir)) {
-        return json(res, 400, { error: `El directorio no existe: ${repoDir}` });
+      const selectedRepo = path.resolve(body.repoDir || TARGET_REPO);
+      if (!fs.existsSync(selectedRepo)) {
+        return json(res, 400, { error: `El directorio no existe: ${selectedRepo}` });
       }
 
       // Sin historia es una sesión de consola: se abre vacía, sin invocar /us.
@@ -1468,8 +1607,8 @@ const server = http.createServer(async (req, res) => {
       let storyId = String(body.storyId || '').trim();
       const manual = !consoleMode && !!(body.story && typeof body.story === 'object');
       if (manual) {
-        const story = { ...body.story, id: body.story.id || storyId };
-        storyId = (await writeManualStory(repoDir, story)).id;
+        const story = manualStory({ ...body.story, id: body.story.id || storyId });
+        storyId = story.id;
       }
       if (consoleMode) {
         storyId = null;
@@ -1477,14 +1616,58 @@ const server = http.createServer(async (req, res) => {
         return json(res, 400, { error: 'ID de historia inválido' });
       }
 
+      let repoDir = selectedRepo;
+      let workspaceInfo = { cwd: selectedRepo, isolated: false, worktree: null };
+      let preflight = null;
+      if (!consoleMode) {
+        preflight = await repositoryPreflight({
+          repoDir: selectedRepo,
+          baseBranch: String(body.baseBranch || '').trim(),
+          scope: String(body.scope || '.'),
+          storyId,
+          title: manual ? body.story.title : '',
+          repoHint: manual ? body.story.repoHint : '',
+        });
+        if (preflight.hint.status === 'mismatch') {
+          return json(res, 409, { error: `La historia indica el repo '${preflight.hint.hints[0]}', pero seleccionaste ${preflight.names.join(', ')}.` });
+        }
+        if (preflight.hint.status === 'multi-repo') {
+          return json(res, 409, { error: `La historia indica varios repos (${preflight.hint.hints.join(', ')}). Dividí el alcance por repositorio antes de ejecutar: un run produce una branch y un PR.` });
+        }
+        const isolate = body.isolate !== false;
+        if (!isolate && preflight.dirty.length) {
+          return json(res, 409, { error: `El working tree tiene ${preflight.dirty.length} cambio(s). Activá el worktree aislado o guardá esos cambios.` });
+        }
+        workspaceInfo = await prepareRunWorkspace(preflight, storyId, isolate, body.branchStrategy || 'resume');
+        repoDir = workspaceInfo.cwd;
+
+        if (manual) await writeManualStory(repoDir, { ...body.story, id: storyId });
+        const contextDir = runDirFor(repoDir, storyId);
+        await fsp.mkdir(contextDir, { recursive: true });
+        await fsp.writeFile(path.join(contextDir, 'repo-context.json'), `${JSON.stringify({
+          source_repo: preflight.repoDir,
+          working_repo: workspaceInfo.worktree || preflight.repoDir,
+          scope: preflight.scope,
+          names: preflight.names,
+          remote: preflight.remote || null,
+          base_branch: preflight.baseBranch,
+          isolated: workspaceInfo.isolated,
+          reused: !!workspaceInfo.reused,
+          profile: preflight.profile,
+        }, null, 2)}\n`, 'utf8');
+      }
+
       const run = startRun({
         storyId,
         repoDir,
+        sourceRepo: preflight?.repoDir || selectedRepo,
         manual,
         baseBranch: String(body.baseBranch || '').trim(),
         permissionMode: body.permissionMode || null,
         allowedTools: String(body.allowedTools || '').trim(),
         extraFlags: body.extraFlags || '',
+        workspaceInfo,
+        branchStrategy: body.branchStrategy || 'resume',
       });
       return json(res, 200, {
         runId: run.id,
@@ -1492,6 +1675,9 @@ const server = http.createServer(async (req, res) => {
         cmd: `claude ${run.args.join(' ')}`,
         prompt: run.prompt, // va por stdin, no en la línea de comandos
         cwd: repoDir,
+        sourceRepo: preflight?.repoDir || selectedRepo,
+        isolated: workspaceInfo.isolated,
+        worktree: workspaceInfo.worktree,
       });
     }
 
@@ -1507,7 +1693,9 @@ const server = http.createServer(async (req, res) => {
         elapsedMs: runElapsed(run),
         turns: run.turns ?? null,
         actions: [...run.actions.values()], cycleComplete: run.cycleComplete,
-        cwd: run.cwd, prompt: run.prompt, vivo: !!run.child,
+        correctionRound: run.correctionRound, maxCorrectionRounds: MAX_CORRECTION_ROUNDS,
+        cwd: run.cwd, sourceRepo: run.sourceRepo, workspaceInfo: run.workspaceInfo,
+        prompt: run.prompt, vivo: !!run.child,
       });
     }
 
@@ -1524,7 +1712,9 @@ const server = http.createServer(async (req, res) => {
       // Marca el fin del replay para que el front no abra diálogos una vez por
       // cada evento histórico; el estado ya quedó reconstruido en ese punto.
       res.write(`data: ${JSON.stringify({
-        t: 'snapshot', status: run.status, elapsedMs: runElapsed(run), at: Date.now(),
+        t: 'snapshot', status: run.status, elapsedMs: runElapsed(run),
+        correctionRound: run.correctionRound, maxCorrectionRounds: MAX_CORRECTION_ROUNDS,
+        at: Date.now(),
       })}\n\n`);
       // Mientras el proceso viva la sesión sigue: `idle` es esperando input, no fin.
       if (run.child) {

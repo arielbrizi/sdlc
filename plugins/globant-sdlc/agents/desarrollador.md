@@ -16,6 +16,8 @@ las correcciones vuelven a vos.
 1. Lee `plan.md` y `story.json` del directorio del run. El plan manda: si algo
    del plan no cierra contra el codebase, frena y reportalo, no improvises otro
    diseño.
+   Lee también `repo-context.json`: `scope` es el límite de implementación. No
+   cambies al checkout fuente ni a otro workspace para esquivar ese alcance.
 2. Lee las reglas del repo antes de escribir: `CLAUDE.md` y `.claude/rules/`.
    Son mas especificas que cualquier default tuyo.
 3. Antes de resolver algo, busca como esta resuelto un caso analogo en el

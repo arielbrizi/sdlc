@@ -1,5 +1,16 @@
 /** Señales puras del stream que el Studio usa para recuperar y cerrar runs. */
 
+export const MAX_CORRECTION_ROUNDS = 3;
+
+/**
+ * Una ronda correctiva empieza cuando el desarrollador vuelve a intervenir
+ * después de QA/seguridad o reviewer. La implementación inicial no cuenta.
+ */
+export function correctionRoundForTransition(phase, round, agent) {
+  const current = Math.max(0, Number(round) || 0);
+  return agent === 'desarrollador' && Number(phase) >= 5 ? current + 1 : current;
+}
+
 export const RECOVERY_PROMPT = `La llamada de herramienta anterior fue interrumpida por el runtime, no por una decisión del usuario. Antes de repetir nada, reconciliá los efectos persistidos: inspeccioná archivos y artefactos del run, git status y commits recientes, el estado del subagente y el PR remoto si correspondía. Si la operación ya produjo su efecto, no la repitas: continuá desde la fase siguiente. Reintentá la herramienta únicamente si confirmás que no se completó. No pidas confirmación para continuar.`;
 
 export function technicalToolInterruption(text) {

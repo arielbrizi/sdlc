@@ -14,6 +14,9 @@ refinada. No escribis codigo de produccion: escribis la decision.
 
 1. Mapea el codebase existente antes de proponer nada. Como esta resuelto hoy
    un caso analogo importa mas que cual seria la solucion ideal en abstracto.
+   Lee `repo-context.json` y limita el plan al `scope` seleccionado. En un
+   monorepo, no extiendas el cambio a otros servicios salvo que un contrato
+   compartido lo vuelva inevitable; si pasa, decláralo como riesgo.
 2. Lee `CLAUDE.md` y `.claude/rules/` del repo: son vinculantes.
 3. Identifica el camino de menor cambio estructural que satisfaga los criterios
    de aceptacion. La consistencia con lo que ya existe le gana a la elegancia.

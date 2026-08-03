@@ -39,6 +39,12 @@ OUT="$(CLAUDE_PROJECT_DIR="$TMP_REPO" CLAUDE_PLUGIN_OPTION_BASE_BRANCH=main \
   plugins/globant-sdlc/scripts/prepare-branch.sh LOCAL-123 'Exportar CSV')"
 grep -q '"mode": "resumed"' <<<"$OUT"
 
+# Pedir una ejecución nueva no pisa ni reutiliza la branch previa.
+OUT="$(CLAUDE_PROJECT_DIR="$TMP_REPO" CLAUDE_PLUGIN_OPTION_BASE_BRANCH=main \
+  FLOW360_FORCE_NEW_BRANCH=1 plugins/globant-sdlc/scripts/prepare-branch.sh LOCAL-123 'Exportar CSV')"
+grep -q 'feature/LOCAL-123-exportar-csv-run-' <<<"$OUT"
+git -C "$TMP_REPO" switch -q feature/LOCAL-123-exportar-csv
+
 # Una feature como base y cambios del usuario deben bloquear el preflight.
 if CLAUDE_PROJECT_DIR="$TMP_REPO" CLAUDE_PLUGIN_OPTION_BASE_BRANCH=feature/otra \
   plugins/globant-sdlc/scripts/prepare-branch.sh LOCAL-456 Otra >/dev/null 2>&1; then
@@ -53,6 +59,34 @@ if CLAUDE_PROJECT_DIR="$TMP_REPO" CLAUDE_PLUGIN_OPTION_BASE_BRANCH=main \
   exit 1
 fi
 rm "$TMP_REPO/user.txt"
+
+# En un subproyecto de monorepo, los artefactos del run llevan prefijo desde el
+# root Git y aun así no se confunden con cambios del usuario.
+mkdir -p "$TMP_REPO/apps/web/.claude/run/SCOPE-1"
+printf '%s\n' '{}' > "$TMP_REPO/apps/web/.claude/run/SCOPE-1/repo-context.json"
+OUT="$(CLAUDE_PROJECT_DIR="$TMP_REPO/apps/web" CLAUDE_PLUGIN_OPTION_BASE_BRANCH=main \
+  plugins/globant-sdlc/scripts/prepare-branch.sh SCOPE-1 'Cambio web')"
+grep -q '"branch": "feature/SCOPE-1-cambio-web"' <<<"$OUT"
+git -C "$TMP_REPO" switch -q feature/LOCAL-123-exportar-csv
+
+# repo_hint acepta el remoto esperado y bloquea repo equivocado o multirepo.
+mkdir -p "$TMP_REPO/.claude/run/REPO-1"
+printf '%s\n' '{"id":"REPO-1","tracker":"manual","title":"Repo","repo_hint":"test-repo"}' \
+  > "$TMP_REPO/.claude/run/REPO-1/story.json"
+printf '%s\n' '{"names":["test-repo"]}' > "$TMP_REPO/.claude/run/REPO-1/repo-context.json"
+CLAUDE_PROJECT_DIR="$TMP_REPO" plugins/globant-sdlc/scripts/validate-repo.sh REPO-1 >/dev/null
+printf '%s\n' '{"id":"REPO-1","tracker":"manual","title":"Repo","repo_hint":"otro-repo"}' \
+  > "$TMP_REPO/.claude/run/REPO-1/story.json"
+if CLAUDE_PROJECT_DIR="$TMP_REPO" plugins/globant-sdlc/scripts/validate-repo.sh REPO-1 >/dev/null 2>&1; then
+  echo 'FAIL: aceptó un repo_hint que no coincide' >&2
+  exit 1
+fi
+printf '%s\n' '{"id":"REPO-1","tracker":"manual","title":"Repo","repo_hint":"frontend,backend"}' \
+  > "$TMP_REPO/.claude/run/REPO-1/story.json"
+if CLAUDE_PROJECT_DIR="$TMP_REPO" plugins/globant-sdlc/scripts/validate-repo.sh REPO-1 >/dev/null 2>&1; then
+  echo 'FAIL: aceptó una historia multirepo en un run único' >&2
+  exit 1
+fi
 
 # El hook permite commit en la feature preparada pero bloquea la base
 # configurada aunque no sea una branch protegida convencional.

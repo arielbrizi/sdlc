@@ -35,6 +35,21 @@ El resolver crea `.claude/run/<ID>/` y devuelve la ruta de `story.json` con el
 esquema canónico (ver `references/trackers.md`). Si falla, **detenete y
 reportá**: no inventes el contenido de la historia ni sigas con supuestos.
 
+Validá inmediatamente que la historia pertenezca al repositorio y alcance
+activos:
+
+```bash
+"${CLAUDE_PLUGIN_ROOT}"/scripts/validate-repo.sh <ID>
+```
+
+El script compara `repo_hint` con el nombre local, el remoto y el subproyecto
+seleccionado. Si no coinciden, detenete: ejecutar sobre otro repo es una
+modificación incorrecta, no una ambigüedad que el agente pueda resolver. Si la
+historia declara varios repos también se detiene. El modo automático mantiene
+el contrato **un run = una branch = un PR**; primero hay que dividir la historia
+en alcances verificables por repositorio y ejecutar un run coordinado por cada
+uno.
+
 Después leé qué tiene habilitado este repo:
 
 ```bash
@@ -88,6 +103,10 @@ Guardá el JSON que devuelve como `.claude/run/<ID>/git.json`. Es el contrato de
 branch para `desarrollador`: contiene `base_branch`, `base_ref`, `branch` y si el
 run fue creado o reanudado.
 
+Cuando Studio entrega un worktree aislado, trabajá únicamente en el cwd actual.
+No vuelvas al checkout fuente indicado por `FLOW360_SOURCE_REPO`: puede contener
+cambios del desarrollador y existe solo como referencia de procedencia.
+
 ### Contrato de salidas de agentes
 
 Cada subagente debe devolver exactamente un objeto JSON parseable con un campo
@@ -117,7 +136,8 @@ Frenar acá es el comportamiento correcto, no una falla.
 
 ## Fase 2 — Arquitectura
 
-Delegá en `arquitectura`, pasándole `story.json`, `config.json` y `git.json`.
+Delegá en `arquitectura`, pasándole `story.json`, `config.json`, `git.json` y
+`repo-context.json`.
 Guardá su JSON en `architecture.json` y escribí el campo `plan_md` como
 `plan.md`. El agente no escribe archivos. El plan contiene:
 impacto en el codebase, diseño propuesto, archivos a tocar, contratos de API,
@@ -134,8 +154,8 @@ escrito, no implementes y pedí revisión humana explícita.
 corre en repos de backend, y ahí un agente de diseño produce hallazgos genéricos
 que nadie puede accionar.
 
-Delegá en `ux`, pasándole `story.json`, `plan.md` y la sección de diseño de
-`config.json`. Guardá su JSON en `design.json`. Produce `design.md` en el
+Delegá en `ux`, pasándole `story.json`, `plan.md`, `repo-context.json` y la
+sección de diseño de `config.json`. Guardá su JSON en `design.json`. Produce `design.md` en el
 directorio del run —escribilo vos con
 el contenido que devuelve en `design_md`— con qué componentes del design system
 reusar, qué falta, tokens, estados y criterios visuales verificables.
@@ -157,8 +177,9 @@ cuando una de las dos fuentes no está disponible.
 
 ## Fase 4 — Implementación
 
-Delegá en el subagente `desarrollador`, pasándole `plan.md`, `story.json` y
-`git.json`. Si existe `design.md`, va también: es contrato, no sugerencia.
+Delegá en el subagente `desarrollador`, pasándole `plan.md`, `story.json`,
+`git.json` y `repo-context.json`. Si existe `design.md`, va también: es
+contrato, no sugerencia.
 
 Es el único agente del ciclo que escribe código. La branch
 `feature/<ID>-<slug>` ya fue preparada en el preflight: el agente debe verificar
@@ -177,7 +198,8 @@ contexto, leer su salida y encadenar la fase siguiente.
 
 ## Fase 5 — Verificación (en paralelo)
 
-Delegá simultáneamente, pasándoles `story.json`, `plan.md`, `git.json`, el diff
+Delegá simultáneamente, pasándoles `story.json`, `plan.md`, `git.json`,
+`repo-context.json`, el diff
 completo contra `base_ref` y, si existe, `design.md`, en:
 
 - `qa` — cobertura de los criterios de aceptación, casos de borde, regresión
@@ -200,7 +222,7 @@ inseguro. Hallazgos `medium` o `low` pueden quedar visibles en el PR.
 
 ## Fase 6 — Revisión adversarial
 
-Delegá en `reviewer` con `story.json`, `plan.md`, los JSON de QA y seguridad y
+Delegá en `reviewer` con `story.json`, `plan.md`, `repo-context.json`, los JSON de QA y seguridad y
 el diff completo contra `base_ref`. Guardá su salida en `review.json`. Su
 trabajo es buscar razones para
 rechazar el cambio, no para aprobarlo. Lo que corresponda corregir vuelve a

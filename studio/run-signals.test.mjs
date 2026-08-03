@@ -2,12 +2,22 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  MAX_CORRECTION_ROUNDS,
   RECOVERY_PROMPT,
+  correctionRoundForTransition,
   finalCycleCompletion,
   prCommand,
   prTool,
   technicalToolInterruption,
 } from './run-signals.mjs';
+
+test('cuenta sólo regresos reales a implementación', () => {
+  assert.equal(MAX_CORRECTION_ROUNDS, 3);
+  assert.equal(correctionRoundForTransition(3, 0, 'desarrollador'), 0);
+  assert.equal(correctionRoundForTransition(5, 0, 'desarrollador'), 1);
+  assert.equal(correctionRoundForTransition(6, 1, 'desarrollador'), 2);
+  assert.equal(correctionRoundForTransition(5, 2, 'qa'), 2);
+});
 
 test('reconoce solo el marcador técnico de interrupción', () => {
   assert.equal(technicalToolInterruption('[Request interrupted by user for tool use]'), true);

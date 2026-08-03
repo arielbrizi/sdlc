@@ -33,6 +33,12 @@ agregar un mapeo acá, no tocar los agentes.
 `acceptance_criteria` es el campo crítico: si viene vacío o con ítems no
 verificables, el agente de refinamiento bloquea el run.
 
+`repo_hint` identifica un solo repositorio o subproyecto. Puede usar el nombre
+del remoto (`consumo-api`) o el nombre del workspace dentro de un monorepo
+(`checkout-web`). Una lista o un texto separado por comas significa que la
+historia tiene alcance multirepo: el ciclo se detiene para dividirla, porque un
+run automático es deliberadamente una branch y un PR.
+
 ## Detección automática del tracker
 
 El resolver infiere el tracker por la forma del ID:
