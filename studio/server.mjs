@@ -915,6 +915,34 @@ function technicalToolInterruption(text) {
   return /^\[?request interrupted by user(?: for tool use)?\]?$/i.test(clean);
 }
 
+/** Comandos que crean o inspeccionan el PR final en los trackers soportados. */
+function prCommand(command) {
+  const cmd = String(command || '');
+  const creates = /\b(?:gh pr create|az repos pr create|glab mr create)\b/.test(cmd);
+  const touches = creates || /\b(?:gh pr (?:view|edit)|az repos pr (?:show|update)|glab mr (?:view|update))\b/.test(cmd);
+  return { creates, touches };
+}
+
+/**
+ * Crear no es la única salida válida: si la branch ya tenía un PR draft, el
+ * skill lo actualiza. El resumen final confirma que ese camino también llegó
+ * realmente al final del ciclo.
+ */
+function finalCycleCompletion(text) {
+  const clean = String(text || '');
+  const saysComplete = /\bciclo\s+completo\b|\blist[oa]\s+para\s+revisi[oó]n\s+humana\b/i.test(clean);
+  const hasPr = /\bPR\s*:\s*https?:\/\/\S+|https?:\/\/\S+\/(?:pull|pullrequest|merge_requests)\/\d+/i.test(clean);
+  return saysComplete && hasPr;
+}
+
+function completeCycle(run, detail = 'PR listo') {
+  if (run.blocked || run.pendingBlock || run.cycleComplete) return false;
+  setPhase(run, PHASE_PR, detail);
+  run.cycleComplete = true;
+  emit(run, { t: 'cycle_complete', phase: PHASE_PR, at: Date.now() });
+  return true;
+}
+
 /** Deriva la fase actual a partir de un evento del stream. Es inferencia. */
 function inferPhase(run, msg) {
   const blocks = msg?.message?.content;
@@ -930,9 +958,10 @@ function inferPhase(run, msg) {
       const agent = isSubagentTool(name)
         ? subagentName(input)
         : null;
-      const isPr = name === 'Bash' && /\b(gh pr create|az repos pr create|glab mr create)\b/.test(String(input.command || ''));
+      const pr = name === 'Bash' ? prCommand(input.command) : { creates: false, touches: false };
       if (b.id) run.pending.set(b.id, {
-        node, name, agent, isPr, phase: agent ? AGENT_PHASE[agent] : run.phase,
+        node, name, agent, isPr: pr.creates, touchesPr: pr.touches,
+        phase: agent ? AGENT_PHASE[agent] : run.phase,
       });
       emit(run, {
         t: 'tool', name, node, agent, id: b.id || null,
@@ -952,7 +981,7 @@ function inferPhase(run, msg) {
       if (name === 'Bash') {
         const cmd = String(input.command || '');
         if (cmd.includes('resolve-story.sh')) setPhase(run, 0, 'resolve-story.sh');
-        else if (/\b(gh pr create|az repos pr create|glab mr create)\b/.test(cmd)) setPhase(run, PHASE_PR, 'abriendo PR');
+        else if (pr.touches) setPhase(run, PHASE_PR, pr.creates ? 'abriendo PR' : 'verificando PR');
         continue;
       }
       if (['Write', 'Edit', 'MultiEdit', 'NotebookEdit'].includes(name)) {
@@ -986,8 +1015,7 @@ function inferPhase(run, msg) {
           });
 
           if (pending.isPr && !b.is_error && !run.blocked && !run.pendingBlock && !run.cycleComplete) {
-            run.cycleComplete = true;
-            emit(run, { t: 'cycle_complete', phase: PHASE_PR, at: Date.now() });
+            completeCycle(run, 'PR creado');
           }
 
           const answer = pending.agent ? agentJson(text) : null;
@@ -1217,6 +1245,9 @@ function startRun({ storyId, repoDir, manual, baseBranch, permissionMode, allowe
         run.status = run.stdinClosed ? 'done' : 'idle';
         const resultText = typeof msg.result === 'string' ? msg.result.trim() : '';
         const interrupted = technicalToolInterruption(resultText);
+        if (!msg.is_error && finalCycleCompletion(resultText)) {
+          completeCycle(run, 'PR listo para revisión');
+        }
         if (!interrupted) run.autoRecoveryCount = 0;
         if (!msg.is_error && !interrupted && !run.pendingBlock && !run.blocked && !run.cycleComplete) {
           const request = humanInputRequest(resultText);

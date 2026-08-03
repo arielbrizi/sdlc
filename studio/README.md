@@ -149,6 +149,11 @@ Cuando el turno termina sin bloqueo dice explícitamente “Sin acciones
 pendientes · chat opcional”; tener el chat habilitado no significa que el ciclo
 esté esperando una respuesta.
 
+Si el PR ya existía, el ciclo puede terminar actualizándolo en lugar de ejecutar
+`gh pr create`. El Studio reconoce tanto esa ruta como la creación nueva: exige
+un resumen final que diga **ciclo completo** (o **listo para revisión humana**) y
+que incluya la URL del PR antes de marcar todas las fases como listas.
+
 Si Claude Code devuelve el marcador técnico `Request interrupted by user for
 tool use`, el Studio no lo trata como una decisión humana: retoma el mismo ciclo
 automáticamente y deja una línea **recuperación** visible en la consola. Reintenta
@@ -404,9 +409,9 @@ Por dos vías, porque ninguna sola alcanza:
 | Evento | Fase |
 |---|---|
 | `Bash` con `resolve-story.sh` | 0 · Resolver |
-| `Task` con `subagent_type` | la del agente (refinamiento → 1, qa/seguridad → 4, …) |
-| `Write` / `Edit` / `MultiEdit` | 3 · Implementación |
-| `Bash` con `gh pr create` | 6 · Pull Request |
+| `Task`/`Agent` con `subagent_type` | la del agente (refinamiento → 1, qa/seguridad → 5, …) |
+| `Write` / `Edit` / `MultiEdit` | 4 · Implementación |
+| `Bash` con `gh pr create/view/edit` | 7 · Pull Request |
 | `"verdict": "BLOCKED"` en un resultado | corta en 1 |
 | `blast_radius: high` | corta en 2 |
 
