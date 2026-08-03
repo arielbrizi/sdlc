@@ -213,6 +213,7 @@ seguidas le hace releer el mismo código para nada.
 Si en el piloto los ciclos de corrección resultan caros, la salida no es volver
 atrás sino que el agente reciba el diff en vez del repo entero.
 
+<<<<<<< HEAD
 ## D12 — Cualquier agente se puede apagar, y apagarlo es un hook
 
 **Contexto.** El ciclo asumía que sus seis agentes corren siempre. La primera
@@ -271,3 +272,56 @@ verificable.
 **Costo.** Con diseño habilitado el ciclo tiene una invocación más antes de
 implementar. En una historia sin interfaz el agente devuelve `N_A` y no cuesta
 más que ese turno, que es el caso esperado en un repo mixto.
+=======
+## D12 — El criterio de aceptación es el piso, no la especificación
+
+**Contexto.** Pedirle una calculadora al ciclo completo devolvía un formulario:
+dos inputs numéricos, cuatro botones de operación y un campo de resultado.
+Cumplía cada criterio de aceptación y pasaba QA. Pedirle lo mismo a una sesión
+de Claude Code sin el plugin devolvía una calculadora de verdad. Mismo modelo,
+mismo prompt: la diferencia la hacía el ciclo.
+
+**Diagnóstico.** El acabado se perdía en cuatro lugares encadenados, y ninguno
+de los cuatro estaba haciendo nada mal por separado:
+
+1. `refinamiento` normalizaba la historia a condiciones verificables y descartaba
+   lo cualitativo — su criterio de bloqueo 1 trata "que se vea bien" como
+   declaración de intención, que es correcto para bloquear y equivocado para
+   borrar.
+2. La plantilla de `plan.md` no tenía dónde poner una decisión de interfaz:
+   Estado actual, Cambio propuesto, Archivos, Contratos, Datos, Tests, Riesgos.
+   Nada de superficie de usuario.
+3. `desarrollador` tenía instrucción explícita de no improvisar fuera del plan.
+   Con la decisión de interfaz ausente del plan, no improvisar significaba
+   resolver por descarte.
+4. `reviewer` no tenía ningún criterio para rechazarlo: su checklist mira
+   cumplimiento, complejidad, consistencia, deuda, alcance, legibilidad y
+   operabilidad. Un formulario feo pasa los siete.
+
+O sea que el ciclo filtraba la intención de diseño en la fase 1, no la
+registraba en la 2, prohibía reponerla en la 3 y no la controlaba en la 5.
+
+**Decisión.** Los criterios de aceptación describen lo mínimo verificable, no
+el entregable. Se repone el acabado en los cuatro puntos: `refinamiento` lo
+traslada a `assumptions_safe_to_make` en vez de descartarlo, `plan.md` gana una
+sección `## Interfaz` cuando el cambio tiene superficie de usuario,
+`desarrollador` resuelve de oficio lo que cualquier dev resolvería sin
+preguntar, y `reviewer` bloquea el entregable que cumple la checklist y aun así
+nadie usaría.
+
+**Por qué acá y no en un agente nuevo.** Un séptimo agente de diseño costaría
+otra invocación en frío por historia y no arreglaría el problema: la pérdida no
+es por falta de criterio, es porque cuatro instrucciones correctas se componen
+en una incorrecta. Eso se corrige donde está escrito.
+
+**Lo que no cambia.** D3 sigue en pie: `reviewer` no escribe, reporta. Y la
+regla contra el alcance desbordado tampoco se afloja — se distingue de otra
+cosa. Alcance desbordado es *features* que nadie pidió; el acabado de lo que sí
+pidieron no lo es. Esa distinción está escrita en los dos agentes, con ejemplos
+de cada lado, porque sin ejemplos la regla se lee como permiso para agrandar la
+historia.
+
+**Costo.** `arquitectura` produce una sección más y `reviewer` mira una
+dimensión más, así que el ciclo se hace un poco más caro en las historias con
+UI. Es el costo correcto: hasta acá era gratis porque nadie miraba el resultado.
+>>>>>>> bef0c18 (fix(plugin): el criterio de aceptacion es el piso, no la especificacion)

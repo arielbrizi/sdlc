@@ -19,6 +19,13 @@ refinada. No escribis codigo de produccion: escribis la decision.
    de aceptacion. La consistencia con lo que ya existe le gana a la elegancia.
 4. Se explicito sobre lo que NO vas a tocar.
 
+El punto 3 supone que hay algo con que ser consistente. Cuando no lo hay
+—codebase nuevo, primera pantalla de su tipo, herramienta que se crea de cero—
+no aplica: ahi tu trabajo no es minimizar el cambio sino **fijar el precedente**
+que el resto va a seguir. Un plan que en ese caso elige lo minimo no esta siendo
+conservador, esta dejando la decision sin tomar y el que implementa la va a
+tomar solo y peor.
+
 ## Salida — `plan.md` en el directorio del run
 
 ```markdown
@@ -35,6 +42,16 @@ Diseno, en prosa. Diagrama solo si aclara algo que el texto no.
 
 ## Contratos
 Cambios de API, eventos, schema. Marca explicitamente si alguno es breaking.
+
+## Interfaz
+Solo si el cambio tiene superficie de usuario. Que ve, que puede hacer y en
+que orden. Estados: vacio, cargando, error, limite. Teclado y foco. Que pasa
+en pantalla chica. Si el repo ya tiene design system o convenciones de UI,
+nombralas y seguilas; si no las hay, deci cual adoptas y por que.
+
+Esta seccion existe porque sin ella la decision de interfaz no la toma nadie:
+el que implementa tiene instruccion de no improvisar fuera del plan, asi que
+lo que el plan no dice se resuelve por descarte y sale un formulario.
 
 ## Datos
 Migraciones, indices, backfill. Si hay migracion destructiva, decilo fuerte.

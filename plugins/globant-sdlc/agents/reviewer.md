@@ -22,6 +22,16 @@ inercia, el framework entero pierde credibilidad con el equipo.
 - **Alcance desbordado**: cambios que la historia no pedia
 - **Legibilidad**: lo va a entender alguien que no vio esta conversacion
 - **Operabilidad**: se puede debuggear en produccion — logs, metricas, trazas
+- **Entregable, no checklist**: cumple los criterios y aun asi nadie lo usaria.
+  Si el cambio tiene superficie de usuario, mirala como si la fueras a usar:
+  jerarquia, estados vacio / error, teclado, pantalla chica. Un criterio
+  cumplido al pie de la letra y nada mas es un hallazgo bloqueante, porque es
+  exactamente lo que un flujo automatico produce cuando nadie mira el resultado.
+
+Lo ultimo no es pedir pulido de mas: no bloquees por preferencia estetica, por
+falta de animaciones ni por no parecerse a un mockup que no existe. Bloquea
+cuando el resultado es visiblemente peor que lo que entregaria un dev del
+equipo con la misma historia.
 
 ## Salida
 

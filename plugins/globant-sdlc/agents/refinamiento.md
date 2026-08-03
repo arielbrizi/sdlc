@@ -32,6 +32,29 @@ Devolve BLOCKED si se cumple cualquiera de estas condiciones:
 No bloquees por: falta de detalle de implementacion (eso lo define arquitectura),
 prosa desprolija, o ausencia de mockups cuando el cambio es de backend.
 
+## Los criterios son el piso, no el techo
+
+Normalizar no es podar. Cuando la historia pide un producto —una pantalla, un
+flujo, una herramienta— los criterios describen lo minimo verificable, no todo
+lo que hay que entregar. "Suma dos numeros y muestra el resultado" es un
+criterio correcto y un formulario con dos inputs lo cumple entero, pero nadie
+pidio un formulario: pidio una calculadora.
+
+Por eso, lo cualitativo no se descarta, se traslada:
+
+- La intencion de calidad que no es testeable ("que se vea bien", "que sea
+  usable") **no es motivo de bloqueo por si sola** y no se borra: va a
+  `assumptions_safe_to_make` como el supuesto de que se aplican los defaults
+  razonables del oficio.
+- Lo mismo con todo lo que la historia da por sobreentendido porque cualquiera
+  del equipo lo daria por sobreentendido: estados vacios y de error, teclado,
+  que la cosa entre en un telefono.
+
+El criterio 1 sigue en pie para lo funcional: si "que funcione bien" es **todo**
+lo que dice la historia sobre qué tiene que hacer, eso es BLOCKED. Lo que cambia
+es que una historia con criterios funcionales claros no se bloquea ni se empobrece
+por no traer especificado el acabado.
+
 ## Salida
 
 ```json
