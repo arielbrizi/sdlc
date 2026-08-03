@@ -4,6 +4,7 @@ cd "$(dirname "$0")/.."
 
 TMP_REPO="$(mktemp -d)"
 trap 'rm -rf "$TMP_REPO"' EXIT
+PLUGIN_ROOT="$PWD/plugins/globant-sdlc"
 
 git -C "$TMP_REPO" init -q
 git -C "$TMP_REPO" config user.name Test
@@ -15,7 +16,8 @@ git -C "$TMP_REPO" branch -M main
 
 assert_blocked() {
   local label="$1" payload="$2" script="$3"
-  if printf '%s\n' "$payload" | CLAUDE_PROJECT_DIR="$TMP_REPO" "$script" >/dev/null 2>&1; then
+  if printf '%s\n' "$payload" | CLAUDE_PROJECT_DIR="$TMP_REPO" \
+    CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$script" >/dev/null 2>&1; then
     echo "FAIL: debía bloquear: ${label}" >&2
     exit 1
   fi
@@ -23,7 +25,8 @@ assert_blocked() {
 
 assert_allowed() {
   local label="$1" payload="$2" script="$3"
-  if ! printf '%s\n' "$payload" | CLAUDE_PROJECT_DIR="$TMP_REPO" "$script" >/dev/null 2>&1; then
+  if ! printf '%s\n' "$payload" | CLAUDE_PROJECT_DIR="$TMP_REPO" \
+    CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" "$script" >/dev/null 2>&1; then
     echo "FAIL: debía permitir: ${label}" >&2
     exit 1
   fi
@@ -164,9 +167,28 @@ if (!matchers.some(x => x.includes("Bash") && x.includes("MultiEdit"))) process.
 # SubagentStop registra el identificador y el veredicto cuando vienen en el
 # payload, sin afirmar que siempre están disponibles.
 mkdir -p "$TMP_REPO/.claude/run/LOGTEST"
+export FLOW360_STORY_ID=LOGTEST
+export FLOW360_STUDIO_RUN_ID=test-run
+assert_allowed 'telemetría de guard-git' \
+  '{"tool_input":{"command":"git status"}}' "$GIT_GUARD"
+assert_allowed 'telemetría de guard-secrets' \
+  '{"tool_input":{"file_path":"/repo/README.md"}}' "$SECRET_GUARD"
+assert_allowed 'telemetría de guard-agents' \
+  '{"tool_input":{"subagent_type":"otro-plugin:qa"}}' \
+  "$PWD/plugins/globant-sdlc/scripts/guard-agents.sh"
+printf '%s\n' '{"tool_input":{"file_path":"/archivo/que/no/existe.js"}}' \
+  | CLAUDE_PROJECT_DIR="$TMP_REPO" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
+    plugins/globant-sdlc/scripts/format-and-lint.sh
 printf '%s\n' '{"agent_id":"agent-123","last_assistant_message":"{\"verdict\":\"PASS\"}"}' \
-  | CLAUDE_PROJECT_DIR="$TMP_REPO" plugins/globant-sdlc/scripts/log-run.sh
+  | CLAUDE_PROJECT_DIR="$TMP_REPO" CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" \
+    plugins/globant-sdlc/scripts/log-run.sh
 grep -q 'agent=agent-123 verdict=PASS finished' \
   "$TMP_REPO/.claude/run/LOGTEST/timeline.log"
+for hook_script in guard-git.sh guard-secrets.sh guard-agents.sh format-and-lint.sh log-run.sh; do
+  grep -q "\"script\":\"${hook_script}\"" \
+    "$TMP_REPO/.claude/run/LOGTEST/hook-events.jsonl"
+done
+unset FLOW360_STORY_ID
+unset FLOW360_STUDIO_RUN_ID
 
 echo 'Git policy OK'

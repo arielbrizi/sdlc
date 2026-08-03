@@ -3,6 +3,8 @@
 set -uo pipefail
 
 INPUT="$(cat)"
+[[ -x "${CLAUDE_PLUGIN_ROOT:-}/scripts/record-hook.sh" ]] \
+  && "${CLAUDE_PLUGIN_ROOT}/scripts/record-hook.sh" SubagentStop log-run.sh || true
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 LOG_DIR="${PROJECT_DIR}/.claude/run"
 

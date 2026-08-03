@@ -15,6 +15,8 @@
 set -uo pipefail
 
 INPUT="$(cat)"
+[[ -x "${CLAUDE_PLUGIN_ROOT:-}/scripts/record-hook.sh" ]] \
+  && "${CLAUDE_PLUGIN_ROOT}/scripts/record-hook.sh" PreToolUse guard-agents.sh || true
 HERE="$(cd "$(dirname "$0")" && pwd)"
 CONFIG="${HERE}/config.sh"
 

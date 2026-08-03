@@ -4,6 +4,8 @@
 set -uo pipefail
 
 INPUT="$(cat)"
+[[ -x "${CLAUDE_PLUGIN_ROOT:-}/scripts/record-hook.sh" ]] \
+  && "${CLAUDE_PLUGIN_ROOT}/scripts/record-hook.sh" PostToolUse format-and-lint.sh || true
 FILE_PATH="$(echo "$INPUT" | grep -oE '"file_path"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/' || true)"
 
 [[ -z "$FILE_PATH" || ! -f "$FILE_PATH" ]] && exit 0

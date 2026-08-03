@@ -217,6 +217,15 @@ declara en `hooks/hooks.json` y el script es otro componente. Por eso el nodo de
 un hook ofrece los dos por separado: "Abrir archivo" lleva a `hooks.json` y
 "Abrir el script" al `.sh`.
 
+**Cada hook muestra si se activó y cuántas veces en el run actual.** El contador
+no se infiere por el matcher ni por las herramientas que podrían haberlo
+disparado: los propios hooks escriben una activación en
+`.claude/run/<ID>/hook-events.jsonl`, y el servidor la incorpora al mismo stream
+que reconstruye el mapa. Antes de la primera ejecución dice **sin activaciones**;
+después muestra **1 activación** o el total acumulado. Al abrir el nodo se ve una
+entrada por activación. La telemetría es best-effort y nunca cambia el exit code
+del hook: si no puede escribir el registro, la política sigue funcionando.
+
 Los nombres son los de Claude Code, no etiquetas del studio. Es deliberado: quien
 use el panel un par de semanas tiene que poder leer la documentación oficial, o
 escuchar "eso es un hook" en una reunión, y saber de qué se habla. Un vocabulario

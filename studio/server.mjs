@@ -36,6 +36,7 @@ import {
   repoNames,
   safeScope,
 } from './repository.mjs';
+import { hookEventsSince } from './hook-events.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..');
@@ -1191,6 +1192,13 @@ async function pollArtifacts(run) {
       emit(run, { t: 'artifact', file, phase, at: Date.now() });
     } catch { /* todavía no existe */ }
   }
+
+  try {
+    const content = await fsp.readFile(path.join(dir, 'hook-events.jsonl'), 'utf8');
+    const batch = hookEventsSince(content, run.hookEventCursor, run.startedAt, run.id);
+    run.hookEventCursor = batch.cursor;
+    for (const event of batch.events) emit(run, { t: 'hook', ...event });
+  } catch { /* ningún hook se activó todavía */ }
 }
 
 /**
@@ -1277,7 +1285,7 @@ function startRun({ storyId, repoDir, sourceRepo, manual, baseBranch, permission
     artifacts: {}, events: [], clients: new Set(), child: null, stdinClosed: false,
     pending: new Map(), // tool_use_id -> herramienta/agente/nodo, para atribuir resultados
     actions: new Map(), autoRecoveryCount: 0, prConfirmed: false,
-    correctionRound: 0,
+    correctionRound: 0, hookEventCursor: 0,
   };
   runs.set(id, run);
 
@@ -1286,7 +1294,9 @@ function startRun({ storyId, repoDir, sourceRepo, manual, baseBranch, permission
     // `resolve-story.sh` ya lee esta variable para dejarla en run.json, así que
     // elegir la branch base en el panel alcanza para que el ciclo la respete.
     const env = { ...process.env };
+    env.FLOW360_STUDIO_RUN_ID = id;
     if (baseBranch) env.CLAUDE_PLUGIN_OPTION_BASE_BRANCH = baseBranch;
+    if (storyId) env.FLOW360_STORY_ID = storyId.replace(/^#/, '');
     if (sourceRepo) env.FLOW360_SOURCE_REPO = sourceRepo;
     if (workspaceInfo?.isolated) env.FLOW360_ISOLATED_WORKTREE = '1';
     if (branchStrategy === 'new') env.FLOW360_FORCE_NEW_BRANCH = '1';
@@ -1430,6 +1440,7 @@ function startRun({ storyId, repoDir, sourceRepo, manual, baseBranch, permission
 
   child.on('close', (code) => {
     pauseRunWork(run);
+    run.child = null;
     if (run.status !== 'stopped') run.status = code === 0 ? 'done' : 'error';
     emit(run, { t: 'end', code, status: run.status, elapsedMs: run.elapsedMs, at: Date.now() });
     for (const res of run.clients) res.end();

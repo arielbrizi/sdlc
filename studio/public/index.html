@@ -2278,7 +2278,7 @@ async function start() {
     correctionRound: 0, maxCorrectionRounds: 3,
   };
   renderRunSurfaces();
-  NODE_OUT = {}; NODE_STATE = {}; renderGraph();
+  NODE_OUT = {}; NODE_STATE = {}; HOOK_COUNTS = {}; renderGraph();
 
   try {
     const r = await api('/api/run', {
@@ -2466,6 +2466,21 @@ function onEvent(ev) {
     pushOut(ev.node, { kind: 'result', title: 'resultado', text: ev.text || '' });
     renderGraph();
   }
+  if (ev.t === 'hook') {
+    const index = PLUGIN?.hooks.findIndex(h => h.event === ev.event && h.script === ev.script) ?? -1;
+    if (index >= 0) {
+      const node = `hook:${ev.event}:${index}`;
+      ev.node = node;
+      HOOK_COUNTS[node] = (HOOK_COUNTS[node] || 0) + 1;
+      NODE_STATE[node] = 'done';
+      pushOut(node, {
+        kind: 'result',
+        title: `activación ${HOOK_COUNTS[node]}`,
+        text: `${ev.event} ejecutó ${ev.script}`,
+      });
+      renderGraph();
+    }
+  }
   if (ev.t === 'say') pushOut(ev.node, { kind: 'say', title: 'claude', text: ev.text || '' });
   if (ev.t === 'cycle_complete') {
     RUN_MODEL.complete = true;
@@ -2550,6 +2565,7 @@ const EV_LABEL = {
   start: 'inicio', init: 'sesión', ready: 'lista', phase: 'fase', agent: 'subagente',
   activity: 'actividad', recovery: 'recuperación',
   tool: 'herramienta', output: 'salida', say: 'claude', ask: 'vos', artifact: 'archivo',
+  hook: 'hook',
   blocked: 'bloqueo', result: 'turno', end: 'fin', error: 'error', stderr: 'stderr',
   action: 'acción', action_resolved: 'resuelta', cycle_complete: 'ciclo',
   correction_round: 'ronda correctiva',
@@ -2567,6 +2583,7 @@ function logEvent(ev) {
     const node = String(ev.node || '');
     if (node.startsWith('agent:')) return `@${node.slice(6)}`;
     if (node.startsWith('script:')) return node.slice(7);
+    if (node.startsWith('hook:')) return ev.script || ev.event || 'hook';
     if (node.startsWith('phase:')) {
       const phase = Number(node.slice(6));
       return `${String(phase).padStart(2, '0')} · ${phaseName(phase)}`;
@@ -2584,7 +2601,7 @@ function logEvent(ev) {
   const body = ev.t === 'tool'
     ? `<span class="ev-m ev-tool"><b>${esc(ev.agent ? 'Subagente' : ev.name)}</b> ${esc(ev.summary || '')}</span>`
     : `<span class="ev-m">${esc(ev.text || ev.message || ev.reason || ev.detail ||
-        ev.file || ev.cmd || ev.agent || ev.status || '')}</span>`;
+        ev.file || ev.cmd || ev.agent || ev.script || ev.status || '')}</span>`;
 
   row.innerHTML = `<span class="ev-t">${hhmm(ev.at)}</span>
                    <span class="ev-k">${esc(label)}</span>
@@ -2619,7 +2636,7 @@ function resetPhases() {
 
 // Lo que dijo el modelo, agrupado por el componente que lo produjo. Es lo que
 // se ve al clickear un nodo: el output de ESE componente, no el log entero.
-let NODE_OUT = {}, NODE_STATE = {}, selectedNode = null;
+let NODE_OUT = {}, NODE_STATE = {}, HOOK_COUNTS = {}, selectedNode = null;
 
 const esFase = id => String(id || '').startsWith('phase:');
 
@@ -2638,6 +2655,7 @@ const STATE_WORD = {
   active: 'en curso', paused: 'en pausa', done: 'listo',
   blocked: 'bloqueado', error: 'interrumpido',
 };
+const activationLabel = count => `${count} ${count === 1 ? 'activación' : 'activaciones'}`;
 
 const pushOut = (node, entry) => {
   if (!node) return;
@@ -2752,9 +2770,14 @@ function renderGraph() {
     // del diagrama haría creer que el ciclo no tiene esa fase.
     const apagado = n.kind === 'agent' && !agenteOn(String(n.id).split(':')[1]);
     const warning = n.id === 'agent:ux' && uxSinFigma();
+    const hookCount = n.kind === 'hook' ? (HOOK_COUNTS[n.id] || 0) : null;
+    const hookState = hookCount == null
+      ? null
+      : hookCount === 0 ? 'sin activaciones' : activationLabel(hookCount);
     const sub = apagado
       ? ['deshabilitado', n.sub].filter(Boolean).join(' · ')
       : warning ? '⚠ falta link de Figma'
+      : hookState ? [hookState, n.sub].filter(Boolean).join(' · ')
       : [palabra, n.sub].filter(Boolean).join(' · ');
     const label = n.label || n.name;
     return `
@@ -2762,7 +2785,7 @@ function renderGraph() {
          data-state="${esc(st)}" data-sel="${n.id === selectedNode ? 1 : 0}"
          data-off="${apagado ? 1 : 0}" data-warning="${warning ? 1 : 0}"
          tabindex="0" role="button"
-         aria-label="${esc(label)}${apagado ? ', deshabilitado' : warning ? ', advertencia: falta configurar el link de Figma' : palabra ? `, ${palabra}` : ''}">
+         aria-label="${esc(label)}${apagado ? ', deshabilitado' : warning ? ', advertencia: falta configurar el link de Figma' : hookState ? `, ${hookState}` : palabra ? `, ${palabra}` : ''}">
         <rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}"/>
         <text x="${n.x + 14}" y="${n.y + (sub ? 23 : 30)}">${esc(label)}</text>
         ${sub ? `<text class="gsub" x="${n.x + 14}" y="${n.y + 39}">${esc(sub)}</text>` : ''}
@@ -2915,6 +2938,7 @@ function renderNodeDetail() {
     : name;
 
   const estado = STATE_WORD[nodeState(id)];
+  const hookCount = kind === 'hook' ? (HOOK_COUNTS[id] || 0) : null;
   const esDiseno = (kind === 'phase' && name === '3') || (kind === 'agent' && name === 'ux');
   const warningFigma = esDiseno && uxSinFigma();
   const agente = kind === 'agent' ? PLUGIN.agents.find(a => a.name === name) : null;
@@ -2925,10 +2949,9 @@ function renderNodeDetail() {
         <div class="out ${e.kind}">
           <header>${esc(e.title)}</header>${esc(e.text)}
         </div>`).join('')
-    : `<p class="prose">Todavía no hay salida de este componente en el run actual.${
-        kind === 'hook'
-          ? ' Los hooks no reportan al stream: su rastro queda en <code>.claude/run/&lt;ID&gt;/timeline.log</code>.'
-          : ''}</p>`;
+    : `<p class="prose">${kind === 'hook'
+        ? 'Este hook todavía no se activó en el run actual.'
+        : 'Todavía no hay salida de este componente en el run actual.'}</p>`;
 
   $('nodeDetail').innerHTML = `
     <div class="detail">
@@ -2936,6 +2959,7 @@ function renderNodeDetail() {
         ${kindBadge(NODE_KIND[kind] || 'skill')}
         <h3>${esc(title)}</h3>
         ${estado ? `<span class="tag">${esc(estado)}</span>` : ''}
+        ${hookCount != null ? `<span class="tag">${activationLabel(hookCount)}</span>` : ''}
       </div>
       ${kind === 'phase' && PHASE_HELP[name] ? `<p class="prose">${esc(PHASE_HELP[name])}</p>` : ''}
       ${warningFigma ? `<div class="notice warn">
@@ -3235,7 +3259,7 @@ async function resetStudio() {
     elapsedMs: 0, activeSince: null, actions: {},
     correctionRound: 0, maxCorrectionRounds: 3,
   };
-  NODE_OUT = {}; NODE_STATE = {}; selectedNode = null;
+  NODE_OUT = {}; NODE_STATE = {}; HOOK_COUNTS = {}; selectedNode = null;
   CONFIG = null;
   renderRepoMeta();
   $('detailCard').hidden = true;
@@ -3295,7 +3319,7 @@ async function restaurar() {
     correctionRound: Math.max(0, Number(info.correctionRound) || 0),
     maxCorrectionRounds: Math.max(1, Number(info.maxCorrectionRounds) || 3),
   };
-  NODE_OUT = {}; NODE_STATE = {}; PHASE_STATE = {}; PHASE_NOTE = {};
+  NODE_OUT = {}; NODE_STATE = {}; HOOK_COUNTS = {}; PHASE_STATE = {}; PHASE_NOTE = {};
   $('log').innerHTML = '';
   const restoredStatus = info.status === 'running' || info.status === 'idle'
     ? info.status : (info.vivo ? 'idle' : 'none');

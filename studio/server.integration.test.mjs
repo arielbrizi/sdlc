@@ -28,7 +28,12 @@ test('prepara monorepo, confirma contexto y ejecuta en worktree aislado', { time
   fs.mkdirSync(path.join(repo, 'apps/web'), { recursive: true });
   fs.mkdirSync(bin, { recursive: true });
   fs.writeFileSync(path.join(repo, 'apps/web/package.json'), JSON.stringify({ scripts: { test: 'vitest' } }));
-  fs.writeFileSync(path.join(bin, 'claude'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, 'claude'), `#!/bin/sh
+printf '%s\n' '{"tool_input":{"command":"git status"}}' \\
+  | CLAUDE_PROJECT_DIR="$PWD" CLAUDE_PLUGIN_ROOT="$FLOW360_TEST_PLUGIN_ROOT" \\
+    "$FLOW360_TEST_PLUGIN_ROOT/scripts/guard-git.sh"
+printf '%s\n' '{"type":"assistant","message":{"content":[]}}'
+`, { mode: 0o755 });
   git(repo, 'init', '-q');
   git(repo, 'config', 'user.name', 'Test');
   git(repo, 'config', 'user.email', 'test@example.com');
@@ -39,7 +44,15 @@ test('prepara monorepo, confirma contexto y ejecuta en worktree aislado', { time
   const port = 20_000 + Math.floor(Math.random() * 20_000);
   const server = spawn(process.execPath, [
     path.join(ROOT, 'studio/server.mjs'), '--repo', repo, '--workspace', workspace, '--port', String(port),
-  ], { cwd: ROOT, env: { ...process.env, PATH: `${bin}:${process.env.PATH}` }, stdio: 'ignore' });
+  ], {
+    cwd: ROOT,
+    env: {
+      ...process.env,
+      PATH: `${bin}:${process.env.PATH}`,
+      FLOW360_TEST_PLUGIN_ROOT: path.join(ROOT, 'plugins/globant-sdlc'),
+    },
+    stdio: 'ignore',
+  });
 
   try {
     const baseUrl = `http://127.0.0.1:${port}`;
@@ -82,6 +95,15 @@ test('prepara monorepo, confirma contexto y ejecuta en worktree aislado', { time
     assert.notEqual(run.cwd, path.join(repo, 'apps/web'));
     assert.ok(fs.existsSync(path.join(run.cwd, '.claude/run/LOCAL-1/repo-context.json')));
     assert.ok(fs.existsSync(path.join(run.cwd, '.claude/run/LOCAL-1/story.json')));
+
+    for (let i = 0; i < 40; i += 1) {
+      const info = await fetch(`${baseUrl}/api/run/${run.runId}`).then(r => r.json());
+      if (!info.vivo) break;
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+    const stream = await fetch(`${baseUrl}/api/run/${run.runId}/stream`).then(r => r.text());
+    assert.match(stream, /"t":"hook"/);
+    assert.match(stream, /"script":"guard-git\.sh"/);
   } finally {
     const closed = new Promise(resolve => server.once('close', resolve));
     server.kill('SIGTERM');

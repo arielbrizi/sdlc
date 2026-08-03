@@ -179,6 +179,7 @@ Cada run deja rastro en `.claude/run/<ID>/`:
 ├── qa.json         veredicto de QA
 ├── security.json   veredicto de seguridad
 ├── review.json     revisión adversarial
+├── hook-events.jsonl activaciones reales de cada hook
 └── timeline.log    cierre de cada agente
 ```
 

@@ -4,6 +4,8 @@
 set -euo pipefail
 
 INPUT="$(cat)"
+[[ -x "${CLAUDE_PLUGIN_ROOT:-}/scripts/record-hook.sh" ]] \
+  && "${CLAUDE_PLUGIN_ROOT}/scripts/record-hook.sh" PreToolUse guard-secrets.sh || true
 FIELDS="$(printf '%s' "$INPUT" | node -e '
 let raw = "";
 process.stdin.on("data", chunk => raw += chunk);

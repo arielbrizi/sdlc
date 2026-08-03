@@ -32,7 +32,7 @@ lo que el run no necesita cambiar la branch activa ni mezclar cambios locales.
 | Especialización | Refinamiento, arquitectura, UX, desarrollo, QA, seguridad y review tienen contratos separados |
 | Corrección controlada | QA, seguridad y reviewer pueden devolver hallazgos al desarrollador hasta tres ciclos |
 | Guardrails | Los hooks bloquean secretos, Git destructivo y agentes deshabilitados; también aplican formato y lint |
-| Observabilidad | Estado, herramientas, tiempo, costo y evidencia quedan visibles durante y después del run |
+| Observabilidad | Estado, herramientas, hooks activados, tiempo, costo y evidencia quedan visibles durante y después del run |
 | Diseño integrado | Figma define qué construir y Storybook ayuda a reutilizar lo que ya existe |
 
 ## Cómo funciona
@@ -270,6 +270,7 @@ Cada ejecución deja artefactos estructurados en `.claude/run/<ID>/`:
 ├── qa.json
 ├── security.json
 ├── review.json
+├── hook-events.jsonl
 └── timeline.log
 ```
 
