@@ -24,6 +24,7 @@ import {
   RECOVERY_PROMPT,
   auditCorrection,
   correctionRoundForTransition,
+  correctionSourceForTransition,
   finalCycleCompletion,
   humanInputRequest,
   prCommand,
@@ -1138,10 +1139,16 @@ function inferPhase(run, msg) {
             run.phase, run.correctionRound, agent,
           );
           if (!run.blocked && !run.pendingBlock && nextRound > run.correctionRound) {
+            const source = correctionSourceForTransition(
+              run.phase, agent, run.correctionSource,
+            );
             run.correctionRound = nextRound;
+            if (source) run.correctionCounts[source]++;
+            run.correctionSource = null;
             emit(run, {
               t: 'correction_round', round: run.correctionRound,
-              max: MAX_CORRECTION_ROUNDS, phase, at: Date.now(),
+              max: MAX_CORRECTION_ROUNDS, phase, source,
+              counts: { ...run.correctionCounts }, at: Date.now(),
             });
           }
           if (setPhase(run, phase, `@${agent}`)) {
@@ -1195,13 +1202,17 @@ function inferPhase(run, msg) {
 
           const answer = pending.agent ? agentJson(text) : null;
           const audit = auditCorrection(pending.agent, answer?.verdict);
-          if (audit) emit(run, {
-            t: 'audit_verdict', ...audit, agent: pending.agent,
-            detail: audit.requested
-              ? `@${pending.agent} pidió cambios · vuelve a Implementación`
-              : '@reviewer aprobó el diff · avanza a Pull Request',
-            at: Date.now(),
-          });
+          if (audit) {
+            if (audit.requested) run.correctionSource = audit.source;
+            else if (run.correctionSource === audit.source) run.correctionSource = null;
+            emit(run, {
+              t: 'audit_verdict', ...audit, agent: pending.agent,
+              detail: audit.requested
+                ? `@${pending.agent} pidió cambios · vuelve a Implementación`
+                : '@reviewer aprobó el diff · avanza a Pull Request',
+              at: Date.now(),
+            });
+          }
           if (answer?.verdict === 'BLOCKED') {
             queueBlock(run, {
               phase: pending.phase ?? 1,
@@ -1353,7 +1364,8 @@ function startRun({ storyId, repoDir, sourceRepo, manual, baseBranch, permission
     artifacts: {}, events: [], clients: new Set(), child: null, stdinClosed: false,
     pending: new Map(), // tool_use_id -> herramienta/agente/nodo, para atribuir resultados
     actions: new Map(), autoRecoveryCount: 0, prConfirmed: false,
-    correctionRound: 0, hookEventCursor: 0,
+    correctionRound: 0, correctionSource: null,
+    correctionCounts: { verification: 0, reviewer: 0 }, hookEventCursor: 0,
   };
   runs.set(id, run);
 
@@ -1812,6 +1824,7 @@ const server = http.createServer(async (req, res) => {
         turns: run.turns ?? null,
         actions: [...run.actions.values()], cycleComplete: run.cycleComplete,
         correctionRound: run.correctionRound, maxCorrectionRounds: MAX_CORRECTION_ROUNDS,
+        correctionCounts: run.correctionCounts,
         cwd: run.cwd, sourceRepo: run.sourceRepo, workspaceInfo: run.workspaceInfo,
         prompt: run.prompt, vivo: !!run.child,
       });
@@ -1833,6 +1846,7 @@ const server = http.createServer(async (req, res) => {
         t: 'snapshot', status: run.status, elapsedMs: runElapsed(run),
         connection: run.sessionId && run.child ? 'connected' : (run.child ? 'starting' : 'closed'),
         correctionRound: run.correctionRound, maxCorrectionRounds: MAX_CORRECTION_ROUNDS,
+        correctionCounts: run.correctionCounts,
         at: Date.now(),
       })}\n\n`);
       // Mientras el proceso viva la sesión sigue: `idle` es esperando input, no fin.

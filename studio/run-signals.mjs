@@ -11,6 +11,13 @@ export function correctionRoundForTransition(phase, round, agent) {
   return agent === 'desarrollador' && Number(phase) >= 5 ? current + 1 : current;
 }
 
+/** Atribuye la ronda al auditor que devolvió el trabajo a implementación. */
+export function correctionSourceForTransition(phase, agent, requestedSource) {
+  if (agent !== 'desarrollador' || Number(phase) < 5) return null;
+  if (['verification', 'reviewer'].includes(requestedSource)) return requestedSource;
+  return Number(phase) >= 6 ? 'reviewer' : 'verification';
+}
+
 /** Traduce el veredicto de un auditor al retorno visual del mapa. */
 export function auditCorrection(agent, verdict) {
   const name = String(agent || '').toLowerCase();

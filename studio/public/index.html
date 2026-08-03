@@ -1380,8 +1380,8 @@ const AGENT_TAG = {
 };
 const PHASE_FLOW_TAG = {
   4: 'única fase que corrige el código',
-  5: 'si falla, vuelve a código',
-  6: 'si rechaza, vuelve a código',
+  5: 'puede repetirse si falla',
+  6: 'se repite si rechaza',
 };
 
 // Los nombres son los de Claude Code, no etiquetas inventadas para el studio:
@@ -1461,6 +1461,7 @@ let RUN_MODEL = {
   cost: 0, costReported: false, turns: null,
   elapsedMs: 0, activeSince: null, actions: {},
   correctionRound: 0, maxCorrectionRounds: 3,
+  correctionCounts: { verification: 0, reviewer: 0 },
   correctionSource: null,
 };
 
@@ -2331,6 +2332,7 @@ async function start() {
     cost: 0, costReported: false, turns: null,
     elapsedMs: 0, activeSince: consola ? null : Date.now(), actions: {},
     correctionRound: 0, maxCorrectionRounds: 3,
+    correctionCounts: { verification: 0, reviewer: 0 },
     correctionSource: null,
   };
   renderRunSurfaces();
@@ -2566,6 +2568,13 @@ function onEvent(ev) {
   if (ev.t === 'correction_round') {
     RUN_MODEL.correctionRound = Math.max(0, Number(ev.round) || 0);
     RUN_MODEL.maxCorrectionRounds = Math.max(1, Number(ev.max) || 3);
+    if (ev.counts) {
+      RUN_MODEL.correctionCounts = {
+        verification: Math.max(0, Number(ev.counts.verification) || 0),
+        reviewer: Math.max(0, Number(ev.counts.reviewer) || 0),
+      };
+    }
+    if (ev.source) RUN_MODEL.correctionSource = ev.source;
   }
   if (ev.t === 'audit_verdict') {
     RUN_MODEL.correctionSource = ev.requested ? ev.source : null;
@@ -2575,6 +2584,12 @@ function onEvent(ev) {
     if (ev.connection) RUN_MODEL.connection = ev.connection;
     RUN_MODEL.correctionRound = Math.max(0, Number(ev.correctionRound) || RUN_MODEL.correctionRound || 0);
     RUN_MODEL.maxCorrectionRounds = Math.max(1, Number(ev.maxCorrectionRounds) || RUN_MODEL.maxCorrectionRounds || 3);
+    if (ev.correctionCounts) {
+      RUN_MODEL.correctionCounts = {
+        verification: Math.max(0, Number(ev.correctionCounts.verification) || 0),
+        reviewer: Math.max(0, Number(ev.correctionCounts.reviewer) || 0),
+      };
+    }
     syncClientElapsed(ev.elapsedMs, ev.status === 'running');
     isReplaying = false;
     if (openAction()) showAction();
@@ -2951,7 +2966,8 @@ function renderGraph() {
       const a = byId[e.a], b = byId[e.b];
       const lx = a.x - 28 - (Number(e.track) || 0) * 36;
       const middle = (a.y + a.h / 2 + b.y + b.h / 2) / 2;
-      return `<text class="gloop-source" transform="translate(${lx - 7},${middle}) rotate(-90)">${esc(e.label)}</text>`;
+      const count = Math.max(0, Number(RUN_MODEL.correctionCounts?.[e.source]) || 0);
+      return `<text class="gloop-source" transform="translate(${lx - 7},${middle}) rotate(-90)">${esc(`${e.label} · ${count}`)}</text>`;
     }),
     (() => {
       const round = Math.max(0, Number(RUN_MODEL.correctionRound) || 0);
@@ -3465,6 +3481,7 @@ async function resetStudio() {
     cost: 0, costReported: false, turns: null,
     elapsedMs: 0, activeSince: null, actions: {},
     correctionRound: 0, maxCorrectionRounds: 3,
+    correctionCounts: { verification: 0, reviewer: 0 },
     correctionSource: null,
   };
   NODE_OUT = {}; NODE_STATE = {}; HOOK_COUNTS = {}; selectedNode = null;
@@ -3527,6 +3544,10 @@ async function restaurar() {
     actions: Object.fromEntries((info.actions || []).map(a => [a.id, a])),
     correctionRound: Math.max(0, Number(info.correctionRound) || 0),
     maxCorrectionRounds: Math.max(1, Number(info.maxCorrectionRounds) || 3),
+    correctionCounts: {
+      verification: Math.max(0, Number(info.correctionCounts?.verification) || 0),
+      reviewer: Math.max(0, Number(info.correctionCounts?.reviewer) || 0),
+    },
     correctionSource: null,
   };
   NODE_OUT = {}; NODE_STATE = {}; HOOK_COUNTS = {}; PHASE_STATE = {}; PHASE_NOTE = {};

@@ -6,6 +6,7 @@ import {
   RECOVERY_PROMPT,
   auditCorrection,
   correctionRoundForTransition,
+  correctionSourceForTransition,
   finalCycleCompletion,
   humanInputRequest,
   prCommand,
@@ -30,6 +31,13 @@ test('identifica qué auditor devuelve el flujo a implementación', () => {
   });
   assert.equal(auditCorrection('qa', 'FAIL')?.source, 'verification');
   assert.equal(auditCorrection('seguridad', 'PASS'), null);
+});
+
+test('atribuye cada ronda correctiva al retorno que la originó', () => {
+  assert.equal(correctionSourceForTransition(5, 'desarrollador', 'verification'), 'verification');
+  assert.equal(correctionSourceForTransition(6, 'desarrollador', 'reviewer'), 'reviewer');
+  assert.equal(correctionSourceForTransition(6, 'desarrollador'), 'reviewer');
+  assert.equal(correctionSourceForTransition(5, 'qa', 'verification'), null);
 });
 
 test('reconoce marcadores e informes técnicos de interrupción', () => {
