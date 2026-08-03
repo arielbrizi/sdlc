@@ -721,7 +721,7 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
   <span class="run-state" id="runState" data-s="none">
     <span class="dot"></span><span id="runStateText">Sin sesión abierta</span>
   </span>
-  <span class="cost-chip" title="Costo acumulado de esta sesión; se actualiza al terminar cada turno">
+  <span class="cost-chip" id="costChip" title="Costo acumulado informado por Claude Code">
     <small>Consumo</small><strong id="costValue" aria-live="polite">US$ 0.0000</strong>
   </span>
 </div>
@@ -1350,7 +1350,10 @@ const kindBadge = k => (KINDS[k] ? `<span class="kind" data-k="${k}">${esc(KINDS
 
 let PLUGIN = null, PHASES = [], current = null, original = '', run = null, es = null;
 let authES = null, isReplaying = false;
-let RUN_MODEL = { status: 'none', phase: null, blocked: null, complete: false, cost: 0, actions: {} };
+let RUN_MODEL = {
+  status: 'none', phase: null, blocked: null, complete: false,
+  cost: 0, costReported: false, turns: null, actions: {},
+};
 
 const openAction = () => Object.values(RUN_MODEL.actions).find(a => a.status === 'open');
 const phaseName = id => PHASES.find(p => Number(p.id) === Number(id))?.label || `Fase ${id}`;
@@ -1363,9 +1366,18 @@ const usd = value => {
 // estado visible no depende de qué vista esté abierta ni de un texto del log.
 function renderRunSurfaces() {
   const action = openAction();
-  const cost = usd(RUN_MODEL.cost);
+  const calculating = RUN_MODEL.status === 'running';
+  const cost = calculating
+    ? (RUN_MODEL.costReported ? `${usd(RUN_MODEL.cost)} + calculando…` : 'US$ — calculando…')
+    : (!RUN_MODEL.costReported && RUN_MODEL.turns != null ? 'US$ — no informado' : usd(RUN_MODEL.cost));
   $('costValue').textContent = cost;
   $('dockCost').textContent = cost;
+  $('costChip').dataset.pending = calculating ? '1' : '0';
+  const costTitle = calculating
+    ? 'Claude Code informa el costo exacto cuando termina el turno actual.'
+    : 'Costo acumulado informado por Claude Code al terminar cada turno.';
+  $('costChip').title = costTitle;
+  $('dockCost').title = costTitle;
   $('actionStrip').hidden = !action;
   $('btnConsoleAction').hidden = !action;
   if (action) $('actionStripText').textContent = `${phaseName(action.phase)} · ${action.reason}`;
@@ -2051,7 +2063,10 @@ async function start() {
   showView('ciclo');
   resetPhases();
   $('log').innerHTML = '';
-  RUN_MODEL = { status: 'running', phase: null, blocked: null, complete: false, cost: 0, actions: {} };
+  RUN_MODEL = {
+    status: 'running', phase: null, blocked: null, complete: false,
+    cost: 0, costReported: false, turns: null, actions: {},
+  };
   renderRunSurfaces();
   NODE_OUT = {}; NODE_STATE = {}; renderGraph();
 
@@ -2267,6 +2282,8 @@ function onEvent(ev) {
   }
   if (ev.t === 'result') {
     RUN_MODEL.cost = Number(ev.cost) || 0;
+    RUN_MODEL.costReported = RUN_MODEL.costReported || !!ev.costReported;
+    RUN_MODEL.turns = ev.turns ?? RUN_MODEL.turns;
     for (const [node, state] of Object.entries(NODE_STATE)) {
       if (state === 'active') NODE_STATE[node] = 'paused';
     }
@@ -2918,7 +2935,10 @@ async function resetStudio() {
   $('log').innerHTML = '';
   if ($('dlgAction').open) $('dlgAction').close();
 
-  RUN_MODEL = { status: 'none', phase: null, blocked: null, complete: false, cost: 0, actions: {} };
+  RUN_MODEL = {
+    status: 'none', phase: null, blocked: null, complete: false,
+    cost: 0, costReported: false, turns: null, actions: {},
+  };
   NODE_OUT = {}; NODE_STATE = {}; selectedNode = null;
   $('detailCard').hidden = true;
   resetPhases();
@@ -2969,7 +2989,8 @@ async function restaurar() {
   RUN_MODEL = {
     status: info.status || 'none', phase: info.phase ?? null,
     blocked: info.blocked || null, complete: !!info.cycleComplete,
-    cost: Number(info.cost) || 0,
+    cost: Number(info.cost) || 0, costReported: Number(info.costReports) > 0,
+    turns: info.turns ?? null,
     actions: Object.fromEntries((info.actions || []).map(a => [a.id, a])),
   };
   NODE_OUT = {}; NODE_STATE = {}; PHASE_STATE = {}; PHASE_NOTE = {};

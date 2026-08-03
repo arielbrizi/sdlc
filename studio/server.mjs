@@ -1101,7 +1101,7 @@ function startRun({ storyId, repoDir, manual, baseBranch, permissionMode, allowe
     id, storyId, prompt, args, cwd: repoDir,
     startedAt: Date.now(), status: 'running',
     phase: null, phaseHistory: [], blocked: null, pendingBlock: null, cycleComplete: false,
-    cost: 0,
+    cost: 0, costReports: 0,
     artifacts: {}, events: [], clients: new Set(), child: null, stdinClosed: false,
     pending: new Map(), // tool_use_id -> herramienta/agente/nodo, para atribuir resultados
     actions: new Map(),
@@ -1176,7 +1176,10 @@ function startRun({ storyId, repoDir, manual, baseBranch, permissionMode, allowe
         // el acumulado de toda la sesión para que continuar el chat no vuelva
         // a mostrar solamente el último importe.
         const turnCost = Number(msg.total_cost_usd);
-        if (Number.isFinite(turnCost) && turnCost >= 0) run.cost += turnCost;
+        if (Number.isFinite(turnCost) && turnCost >= 0) {
+          run.cost += turnCost;
+          run.costReports++;
+        }
         run.turns = msg.num_turns ?? null;
         // Terminó el turno, no la sesión: queda esperando el próximo mensaje.
         run.status = run.stdinClosed ? 'done' : 'idle';
@@ -1200,6 +1203,8 @@ function startRun({ storyId, repoDir, manual, baseBranch, permissionMode, allowe
           ok: !msg.is_error,
           status: run.status,
           cost: run.cost,
+          costReported: Number.isFinite(turnCost) && turnCost >= 0,
+          costReports: run.costReports,
           turnCost: Number.isFinite(turnCost) ? turnCost : null,
           turns: run.turns,
           text: resultText ? resultText.slice(0, 4000) : null,
@@ -1427,7 +1432,8 @@ const server = http.createServer(async (req, res) => {
       if (!run) return json(res, 404, { error: 'run no encontrado' });
       return json(res, 200, {
         id: run.id, storyId: run.storyId, status: run.status, phase: run.phase,
-        blocked: run.blocked, cost: run.cost ?? null, turns: run.turns ?? null,
+        blocked: run.blocked, cost: run.cost ?? null, costReports: run.costReports ?? 0,
+        turns: run.turns ?? null,
         actions: [...run.actions.values()], cycleComplete: run.cycleComplete,
         cwd: run.cwd, prompt: run.prompt, vivo: !!run.child,
       });

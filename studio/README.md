@@ -46,6 +46,12 @@ se repite en el encabezado de la consola. Empieza en `US$ 0.0000`, suma el
 `total_cost_usd` que Claude Code informa al cerrar cada turno y se reconstruye
 al recuperar un run después de recargar la página.
 
+Claude Code no informa un total durante los mensajes intermedios: el campo llega
+en el evento final `result`. Mientras el primer turno está activo el Studio dice
+`US$ — calculando…`; en turnos posteriores conserva el acumulado confirmado y
+agrega `+ calculando…`. Si el resultado no incluye costo, muestra `no informado`
+en vez de presentar un cero engañoso.
+
 | Sección | Para qué |
 |---|---|
 | Ciclo | El mapa del skill `us` con el estado del run en vivo |
