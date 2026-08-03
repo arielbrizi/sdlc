@@ -120,6 +120,11 @@ vacía a la derecha. Un diagrama donde el estado
 vive solo en el color del borde deja afuera a quien no distingue esos colores, y
 el estado es justamente lo que se viene a mirar durante un run.
 
+Cuando `@ux` está habilitado pero falta el frame de Figma, su caja muestra
+**“falta link de Figma”** con borde de advertencia. El detalle del nodo explica
+el problema y ofrece ir directamente a Configurar diseño; un agente encendido
+sin su fuente principal no puede parecer correctamente configurado.
+
 **Mapa, barra de ejecución y consola reducen el mismo stream de eventos.** La
 consola tiene un resumen fijo con el estado y la fase actuales: el log de abajo
 es historial y no se usa como una segunda fuente de verdad. Terminar un turno de

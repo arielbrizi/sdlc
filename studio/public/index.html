@@ -451,6 +451,8 @@ table.cat tbody tr[data-open="1"]{background:color-mix(in srgb,var(--accent) 9%,
    plugin no la tiene. */
 .gnode[data-off="1"] rect{stroke-dasharray:4 3;fill:var(--surface)}
 .gnode[data-off="1"] text{fill:var(--subtle)}
+.gnode[data-warning="1"] rect{stroke:var(--warn);stroke-width:2;stroke-dasharray:4 3}
+.gnode[data-warning="1"] .gsub{fill:var(--warn);font-weight:700}
 
 /* Interruptor dentro de la caja del agente. El área de click es más grande que
    el dibujo: 30x16 es una figura, no un target. */
@@ -1588,6 +1590,14 @@ let CONFIG = null;
 
 const agenteOn = nombre => (CONFIG ? CONFIG.agents?.[nombre] !== false : true);
 
+// @ux habilitado sin una pantalla concreta de Figma es una configuración
+// incompleta: el agente puede revisar el repo, pero no sabe qué interfaz debe
+// construir. Se refleja en el mapa y en el detalle, no queda escondido acá.
+const figmaConfigurado = () => !!(
+  CONFIG?.figma?.url || (CONFIG?.figma?.file_key && CONFIG?.figma?.node_id)
+);
+const uxSinFigma = () => agenteOn('ux') && !figmaConfigurado();
+
 async function loadConfig() {
   try {
     CONFIG = await api('/api/config?repoDir=' + encodeURIComponent($('repoDir').value.trim()));
@@ -2689,15 +2699,18 @@ function renderGraph() {
     // Un agente apagado se dibuja igual pero dice que no va a correr: sacarlo
     // del diagrama haría creer que el ciclo no tiene esa fase.
     const apagado = n.kind === 'agent' && !agenteOn(String(n.id).split(':')[1]);
+    const warning = n.id === 'agent:ux' && uxSinFigma();
     const sub = apagado
       ? ['deshabilitado', n.sub].filter(Boolean).join(' · ')
+      : warning ? '⚠ falta link de Figma'
       : [palabra, n.sub].filter(Boolean).join(' · ');
     const label = n.label || n.name;
     return `
       <g class="gnode" data-node="${esc(n.id)}" data-kind="${esc(n.kind)}"
          data-state="${esc(st)}" data-sel="${n.id === selectedNode ? 1 : 0}"
-         data-off="${apagado ? 1 : 0}" tabindex="0" role="button"
-         aria-label="${esc(label)}${apagado ? ', deshabilitado' : palabra ? `, ${palabra}` : ''}">
+         data-off="${apagado ? 1 : 0}" data-warning="${warning ? 1 : 0}"
+         tabindex="0" role="button"
+         aria-label="${esc(label)}${apagado ? ', deshabilitado' : warning ? ', advertencia: falta configurar el link de Figma' : palabra ? `, ${palabra}` : ''}">
         <rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}"/>
         <text x="${n.x + 14}" y="${n.y + (sub ? 23 : 30)}">${esc(label)}</text>
         ${sub ? `<text class="gsub" x="${n.x + 14}" y="${n.y + 39}">${esc(sub)}</text>` : ''}
@@ -2829,6 +2842,7 @@ function renderNodeDetail() {
 
   const estado = STATE_WORD[nodeState(id)];
   const esDiseno = (kind === 'phase' && name === '3') || (kind === 'agent' && name === 'ux');
+  const warningFigma = esDiseno && uxSinFigma();
   const agente = kind === 'agent' ? PLUGIN.agents.find(a => a.name === name) : null;
   const resumen = agente?.description || '';
 
@@ -2850,6 +2864,10 @@ function renderNodeDetail() {
         ${estado ? `<span class="tag">${esc(estado)}</span>` : ''}
       </div>
       ${kind === 'phase' && PHASE_HELP[name] ? `<p class="prose">${esc(PHASE_HELP[name])}</p>` : ''}
+      ${warningFigma ? `<div class="notice warn">
+        <span><b>Falta configurar el link de Figma.</b><br>
+        @ux está habilitado, pero no tiene una pantalla de referencia para esta feature.</span>
+      </div>` : ''}
       ${agente ? `
         <div class="detail-summary">
           <span class="label">Qué hace</span>
