@@ -467,6 +467,11 @@ table.cat tbody tr[data-open="1"]{background:color-mix(in srgb,var(--accent) 9%,
 .gtoggle:focus{outline:none}
 .gtoggle:focus-visible .gt-hit{fill:color-mix(in srgb,var(--accent) 18%,transparent);
   stroke:var(--accent);stroke-width:2}
+.gquick{cursor:pointer}
+.gquick rect{fill:color-mix(in srgb,var(--warn) 14%,var(--surface));stroke:var(--warn);stroke-width:1;rx:11}
+.gquick text{font-family:var(--sans);font-size:10px;font-weight:700;text-anchor:middle;fill:var(--warn)}
+.gquick:hover rect,.gquick:focus-visible rect{fill:color-mix(in srgb,var(--warn) 24%,var(--surface));stroke-width:2}
+.gquick:focus{outline:none}
 
 .detail-toggle{display:flex;flex-direction:column;gap:4px;padding:10px 12px;
   border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface-2)}
@@ -1298,7 +1303,10 @@ document.querySelectorAll('.nav-item[data-view]').forEach(b =>
 
 function openDesignConfig() {
   showView('config');
-  requestAnimationFrame(() => $('designConfig').scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  requestAnimationFrame(() => {
+    $('designConfig').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    $('fgUrl').focus({ preventScroll: true });
+  });
 }
 $('btnCycleDesign').addEventListener('click', openDesignConfig);
 
@@ -2733,6 +2741,17 @@ function renderGraph() {
       </g>`;
   };
 
+  const figmaQuickSvg = () => {
+    const n = byId['agent:ux'];
+    if (!n || !uxSinFigma()) return '';
+    const x = n.x + n.w + 8, y = n.y + 13, w = 78, h = 24;
+    return `<g class="gquick" data-action="figma" role="button" tabindex="0"
+      aria-label="Configurar el link de Figma para @ux">
+      <rect x="${x}" y="${y}" width="${w}" height="${h}"/>
+      <text x="${x + w / 2}" y="${y + 16}">Configurar</text>
+    </g>`;
+  };
+
   const svg = [
     ...g.edges.map(e => `<path class="gedge ${e.kind}${e.kind === 'loop' ? ' dashed' : ''}${
       done(e.b) && e.kind !== 'loop' ? ' done' : ''}" d="${edgePath(e)}"/>`),
@@ -2752,6 +2771,7 @@ function renderGraph() {
     ...g.nodes.filter(n => n.kind === 'titulo').map(n =>
       `<text class="glabel" x="${n.x}" y="${n.y + 12}">${esc(n.label)}</text>`),
     ...g.nodes.filter(n => n.kind !== 'titulo').map(nodeSvg),
+    figmaQuickSvg(),
     ...g.nodes.filter(n => n.kind === 'agent').map(toggleSvg),
   ].join('');
 
@@ -2780,6 +2800,15 @@ function renderGraph() {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); cambiar(); }
     });
   });
+
+  const figmaQuick = el.querySelector('.gquick[data-action="figma"]');
+  if (figmaQuick) {
+    const abrir = () => openDesignConfig();
+    figmaQuick.addEventListener('click', abrir);
+    figmaQuick.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); abrir(); }
+    });
+  }
 
   // Devolver el foco donde estaba: el redibujado se lleva puesto el elemento.
   if (focoAgente) {

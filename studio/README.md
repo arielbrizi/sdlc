@@ -124,6 +124,8 @@ Cuando `@ux` está habilitado pero falta el frame de Figma, su caja muestra
 **“falta link de Figma”** con borde de advertencia. El detalle del nodo explica
 el problema y ofrece ir directamente a Configurar diseño; un agente encendido
 sin su fuente principal no puede parecer correctamente configurado.
+Al lado del nodo aparece además un botón **Configurar** que abre esa sección y
+deja el foco en el campo del link, para resolverlo sin recorrer el panel.
 
 **Mapa, barra de ejecución y consola reducen el mismo stream de eventos.** La
 consola tiene un resumen fijo con el estado y la fase actuales: el log de abajo
