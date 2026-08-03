@@ -775,11 +775,16 @@ function emit(run, event) {
  * Resumen corto de una llamada a herramienta, para que el log muestre qué está
  * haciendo el run y no solo en qué fase va.
  */
+const SUBAGENT_TOOLS = new Set(['Task', 'Agent']);
+const isSubagentTool = name => SUBAGENT_TOOLS.has(name);
+const subagentName = input => unqualify(String(
+  input.subagent_type || input.agent || input.name || '',
+).toLowerCase());
+
 function toolSummary(name, input = {}) {
   if (name === 'Bash') return String(input.command || '');
-  if (name === 'Task') {
-    const agent = input.subagent_type || input.agent || '?';
-    return `@${agent}${input.description ? ` — ${input.description}` : ''}`;
+  if (isSubagentTool(name)) {
+    return String(input.description || input.prompt || 'Trabajo delegado a un subagente');
   }
   if (['Read', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit'].includes(name)) {
     return String(input.file_path || input.notebook_path || '');
@@ -798,8 +803,8 @@ function toolSummary(name, input = {}) {
  * cuelga de la fase en la que ocurrió.
  */
 function nodeFor(run, name, input = {}) {
-  if (name === 'Task') {
-    return `agent:${unqualify(String(input.subagent_type || input.agent || '').toLowerCase())}`;
+  if (isSubagentTool(name)) {
+    return `agent:${subagentName(input) || 'desconocido'}`;
   }
   if (name === 'Bash') {
     const script = (String(input.command || '').match(/([A-Za-z0-9._-]+\.sh)/) || [])[1];
@@ -912,19 +917,19 @@ function inferPhase(run, msg) {
 
       // El nodo se recuerda por id para poder colgarle el resultado cuando llegue.
       const node = nodeFor(run, name, input);
-      const agent = name === 'Task'
-        ? unqualify(String(input.subagent_type || input.agent || '').toLowerCase())
+      const agent = isSubagentTool(name)
+        ? subagentName(input)
         : null;
       const isPr = name === 'Bash' && /\b(gh pr create|az repos pr create|glab mr create)\b/.test(String(input.command || ''));
       if (b.id) run.pending.set(b.id, {
         node, name, agent, isPr, phase: agent ? AGENT_PHASE[agent] : run.phase,
       });
       emit(run, {
-        t: 'tool', name, node, id: b.id || null,
+        t: 'tool', name, node, agent, id: b.id || null,
         summary: toolSummary(name, input).slice(0, 400), at: Date.now(),
       });
 
-      if (name === 'Task') {
+      if (isSubagentTool(name)) {
         // Los subagentes de un plugin llegan calificados: `globant-sdlc:qa`.
         const phase = AGENT_PHASE[agent];
         if (phase !== undefined) {
@@ -965,7 +970,8 @@ function inferPhase(run, msg) {
         if (pending) {
           run.pending.delete(b.tool_use_id);
           emit(run, {
-            t: 'output', node: pending.node, id: b.tool_use_id,
+            t: 'output', node: pending.node, agent: pending.agent, name: pending.name,
+            id: b.tool_use_id,
             text: text.slice(0, 6000), at: Date.now(),
           });
 

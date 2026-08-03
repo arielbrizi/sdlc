@@ -536,7 +536,10 @@ body.dock-resizing{cursor:ns-resize;user-select:none}
 .ev{display:flex;gap:12px;padding:4px 0;border-bottom:1px solid var(--border)}
 .ev:last-child{border-bottom:none}
 .ev-t{color:var(--subtle);flex-shrink:0;font-size:11px}
-.ev-k{flex-shrink:0;width:78px;font-size:11px;color:var(--subtle)}
+.ev-k{flex-shrink:0;width:72px;font-size:11px;color:var(--subtle)}
+.ev-o{flex:0 0 150px;max-width:150px;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;font-size:11px;font-weight:600;color:var(--accent)}
+.ev-o:empty{display:none}
 .ev-m{white-space:pre-wrap;word-break:break-word;min-width:0;color:var(--text)}
 .ev[data-k="phase"] .ev-k,.ev[data-k="agent"] .ev-k{color:var(--warn);font-weight:600}
 .ev[data-k="blocked"] .ev-k,.ev[data-k="error"] .ev-k,.ev[data-k="stderr"] .ev-k{color:var(--danger);font-weight:600}
@@ -545,6 +548,7 @@ body.dock-resizing{cursor:ns-resize;user-select:none}
 .ev[data-k="ask"] .ev-k{color:var(--k-skill)}
 .ev[data-k="action"] .ev-k,.ev[data-k="action_resolved"] .ev-k{color:var(--danger);font-weight:700}
 .ev-tool b{font-weight:600;color:var(--k-script)}
+.ev[data-agent="1"] .ev-k,.ev[data-agent="1"] .ev-o{color:var(--k-agent)}
 .send{display:flex;gap:8px;padding:10px 16px;border-top:1px solid var(--border);
   background:var(--surface);flex-shrink:0}
 .send textarea{flex:1;resize:none;height:36px}
@@ -2298,15 +2302,35 @@ let evCount = 0;
 function logEvent(ev) {
   const row = document.createElement('div');
   row.className = 'ev'; row.dataset.k = ev.t;
+  if (ev.agent || String(ev.node || '').startsWith('agent:')) row.dataset.agent = '1';
+
+  const owner = (() => {
+    if (ev.agent) return `@${ev.agent}`;
+    const node = String(ev.node || '');
+    if (node.startsWith('agent:')) return `@${node.slice(6)}`;
+    if (node.startsWith('script:')) return node.slice(7);
+    if (node.startsWith('phase:')) {
+      const phase = Number(node.slice(6));
+      return `${String(phase).padStart(2, '0')} · ${phaseName(phase)}`;
+    }
+    if (ev.phase != null) return `${String(ev.phase).padStart(2, '0')} · ${phaseName(ev.phase)}`;
+    if (ev.t === 'ask') return 'vos';
+    if (ev.t === 'say' || ev.t === 'result') return 'sesión principal';
+    return '';
+  })();
+  const label = ev.t === 'tool' && ev.agent ? 'delegación'
+    : ev.t === 'output' ? 'resultado'
+    : EV_LABEL[ev.t] || ev.t;
 
   // Una tool call se lee mejor con el nombre de la herramienta destacado.
   const body = ev.t === 'tool'
-    ? `<span class="ev-m ev-tool"><b>${esc(ev.name)}</b> ${esc(ev.summary || '')}</span>`
+    ? `<span class="ev-m ev-tool"><b>${esc(ev.agent ? 'Subagente' : ev.name)}</b> ${esc(ev.summary || '')}</span>`
     : `<span class="ev-m">${esc(ev.text || ev.message || ev.reason || ev.detail ||
         ev.file || ev.cmd || ev.agent || ev.status || '')}</span>`;
 
   row.innerHTML = `<span class="ev-t">${hhmm(ev.at)}</span>
-                   <span class="ev-k">${esc(EV_LABEL[ev.t] || ev.t)}</span>${body}`;
+                   <span class="ev-k">${esc(label)}</span>
+                   <span class="ev-o" title="${esc(owner)}">${esc(owner)}</span>${body}`;
   $('log').append(row);
   $('log').scrollTop = $('log').scrollHeight;
 

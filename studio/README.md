@@ -360,6 +360,13 @@ Claude. Dos cosas que antes no se veían:
   solo en qué fase va.
 - **Tus propios mensajes**, marcados como `vos`, en la misma línea de tiempo.
 
+Cada fila declara además quién es el dueño de esa actividad: la fase, el script
+o `@subagente`. Claude Code llamó históricamente `Task` a la herramienta de
+delegación y en versiones nuevas puede emitirla como `Agent`; el Studio reconoce
+ambas como el mismo tipo. Al aparecer `Agent @desarrollador`, el mapa avanza a
+Implementación en el mismo evento y el log lo muestra como **delegación**, no
+como una herramienta genérica.
+
 La sesión no se cierra cuando el ciclo termina: queda en `Sesión abierta` y podés
 seguir la conversación con todo el contexto del run —preguntarle por qué tomó una
 decisión, pedirle que corrija algo, revisar el diff—. `Cerrar` la termina;
