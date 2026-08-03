@@ -825,9 +825,9 @@ function push(channel, event, cap = 3000) {
 
 /**
  * El login de `claude` es un flujo OAuth por browser: el proceso imprime una URL
- * y espera. Como el studio ya corre en la máquina del dev y se ve en un browser,
- * alcanza con levantar el proceso, mostrar la URL y poder escribirle a stdin
- * (algunos flujos piden pegar un código de vuelta).
+ * y espera el callback. El CLI abre y completa ese recorrido por sí mismo; el
+ * Studio solo inicia el proceso y comprueba el resultado, sin exponer consola,
+ * URLs de callback ni tokens.
  *
  * Es un proceso único: dos logins en paralelo compiten por las mismas credenciales.
  */
@@ -862,7 +862,7 @@ function startMcpLogin(server) {
   mcpLogin.status = 'running';
   push(mcpLogin, { t: 'start', server, at: Date.now() });
 
-  const child = spawn('claude', args, { cwd: REPO_ROOT, stdio: ['pipe', 'pipe', 'pipe'] });
+  const child = spawn('claude', args, { cwd: REPO_ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
   mcpLogin.child = child;
   const scan = (text) => {
     push(mcpLogin, { t: 'out', text: text.slice(0, 2000), at: Date.now() });
@@ -1667,13 +1667,6 @@ const server = http.createServer(async (req, res) => {
       const { server } = JSON.parse(await readBody(req) || '{}');
       const out = startMcpLogin(String(server || ''));
       return json(res, out.error ? 409 : 200, out.error ? { error: out.error } : out);
-    }
-
-    if (p === '/api/mcp/input' && req.method === 'POST') {
-      const { text } = JSON.parse(await readBody(req) || '{}');
-      if (!mcpLogin.child) return json(res, 409, { error: 'no hay un login MCP en curso' });
-      mcpLogin.child.stdin.write(String(text || '') + '\n');
-      return json(res, 200, { ok: true });
     }
 
     if (p === '/api/mcp/cancel' && req.method === 'POST') {

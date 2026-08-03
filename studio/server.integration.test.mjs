@@ -70,6 +70,9 @@ printf '%s\n' '{"type":"result","is_error":false,"result":"Turno terminado","num
   try {
     const baseUrl = `http://127.0.0.1:${port}`;
     await waitFor(`${baseUrl}/api/plugin`);
+    const home = await fetch(baseUrl).then(r => r.text());
+    assert.match(home, /Conectar Figma/);
+    assert.doesNotMatch(home, /URL completa del callback|Abrir autenticación/);
     const plugin = await fetch(`${baseUrl}/api/plugin`).then(r => r.json());
     assert.equal(plugin.targetRepo, path.resolve(repo));
     assert.equal(plugin.targetRepoExplicit, true);

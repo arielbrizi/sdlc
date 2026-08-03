@@ -88,9 +88,10 @@ claude --plugin-dir ./globant-sdlc
 ```
 
 Antes de ejecutar un run headless, usá **Conectar Figma** en la configuración
-del Studio. El panel abre el OAuth mediante Claude Code, permite recuperar un
-callback fallido y verifica la conexión antes de comenzar. Como alternativa,
-podés correr `claude --plugin-dir <plugin> mcp login plugin:globant-sdlc:figma`.
+del Studio. El panel abre el OAuth mediante Claude Code y verifica solo la
+conexión antes de comenzar; no pide copiar URLs ni expone la consola técnica.
+Como alternativa, podés correr
+`claude --plugin-dir <plugin> mcp login plugin:globant-sdlc:figma`.
 GitHub toma `GITHUB_TOKEN`; Azure DevOps abre su login inicial.
 
 **Los scripts necesitan permiso de ejecución** después de clonar:

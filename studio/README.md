@@ -304,10 +304,11 @@ en código. Sus campos técnicos están plegados como opciones avanzadas.
 El link y el acceso son dos cosas distintas: pegar el frame no autentica el MCP.
 La misma sección muestra el estado real de `plugin:globant-sdlc:figma` y ofrece
 **Conectar Figma**. El Studio ejecuta `claude mcp login` antes del run, abre el
-OAuth en el navegador y confirma el resultado con `claude mcp get`. Si el
-callback local no carga, se puede pegar la URL completa que quedó en la barra
-del navegador. La URL se envía al proceso y no se guarda. Cuando `@ux` y Figma
-están habilitados, el preflight no permite ejecutar hasta confirmar el acceso.
+OAuth en el navegador y confirma el resultado con `claude mcp get`. Es una sola
+acción: no muestra la consola del CLI, no pide copiar callbacks y no ve ni guarda
+el token. Al terminar la autorización, el estado del Studio se actualiza solo.
+Cuando `@ux` y Figma están habilitados, el preflight no permite ejecutar hasta
+confirmar el acceso.
 
 ## Editar
 
