@@ -485,11 +485,14 @@ table.cat tbody tr[data-open="1"]{background:color-mix(in srgb,var(--accent) 9%,
 .gedge.spine{stroke:var(--subtle)}
 .gedge.done{stroke:var(--ok)}
 .gedge.loop{stroke:var(--warn)}
+.gedge.loop.active{stroke-width:2.8;filter:drop-shadow(0 0 3px color-mix(in srgb,var(--warn) 55%,transparent))}
 .gedge.dashed{stroke-dasharray:4 4}
 .glabel{font-family:var(--sans);font-size:11px;font-weight:700;letter-spacing:.07em;
   text-transform:uppercase;fill:var(--subtle)}
 .gloop{fill:var(--warn);font-size:9px;text-anchor:middle;font-weight:700;
   letter-spacing:.08em;text-transform:uppercase}
+.gloop-source{fill:var(--warn);font-family:var(--sans);font-size:8px;text-anchor:middle;
+  font-weight:750;letter-spacing:.04em;text-transform:uppercase}
 .gcycle rect{fill:var(--surface);stroke:var(--warn);stroke-width:1.5}
 .gcycle text{font-family:var(--mono);font-size:12px;font-weight:800;
   text-anchor:middle;fill:var(--warn)}
@@ -1402,6 +1405,17 @@ const PHASE_PARTS = {
 // misma que corre el skill. Que no figurara nada se leía como un componente
 // faltante, cuando es una decisión de diseño: ningún subagente puede escribir.
 const MAIN_TAG = { 7: 'abre el PR' };
+const AGENT_TAG = {
+  refinamiento: 'valida si se puede empezar', arquitectura: 'define el plan',
+  ux: 'define el contrato visual', desarrollador: 'escribe código y tests',
+  qa: 'valida criterios y regresiones', seguridad: 'audita riesgos',
+  reviewer: 'aprueba o pide cambios',
+};
+const PHASE_FLOW_TAG = {
+  4: 'única fase que corrige el código',
+  5: 'si falla, vuelve a código',
+  6: 'si rechaza, vuelve a código',
+};
 
 // Los nombres son los de Claude Code, no etiquetas inventadas para el studio:
 // quien use el panel tiene que poder buscar estos términos en la documentación
@@ -1453,7 +1467,7 @@ const PHASE_HELP = {
   3: 'Baja la historia a contrato de UI contra lo que ya existe en Storybook y Figma. Apagada por defecto: un repo de backend no tiene interfaz que revisar.',
   4: 'Escribe el código y los tests en una branch nueva. Es el único subagente que escribe: los demás auditan.',
   5: 'Dos subagentes revisan en paralelo: uno calidad, otro seguridad. Solo reportan; las correcciones vuelven a @desarrollador, hasta 3 ciclos.',
-  6: 'Una última lectura del diff, buscando razones para rechazarlo.',
+  6: 'Revisa el diff completo. Si encuentra un problema bloqueante, devuelve el trabajo a @desarrollador; después vuelven a correr QA y Seguridad.',
   7: 'Abre el Pull Request en draft para que lo revise una persona.',
 };
 
@@ -1480,6 +1494,7 @@ let RUN_MODEL = {
   cost: 0, costReported: false, turns: null,
   elapsedMs: 0, activeSince: null, actions: {},
   correctionRound: 0, maxCorrectionRounds: 3,
+  correctionSource: null,
 };
 
 const openAction = () => Object.values(RUN_MODEL.actions).find(a => a.status === 'open');
@@ -2349,6 +2364,7 @@ async function start() {
     cost: 0, costReported: false, turns: null,
     elapsedMs: 0, activeSince: consola ? null : Date.now(), actions: {},
     correctionRound: 0, maxCorrectionRounds: 3,
+    correctionSource: null,
   };
   renderRunSurfaces();
   NODE_OUT = {}; NODE_STATE = {}; HOOK_COUNTS = {}; renderGraph();
@@ -2495,6 +2511,9 @@ function onEvent(ev) {
   if (ev.t === 'phase' || ev.t === 'agent') {
     if (!RUN_MODEL.blocked) {
       RUN_MODEL.phase = ev.phase;
+      // El retorno queda resaltado mientras @desarrollador corrige. Al volver
+      // a Verificación ya se consumió esa flecha y el flujo sigue hacia abajo.
+      if (Number(ev.phase) >= 5) RUN_MODEL.correctionSource = null;
       for (let k = 0; k < ev.phase; k++) marcar(k, 'done');
       marcar(ev.phase, 'active');
       PHASE_NOTE[ev.phase] = ev.detail || ev.agent || '';
@@ -2574,11 +2593,16 @@ function onEvent(ev) {
   if (ev.t === 'cycle_complete') {
     RUN_MODEL.complete = true;
     RUN_MODEL.phase = ev.phase;
+    RUN_MODEL.correctionSource = null;
     for (const p of PHASES) PHASE_STATE[p.id] = 'done';
   }
   if (ev.t === 'correction_round') {
     RUN_MODEL.correctionRound = Math.max(0, Number(ev.round) || 0);
     RUN_MODEL.maxCorrectionRounds = Math.max(1, Number(ev.max) || 3);
+  }
+  if (ev.t === 'audit_verdict') {
+    RUN_MODEL.correctionSource = ev.requested ? ev.source : null;
+    if (ev.requested) PHASE_NOTE[ev.phase] = 'cambios solicitados · vuelve a Implementación';
   }
   if (ev.t === 'snapshot') {
     if (ev.connection) RUN_MODEL.connection = ev.connection;
@@ -2590,7 +2614,7 @@ function onEvent(ev) {
   }
   if (ev.t === 'phase' || ev.t === 'agent' || ev.t === 'blocked' ||
       ev.t === 'action_resolved' || ev.t === 'cycle_complete' ||
-      ev.t === 'correction_round') renderGraph();
+      ev.t === 'correction_round' || ev.t === 'audit_verdict') renderGraph();
 
   if (ev.t === 'start') setSession('running', 'Claude Code iniciado · esperando confirmación de conexión…');
   if (ev.t === 'init') {
@@ -2677,6 +2701,7 @@ const EV_LABEL = {
   blocked: 'bloqueo', result: 'turno', end: 'fin', error: 'error', stderr: 'stderr',
   action: 'acción', action_resolved: 'resuelta', cycle_complete: 'ciclo',
   correction_round: 'ronda correctiva',
+  audit_verdict: 'veredicto',
 };
 
 let evCount = 0;
@@ -2794,14 +2819,14 @@ const pushOut = (node, entry) => {
 function layout() {
   // PX deja el margen izquierdo donde entra el lazo de corrección sin pisar
   // las cajas.
-  const ROW = 92, TOP = 40, PX = 130, PW = 206, CX = 388, CW = 194, GAP = 18;
+  const ROW = 92, TOP = 40, PX = 190, PW = 206, CX = 448, CW = 194, GAP = 18;
   const nodes = [], edges = [];
 
   PHASES.forEach((p, i) => {
     nodes.push({
       id: `phase:${p.id}`, kind: 'phase', gate: p.gate,
       label: `${String(p.id).padStart(2, '0')} · ${p.label}`,
-      sub: PHASE_NOTE[p.id] || (p.gate ? 'puede abortar el run' : ''),
+      sub: PHASE_NOTE[p.id] || PHASE_FLOW_TAG[p.id] || (p.gate ? 'puede abortar el run' : ''),
       x: PX, y: TOP + i * ROW, w: PW, h: 52,
     });
     if (i) edges.push({ a: `phase:${PHASES[i - 1].id}`, b: `phase:${p.id}`, kind: 'spine' });
@@ -2823,7 +2848,7 @@ function layout() {
       maxX = Math.max(maxX, x + CW);
       nodes.push({
         ...c, x, y: TOP + i * ROW + 2, w: CW, h: 48,
-        sub: c.kind === 'agent' ? 'subagente'
+        sub: c.kind === 'agent' ? (AGENT_TAG[String(c.id).split(':')[1]] || 'subagente')
            : c.kind === 'main' ? (MAIN_TAG[p.id] || 'corre el skill')
            : c.kind,
       });
@@ -2831,9 +2856,16 @@ function layout() {
     });
   });
 
-  // qa y seguridad no corrigen: reportan, y la corrección vuelve a la fase 3.
-  // Sin este lazo el diagrama sugiere un flujo lineal que no es el real.
-  edges.push({ a: 'phase:5', b: 'phase:4', kind: 'loop' });
+  // Los auditores no escriben: cada rechazo vuelve al desarrollador. Son dos
+  // retornos distintos porque reviewer corre después de QA/seguridad.
+  edges.push({
+    a: 'phase:5', b: 'phase:4', kind: 'loop', track: 0,
+    source: 'verification', label: 'QA + seguridad',
+  });
+  edges.push({
+    a: 'phase:6', b: 'phase:4', kind: 'loop', track: 1,
+    source: 'reviewer', label: 'reviewer',
+  });
 
   // Banda lateral. Ni los hooks ni los MCP cuelgan de una fase: los hooks
   // corren sobre cualquiera y los MCP son de dónde sale la historia.
@@ -2874,7 +2906,7 @@ function renderGraph() {
       return `M${a.x + 24} ${a.y + a.h} L${a.x + 24} ${b.y}`;
     }
     if (e.kind === 'loop') {
-      const lx = a.x - 30;
+      const lx = a.x - 28 - (Number(e.track) || 0) * 36;
       return `M${a.x + 6} ${a.y + a.h / 2} L${lx} ${a.y + a.h / 2}`
            + ` L${lx} ${b.y + b.h / 2} L${b.x + 6} ${b.y + b.h / 2}`;
     }
@@ -2943,17 +2975,26 @@ function renderGraph() {
   };
 
   const svg = [
+    `<defs><marker id="loopArrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="var(--warn)"/></marker></defs>`,
     ...g.edges.map(e => `<path class="gedge ${e.kind}${e.kind === 'loop' ? ' dashed' : ''}${
-      done(e.b) && e.kind !== 'loop' ? ' done' : ''}" d="${edgePath(e)}"/>`),
+      e.kind === 'loop' && RUN_MODEL.correctionSource === e.source ? ' active' : ''}${
+      done(e.b) && e.kind !== 'loop' ? ' done' : ''}" d="${edgePath(e)}"${
+      e.kind === 'loop' ? ' marker-end="url(#loopArrow)"' : ''}/>`),
+    ...g.edges.filter(e => e.kind === 'loop').map(e => {
+      const a = byId[e.a], b = byId[e.b];
+      const lx = a.x - 28 - (Number(e.track) || 0) * 36;
+      const middle = (a.y + a.h / 2 + b.y + b.h / 2) / 2;
+      return `<text class="gloop-source" transform="translate(${lx - 7},${middle}) rotate(-90)">${esc(e.label)}</text>`;
+    }),
     (() => {
       const round = Math.max(0, Number(RUN_MODEL.correctionRound) || 0);
       const max = Math.max(1, Number(RUN_MODEL.maxCorrectionRounds) || 3);
       const middle = g.TOP + 4.5 * g.ROW;
-      return `<text class="gloop" transform="translate(43,${middle}) rotate(-90)">correcciones</text>
+      return `<text class="gloop" transform="translate(18,${middle}) rotate(-90)">ciclos correctivos</text>
       <g class="gcycle" data-over="${round > max ? 1 : 0}">
         <title>${round} de ${max} ciclos correctivos usados</title>
-        <rect x="68" y="${middle - 14}" width="58" height="28" rx="14"/>
-        <text x="97" y="${middle + 4}">${round} / ${max}</text>
+        <rect x="42" y="${middle - 14}" width="58" height="28" rx="14"/>
+        <text x="71" y="${middle + 4}">${round} / ${max}</text>
       </g>`;
     })(),
     // Los hooks no se conectan a una fase: se marca con una línea punteada.
@@ -3499,6 +3540,7 @@ async function resetStudio() {
     cost: 0, costReported: false, turns: null,
     elapsedMs: 0, activeSince: null, actions: {},
     correctionRound: 0, maxCorrectionRounds: 3,
+    correctionSource: null,
   };
   NODE_OUT = {}; NODE_STATE = {}; HOOK_COUNTS = {}; selectedNode = null;
   CONFIG = null;
@@ -3560,6 +3602,7 @@ async function restaurar() {
     actions: Object.fromEntries((info.actions || []).map(a => [a.id, a])),
     correctionRound: Math.max(0, Number(info.correctionRound) || 0),
     maxCorrectionRounds: Math.max(1, Number(info.maxCorrectionRounds) || 3),
+    correctionSource: null,
   };
   NODE_OUT = {}; NODE_STATE = {}; HOOK_COUNTS = {}; PHASE_STATE = {}; PHASE_NOTE = {};
   $('log').innerHTML = '';

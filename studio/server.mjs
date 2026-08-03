@@ -22,6 +22,7 @@ import os from 'node:os';
 import {
   MAX_CORRECTION_ROUNDS,
   RECOVERY_PROMPT,
+  auditCorrection,
   correctionRoundForTransition,
   finalCycleCompletion,
   humanInputRequest,
@@ -1193,6 +1194,14 @@ function inferPhase(run, msg) {
           if (pending.touchesPr && !b.is_error) run.prConfirmed = true;
 
           const answer = pending.agent ? agentJson(text) : null;
+          const audit = auditCorrection(pending.agent, answer?.verdict);
+          if (audit) emit(run, {
+            t: 'audit_verdict', ...audit, agent: pending.agent,
+            detail: audit.requested
+              ? `@${pending.agent} pidió cambios · vuelve a Implementación`
+              : '@reviewer aprobó el diff · avanza a Pull Request',
+            at: Date.now(),
+          });
           if (answer?.verdict === 'BLOCKED') {
             queueBlock(run, {
               phase: pending.phase ?? 1,

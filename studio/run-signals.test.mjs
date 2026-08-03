@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   MAX_CORRECTION_ROUNDS,
   RECOVERY_PROMPT,
+  auditCorrection,
   correctionRoundForTransition,
   finalCycleCompletion,
   humanInputRequest,
@@ -18,6 +19,17 @@ test('cuenta sólo regresos reales a implementación', () => {
   assert.equal(correctionRoundForTransition(5, 0, 'desarrollador'), 1);
   assert.equal(correctionRoundForTransition(6, 1, 'desarrollador'), 2);
   assert.equal(correctionRoundForTransition(5, 2, 'qa'), 2);
+});
+
+test('identifica qué auditor devuelve el flujo a implementación', () => {
+  assert.deepEqual(auditCorrection('reviewer', 'REQUEST_CHANGES'), {
+    source: 'reviewer', phase: 6, requested: true, verdict: 'REQUEST_CHANGES',
+  });
+  assert.deepEqual(auditCorrection('reviewer', 'APPROVE'), {
+    source: 'reviewer', phase: 6, requested: false, verdict: 'APPROVE',
+  });
+  assert.equal(auditCorrection('qa', 'FAIL')?.source, 'verification');
+  assert.equal(auditCorrection('seguridad', 'PASS'), null);
 });
 
 test('reconoce marcadores e informes técnicos de interrupción', () => {

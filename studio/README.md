@@ -114,6 +114,13 @@ y colgando de cada una los componentes que intervienen ahí. Los hooks van en un
 banda aparte, unida con línea punteada, porque no cuelgan de ninguna fase: corren
 sobre cualquiera.
 
+El grafo muestra además los dos retornos correctivos del ciclo. Si QA o Seguridad
+fallan, el trabajo vuelve a Implementación. Si Reviewer rechaza el diff completo,
+también vuelve a Implementación y después repite QA y Seguridad. Cada retorno
+tiene su propia flecha y nombre; durante un run, la flecha que pidió la corrección
+se resalta. El contador indica cuántos de los tres ciclos correctivos disponibles
+ya se usaron.
+
 **Antes había una vía lateral además del grafo.** Se eliminó: era el mismo
 diagrama dibujado dos veces, con su propio acumulador de estado, y esa
 duplicación terminó mostrando la misma fase en curso de un lado y terminada del

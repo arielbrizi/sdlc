@@ -11,6 +11,21 @@ export function correctionRoundForTransition(phase, round, agent) {
   return agent === 'desarrollador' && Number(phase) >= 5 ? current + 1 : current;
 }
 
+/** Traduce el veredicto de un auditor al retorno visual del mapa. */
+export function auditCorrection(agent, verdict) {
+  const name = String(agent || '').toLowerCase();
+  const result = String(verdict || '').toUpperCase();
+  if (name === 'reviewer' && ['APPROVE', 'REQUEST_CHANGES'].includes(result)) {
+    return {
+      source: 'reviewer', phase: 6, requested: result === 'REQUEST_CHANGES', verdict: result,
+    };
+  }
+  if (['qa', 'seguridad'].includes(name) && result === 'FAIL') {
+    return { source: 'verification', phase: 5, requested: true, verdict: result };
+  }
+  return null;
+}
+
 export const RECOVERY_PROMPT = `El cierre anterior quedó técnicamente incompleto; no es una decisión del usuario. Antes de repetir nada, reconciliá los efectos persistidos: inspeccioná archivos y artefactos del run, git status, git diff y commits recientes, el estado del subagente y el PR remoto si correspondía. No afirmes que faltan commits o archivos sin verificar esas fuentes. Si la operación ya produjo su efecto, no la repitas. Si faltó el JSON final de un subagente, reinvocalo solo para inspeccionar lo existente, completar lo estrictamente pendiente y devolver su contrato; no rehagas la implementación. Continuá desde la fase siguiente cuando la evidencia lo permita. No pidas confirmación humana para recuperarte.`;
 
 export function technicalToolInterruption(text) {
