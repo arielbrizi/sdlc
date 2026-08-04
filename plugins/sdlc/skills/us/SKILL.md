@@ -110,8 +110,8 @@ cambios del desarrollador y existe solo como referencia de procedencia.
 ### Contrato de salidas de agentes
 
 Cada subagente debe devolver exactamente un objeto JSON parseable con un campo
-`verdict`. Guardá la respuesta completa en el artefacto correspondiente antes de
-ramificar.
+`verdict`. Persistí el artefacto indicado por cada fase antes de ramificar;
+`plan_md` y `design_md` se extraen a sus Markdown y no se duplican en el JSON.
 
 Si no parsea, falta `verdict` o usa un valor fuera del contrato, tratá primero el
 caso como **cierre técnico incompleto**, no como una decisión humana. Reconciliá
@@ -122,9 +122,35 @@ repetir la implementación. Nunca afirmes que no hubo commits sin mirar Git. Sol
 si el segundo cierre vuelve a ser inválido detené el ciclo con un error técnico;
 no inventes preguntas bloqueantes ni pidas aprobación para continuar.
 
+### Presupuesto de ejecución y contexto
+
+Este ciclo es una fábrica de software, no una ceremonia. La profundidad se
+calibra con el riesgo y el tamaño real del cambio; que existan siete fases no
+autoriza a cada una a rediseñar o volver a auditar todo desde cero.
+
+- Pasá a cada agente **rutas de artefactos y `base_ref`**, no pegues el contenido
+  de `story.json`, planes, diseños ni diffs en el prompt. Cada agente lee una vez
+  lo que necesita y calcula el diff dentro de su contexto.
+- No releas un archivo después de crearlo si la herramienta confirmó que quedó
+  actualizado. No abras el código de un script prescripto para entenderlo si el
+  script terminó bien: su salida es el contrato.
+- Persistí cada resultado una sola vez. No copies el mismo documento a la
+  consola, a otro JSON y a otro Markdown salvo los artefactos contractuales
+  definidos acá.
+- No uses `TaskCreate`/`TaskUpdate` para representar las fases: el orden de este
+  skill y los artefactos del run ya son el estado durable. Una segunda lista de
+  tareas agrega tool calls y puede desincronizarse.
+- `low` exige la solución mínima y evidencia relevante. `medium` profundiza en
+  contratos o integraciones tocadas. `high` se detiene para revisión humana. No
+  promociones un cambio a mayor complejidad por preferencias, precedentes no
+  relacionados o mejoras que la historia no pidió.
+- Una salida extensa es una falla de handoff. Para `low`, `plan.md` y `design.md`
+  no superan 120 líneas cada uno; para `medium`, 240. Hallazgos y notas no
+  repiten historia, diff, plan ni resultados completos de comandos.
+
 ## Fase 1 — Refinamiento (circuit breaker)
 
-Delegá en el subagente `refinamiento` pasándole `story.json`.
+Delegá en el subagente `refinamiento` pasándole la ruta de `story.json`.
 
 Guardá su salida validada en `refinement.json`.
 
@@ -143,10 +169,10 @@ Frenar acá es el comportamiento correcto, no una falla.
 
 ## Fase 2 — Arquitectura
 
-Delegá en `arquitectura`, pasándole `story.json`, `config.json`, `git.json` y
-`repo-context.json`.
-Guardá su JSON en `architecture.json` y escribí el campo `plan_md` como
-`plan.md`. El agente no escribe archivos. El plan contiene:
+Delegá en `arquitectura`, pasándole las rutas de `story.json`, `config.json`,
+`git.json` y `repo-context.json`.
+Escribí el campo `plan_md` como `plan.md` y guardá en `architecture.json` el
+resto del objeto, **sin duplicar `plan_md`**. El agente no escribe archivos. El plan contiene:
 impacto en el codebase, diseño propuesto, archivos a tocar, contratos de API,
 migraciones de datos y riesgos.
 
@@ -161,10 +187,10 @@ escrito, no implementes y pedí revisión humana explícita.
 corre en repos de backend, y ahí un agente de diseño produce hallazgos genéricos
 que nadie puede accionar.
 
-Delegá en `ux`, pasándole `story.json`, `plan.md`, `repo-context.json` y la
-sección de diseño de `config.json`. Guardá su JSON en `design.json`. Produce `design.md` en el
-directorio del run —escribilo vos con
-el contenido que devuelve en `design_md`— con qué componentes del design system
+Delegá en `ux`, pasándole las rutas de `story.json`, `plan.md`,
+`repo-context.json` y `config.json`. Escribí `design_md` como `design.md` y
+guardá en `design.json` el resto del objeto, **sin duplicar `design_md`**. El
+documento define qué componentes del design system
 reusar, qué falta, tokens, estados y criterios visuales verificables.
 
 Para Figma, la entrada principal es `figma.url`: apunta al frame concreto de la
@@ -184,8 +210,9 @@ cuando una de las dos fuentes no está disponible.
 
 ## Fase 4 — Implementación
 
-Delegá en el subagente `desarrollador`, pasándole `plan.md`, `story.json`,
-`git.json` y `repo-context.json`. Si existe `design.md`, va también: es
+Delegá en el subagente `desarrollador`, pasándole las rutas de `plan.md`,
+`story.json`, `git.json` y `repo-context.json`. Si existe `design.md`, va
+también: es
 contrato, no sugerencia.
 
 Es el único agente del ciclo que escribe código. La branch
@@ -205,12 +232,14 @@ contexto, leer su salida y encadenar la fase siguiente.
 
 ## Fase 5 — Verificación (en paralelo)
 
-Delegá simultáneamente, pasándoles `story.json`, `plan.md`, `git.json`,
-`repo-context.json`, el diff
-completo contra `base_ref` y, si existe, `design.md`, en:
+Delegá simultáneamente, pasándoles las rutas de `story.json`, `plan.md`,
+`git.json`, `repo-context.json` y, si existe, `design.md`, en:
 
 - `qa` — cobertura de los criterios de aceptación, casos de borde, regresión
 - `seguridad` — OWASP, secretos, authz, dependencias
+
+No pegues el diff en ninguna invocación. Ambos leen `base_ref` desde `git.json`
+y calculan dentro de su sesión solo el diff del `scope` activo.
 
 Guardá las salidas en `qa.json` y `security.json`. Ninguno modifica código:
 reportan. Las correcciones vuelven a
@@ -229,8 +258,10 @@ inseguro. Hallazgos `medium` o `low` pueden quedar visibles en el PR.
 
 ## Fase 6 — Revisión adversarial
 
-Delegá en `reviewer` con `story.json`, `plan.md`, `repo-context.json`, los JSON de QA y seguridad y
-el diff completo contra `base_ref`. Guardá su salida en `review.json`. Su
+Delegá en `reviewer` con las rutas de `story.json`, `plan.md`, `git.json`,
+`repo-context.json` y los JSON de QA y seguridad. El reviewer calcula el diff
+del `scope` contra `base_ref`; no lo pegues en el prompt. Guardá su salida en
+`review.json`. Su
 trabajo es buscar razones para
 rechazar el cambio, no para aprobarlo. Lo que corresponda corregir vuelve a
 `desarrollador`. Después repetí QA, seguridad y reviewer, respetando el máximo

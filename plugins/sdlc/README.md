@@ -132,7 +132,7 @@ criterios de aceptación faltan o no son verificables. Lo que cambia es que no h
 a dónde escribir de vuelta: las preguntas bloqueantes quedan en
 `.claude/run/<ID>/blocked.md` y el PR es el único registro de la historia.
 
-## Las tres decisiones de diseño que importan
+## Las cuatro decisiones de diseño que importan
 
 **1. El PR es el gate, no el flujo.** El ciclo corre sin interrupciones porque
 el merge sigue siendo humano. Por eso el PR se abre en *draft*, con la
@@ -148,10 +148,17 @@ en una señal medible.
 
 **3. Quien audita no corrige.** La sesión principal persiste los JSON de
 auditoría y `desarrollador` aplica cambios de producto. Los auditores no tienen
-`Write` ni `Edit`; arquitectura, UX y reviewer tampoco tienen `Bash`. QA y
-seguridad conservan Bash exclusivamente para ejecutar verificaciones, por lo que
-esa parte del límite es contractual y queda reforzada por los hooks de Git y
-secretos, aunque no se presenta como una garantía absoluta del runtime.
+`Write` ni `Edit`. Arquitectura, UX, QA, seguridad y reviewer pueden usar Bash
+solo para inspección y verificaciones: no para mutar. Ese límite contractual
+queda reforzado por los hooks de Git y secretos, aunque no se presenta como una
+garantía absoluta del runtime.
+
+**4. La profundidad sigue al riesgo.** Las siete fases no son siete permisos
+para rediseñar la historia. Los agentes intercambian rutas en vez de pegar
+artefactos y diffs, evitan releer salidas, no duplican plan/diseño dentro de sus
+JSON y tienen presupuestos de líneas y turnos. Un cambio `low` recibe la
+solución mínima y evidencia relevante; `medium` profundiza donde toca contratos
+o integraciones; `high` se detiene para revisión humana.
 
 La recuperación también conserva esa separación. Si una invocación termina
 después de escribir código pero antes del JSON final, el ciclo verifica archivos

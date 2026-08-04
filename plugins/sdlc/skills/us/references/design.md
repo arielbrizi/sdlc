@@ -83,8 +83,16 @@ Consecuencias que hay que tener presentes:
 ## Qué produce la fase
 
 `design.md` en `.claude/run/<ID>/`, con el mismo estatus que `plan.md`: es
-contrato para `desarrollador`, no sugerencia. Y `visual_acceptance`, que son
-criterios verificables que `qa` traza igual que los de la historia.
+contrato para `desarrollador`, no sugerencia. Su sección `Criterios visuales`
+contiene únicamente condiciones verificables que `qa` traza igual que las de la
+historia. El documento no duplica historia o plan y respeta el presupuesto del
+skill: hasta 120 líneas para cambios `low` y 240 para `medium`.
+
+Para Figma, la URL ya recorta al nodo de la feature. Se consulta primero captura
+y variables; `get_design_context` se reserva para dudas de componentes o
+comportamiento y `get_metadata` para boards que realmente necesitan recorte.
+Una respuesta excesiva se filtra una vez por nodo o nombre: nunca se lee entera
+ni se repite la misma consulta a otra resolución.
 
 Si el agente devuelve `verdict: "N_A"` —la historia no toca interfaz— no se
 escribe `design.md` y el ciclo sigue. Es el caso esperado cuando alguien deja el
