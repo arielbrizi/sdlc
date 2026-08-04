@@ -191,6 +191,18 @@ input.mono,.field.mono{font-family:var(--mono);font-size:12.5px}
 .f-help{font-size:12px;color:var(--muted);line-height:1.5}
 .f-row{display:flex;gap:8px;align-items:flex-start}
 .f-row .field{flex:1}
+.repo-choice{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;
+  margin:0;padding:0;border:0}
+.repo-choice legend{font-size:13px;font-weight:600;margin-bottom:8px}
+.repo-option{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;
+  border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface-2);
+  cursor:pointer}
+.repo-option:has(input:checked){border-color:var(--accent);
+  background:color-mix(in srgb,var(--accent) 9%,var(--surface))}
+.repo-option input{margin-top:2px;accent-color:var(--accent)}
+.repo-option b{display:block;font-size:13px;margin-bottom:2px}
+.repo-option small{display:block;color:var(--muted);line-height:1.45}
+@media(max-width:700px){.repo-choice{grid-template-columns:1fr}}
 
 /* --------------------------------------------------- barra de ejecución */
 /* La acción primaria de la app vive siempre a la vista, en el mismo lugar,
@@ -958,37 +970,48 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
     <!-- ======================================================== configuración -->
     <section class="view" id="viewConfig" aria-labelledby="tConfig">
       <div class="page-head">
-        <h1 id="tConfig">Configuración del run</h1>
-        <p>Acá preparás el repositorio y las herramientas del ciclo. El link de Figma
-           puede cambiar con cada feature y también se abre desde el mapa.</p>
+        <h1 id="tConfig">Preparar el proyecto</h1>
+        <p>Asociá el código sobre el que va a trabajar Claude. Podés usar un proyecto
+           existente o empezar uno nuevo y vacío.</p>
         <button class="btn sm ghost" id="btnResetConfig">Reiniciar Studio</button>
       </div>
       <div class="page-body">
 
         <div class="card">
-          <div class="card-head"><h2>Repositorio</h2>
-            <span class="sub">dónde va a trabajar el ciclo</span></div>
+          <div class="card-head"><h2>Proyecto de trabajo</h2>
+            <span class="sub">el código que Claude va a crear o modificar</span></div>
           <div class="card-body">
             <div class="form-grid">
+              <fieldset class="repo-choice f-wide">
+                <legend>Elegí el punto de partida</legend>
+                <label class="repo-option">
+                  <input type="radio" name="repoMode" value="existing" checked>
+                  <span><b>Proyecto existente</b><small>Asociá una URL Git o una carpeta que ya está en tu computadora.</small></span>
+                </label>
+                <label class="repo-option">
+                  <input type="radio" name="repoMode" value="new">
+                  <span><b>Proyecto nuevo</b><small>Studio crea una carpeta vacía, inicia Git en <code>main</code> y la deja lista.</small></span>
+                </label>
+              </fieldset>
               <div class="f f-wide">
-                <label class="f-label" for="repoUrl">Origen</label>
+                <label class="f-label" for="repoUrl" id="repoInputLabel">URL o carpeta local</label>
                 <div class="f-row">
                   <input class="field mono" id="repoUrl" aria-describedby="hRepo"
                          placeholder="https://github.com/org/repo, o una carpeta local">
-                  <button class="btn" id="btnPrepare">Preparar</button>
+                  <button class="btn primary" id="btnPrepare">Asociar proyecto</button>
                 </div>
-                <span class="f-help" id="hRepo">Preparar clona o actualiza el repo y lista sus branches.
-                  Si falta iniciar sesión en GitHub o Azure, te lo dice acá mismo.</span>
+                <span class="f-help" id="hRepo">Studio usa la carpeta local o clona la URL en su espacio de trabajo.
+                  Si hace falta iniciar sesión en GitHub o Azure, te lo indica acá.</span>
               </div>
               <div class="f">
-                <label class="f-label" for="repoDir">Carpeta local</label>
-                <input class="field mono" id="repoDir" aria-describedby="hDir" placeholder="la completa Preparar">
-                <span class="f-help" id="hDir">Es el <code>cwd</code> del run.</span>
+                <label class="f-label" for="repoDir">Proyecto asociado</label>
+                <input class="field mono" id="repoDir" aria-describedby="hDir" placeholder="se completa al asociar">
+                <span class="f-help" id="hDir">Esta es la carpeta que Claude usará durante el ciclo.</span>
               </div>
               <div class="f">
                 <label class="f-label" for="baseBranch">Branch base</label>
                 <select class="field" id="baseBranch" disabled><option value="">—</option></select>
-                <span class="f-help">Se llena al preparar el repositorio.</span>
+                <span class="f-help">Studio propone la branch principal; podés cambiarla.</span>
               </div>
               <div class="f">
                 <label class="f-label" for="repoScope">Alcance en el repositorio</label>
@@ -3195,8 +3218,8 @@ function renderNodeDetail() {
 
 /* --------------------------------------------------- repositorio y VCS */
 
-// Pegar la URL y que el studio haga el resto: clonar, listar branches y avisar
-// si falta iniciar sesión en GitHub o Azure.
+// Asociar un proyecto existente o crear uno vacío y que Studio haga el resto:
+// preparar Git, listar branches y avisar si falta iniciar sesión en el proveedor.
 function repoState(ok, html) {
   const el = $('repoState');
   el.hidden = false;
@@ -3210,16 +3233,35 @@ function repoState(ok, html) {
 $('btnPrepare').addEventListener('click', prepararRepo);
 $('repoUrl').addEventListener('keydown', e => e.key === 'Enter' && prepararRepo());
 
+const repoMode = () => document.querySelector('input[name="repoMode"]:checked')?.value || 'existing';
+
+function renderRepoMode(clear = false) {
+  const nuevo = repoMode() === 'new';
+  $('repoInputLabel').textContent = nuevo ? 'Nombre del proyecto' : 'URL o carpeta local';
+  $('repoUrl').placeholder = nuevo ? 'mi-nuevo-proyecto' : 'https://github.com/org/repo, o una carpeta local';
+  $('hRepo').innerHTML = nuevo
+    ? 'Studio lo crea dentro de su espacio de trabajo, inicia Git en <code>main</code> y no agrega archivos.'
+    : 'Studio usa la carpeta local o clona la URL en su espacio de trabajo. Si hace falta iniciar sesión en GitHub o Azure, te lo indica acá.';
+  $('btnPrepare').textContent = nuevo ? 'Crear y asociar' : 'Asociar proyecto';
+  if (clear) $('repoUrl').value = '';
+}
+
+for (const option of document.querySelectorAll('input[name="repoMode"]')) {
+  option.addEventListener('change', () => renderRepoMode(true));
+}
+renderRepoMode();
+
 async function prepararRepo() {
   const url = $('repoUrl').value.trim();
   if (!url) return $('repoUrl').focus();
+  const mode = repoMode();
   $('btnPrepare').dataset.busy = '1';
-  repoState(null, 'Preparando el repositorio…');
+  repoState(null, mode === 'new' ? 'Creando el proyecto…' : 'Asociando el proyecto…');
 
   try {
     // Primero: ¿hace falta iniciar sesión en el proveedor?
     let vcs = null;
-    try {
+    try { if (mode === 'existing') {
       const r = await api('/api/repo?url=' + encodeURIComponent(url));
       vcs = r.vcs;
       if (vcs && vcs.soportado && !vcs.loggedIn) {
@@ -3231,13 +3273,13 @@ async function prepararRepo() {
         if (vcs.instalado) $('btnVcsLogin').addEventListener('click', () => vcsLogin(vcs.provider));
         return;
       }
-    } catch { /* si falla el chequeo se intenta clonar igual */ }
+    } } catch { /* si falla el chequeo se intenta clonar igual */ }
 
     try {
       const r = await api('/api/repo/prepare', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({ url, mode }),
       });
       $('repoDir').value = r.dir;
 
@@ -3246,20 +3288,25 @@ async function prepararRepo() {
         `<option value="${esc(b)}">${esc(b)}</option>`,
       ).join('');
       sel.disabled = !r.branches.length;
+      if (r.porDefecto && r.branches.includes(r.porDefecto)) sel.value = r.porDefecto;
 
       const scope = $('repoScope');
       scope.innerHTML = '<option value="" selected>Elegí el alcance</option>' + (r.workspaces || ['.']).map(w =>
         `<option value="${esc(w)}">${w === '.' ? 'Todo el repositorio' : esc(w)}</option>`,
       ).join('');
       scope.disabled = false;
+      scope.value = '.';
 
       renderRepoMeta(r.dir);
       await loadConfig();
 
+      const accion = r.created ? 'Proyecto nuevo creado'
+        : r.clonado ? 'Repositorio clonado'
+          : r.local ? 'Proyecto local asociado' : 'Repositorio actualizado';
       repoState(true,
-        `${r.clonado ? 'Clonado' : 'Actualizado'} en <code>${esc(r.dir)}</code>` +
+        `${accion} en <code>${esc(r.dir)}</code>` +
         `<span class="grow"></span><span class="tag">${r.branches.length} branches</span>` +
-        '<span class="tag">base: sin elegir</span>' +
+        `<span class="tag">base: ${esc(sel.value || 'sin elegir')}</span>` +
         ((r.workspaces || []).length > 1 ? `<span class="tag">${r.workspaces.length - 1} subproyectos</span>` : ''));
     } catch (e) {
       repoState(false, esc(e.message));
@@ -3570,6 +3617,9 @@ async function resetStudio() {
                     'stTitle', 'stDesc', 'stAc', 'stRepoHint', 'sendText']) $(id).value = '';
   $('permMode').value = 'bypassPermissions';
   $('repoDir').value = '';
+  const existingMode = document.querySelector('input[name="repoMode"][value="existing"]');
+  if (existingMode) existingMode.checked = true;
+  renderRepoMode();
   $('baseBranch').innerHTML = '<option value="">—</option>';
   $('baseBranch').disabled = true;
   $('repoScope').innerHTML = '<option value="">—</option>';

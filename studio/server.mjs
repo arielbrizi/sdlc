@@ -695,6 +695,48 @@ async function prepararRepo(raw) {
   return { dir, clonado: true, provider: info.provider, ...(await ramas(dir)), workspaces: await discoverWorkspaces(dir) };
 }
 
+/**
+ * Crea un proyecto vacío administrado por Studio. El commit inicial no agrega
+ * archivos: existe solamente para que `main` sea una base válida desde la que
+ * el ciclo pueda abrir su feature branch.
+ */
+async function crearProyecto(nombre) {
+  const clean = String(nombre || '').trim();
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(clean)) {
+    throw Object.assign(
+      new Error('usá un nombre de hasta 64 caracteres: letras, números, punto, guion o guion bajo'),
+      { code: 400 },
+    );
+  }
+
+  const dir = path.join(WORKSPACE, clean);
+  if (fs.existsSync(dir) && (await fsp.readdir(dir)).length) {
+    throw Object.assign(new Error(`ya existe un proyecto llamado ${clean}`), { code: 409 });
+  }
+
+  await fsp.mkdir(dir, { recursive: true });
+  const init = await runClaudeLike('git', ['init', '-q', '-b', 'main'], { cwd: dir });
+  if (init.code !== 0) {
+    throw Object.assign(new Error(`git init falló: ${init.stderr.slice(0, 300)}`), { code: 500 });
+  }
+  const commit = await runClaudeLike('git', [
+    '-c', 'user.name=SDLC Studio',
+    '-c', 'user.email=studio@localhost',
+    'commit', '--allow-empty', '-qm', 'Initialize project',
+  ], { cwd: dir });
+  if (commit.code !== 0) {
+    throw Object.assign(new Error(`no se pudo crear el commit inicial: ${commit.stderr.slice(0, 300)}`), { code: 500 });
+  }
+
+  return {
+    dir,
+    created: true,
+    local: true,
+    ...(await ramas(dir)),
+    workspaces: ['.'],
+  };
+}
+
 /** Branches remotas y la branch por defecto del repo. */
 async function ramas(dir) {
   const limpiar = (salida, quitarRemoto) => salida.split('\n')
@@ -1637,8 +1679,8 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (p === '/api/repo/prepare' && req.method === 'POST') {
-      const { url: repoUrl } = JSON.parse(await readBody(req));
-      const out = await prepararRepo(repoUrl);
+      const { url: repoUrl, mode = 'existing' } = JSON.parse(await readBody(req));
+      const out = mode === 'new' ? await crearProyecto(repoUrl) : await prepararRepo(repoUrl);
       return json(res, 200, out);
     }
 

@@ -1,8 +1,8 @@
 # studio
 
-Panel local para ver el plugin como sistema, editar cualquier componente en
-disco, seguir un run fase por fase y seguir hablando con esa misma sesión cuando
-termina.
+Interfaz principal de SDLC. Desde acá se asocia o crea el proyecto de trabajo,
+se ejecuta el plugin de Claude Code, se sigue cada fase y se continúa hablando
+con esa misma sesión cuando termina.
 
 ```bash
 node studio/server.mjs --repo ~/repos/mi-proyecto
@@ -17,7 +17,7 @@ node studio/server.mjs --repo ~/repos/mi-proyecto
 
 El servidor conserva el cwd como fallback técnico para sus endpoints, pero la
 interfaz no lo toma como repo seleccionado. Solo `--repo`,
-`SDLC_TARGET_REPO` o la acción **Preparar** expresan una elección del usuario.
+`SDLC_TARGET_REPO` o la acción **Asociar proyecto** expresan una elección del usuario.
 
 ## Por qué es una app local y no una web
 
@@ -73,7 +73,7 @@ el run después de recargar la página.
 | Ciclo | El mapa del skill `us` con el estado del run en vivo |
 | Catálogo | Todo lo que aporta el plugin, en una tabla filtrable |
 | Historia | Escribir una historia a mano, sin tracker |
-| Configuración | Repositorio, branch base, permisos, herramientas y flags |
+| Configuración | Proyecto asociado, branch base, permisos, herramientas y flags |
 
 **Antes era una sola pantalla sin navegación**, con la configuración plegada
 arriba y el formulario de historia compitiendo por el panel derecho. El costo no
@@ -87,11 +87,11 @@ se configura una vez y se ejecuta muchas. Si algo falla con el repositorio, el
 studio te lleva ahí y marca la sección: un problema no puede quedar escondido en
 una pantalla que no estás mirando.
 
-El repositorio, la branch base y el alcance empiezan siempre vacíos y no se
+El proyecto, la branch base y el alcance empiezan siempre vacíos y no se
 restauran desde `localStorage`. Studio tampoco intenta leer una configuración
 apenas abre. Una ruta ausente o inválida se informa al presionar **Ejecutar**;
-**Preparar** conserva sus propios errores porque esa acción sí intenta acceder
-explícitamente al repositorio.
+**Asociar proyecto** conserva sus propios errores porque esa acción sí intenta
+acceder explícitamente al repositorio.
 
 La excepción es una selección explícita al iniciar el servidor: `--repo` o
 `SDLC_TARGET_REPO`. En ese caso el Studio carga únicamente la configuración
@@ -537,13 +537,21 @@ desprefija antes de mapear. Para tracking exacto,
 la opción limpia es que el skill escriba un `phase.json` en el directorio del
 run y que el studio lo lea.
 
-## Trabajar sobre un proyecto existente
+## Asociar el proyecto de trabajo
 
-**Preparar** acepta una URL, el root de un repo local o un directorio dentro de
-un monorepo. Siempre actualiza y poda los remotos antes de listar branches. En
-un monorepo detecta aplicaciones y servicios por sus manifests y permite elegir
-un alcance; ese alcance queda en `repo-context.json` y acompaña a todos los
-agentes.
+Studio ofrece dos puntos de partida:
+
+- **Proyecto existente:** acepta una URL Git, el root de un repo local o un
+  directorio dentro de un monorepo. Actualiza y poda los remotos antes de listar
+  branches. En un monorepo detecta aplicaciones y servicios por sus manifests y
+  permite elegir un alcance.
+- **Proyecto nuevo:** recibe un nombre seguro, crea la carpeta dentro de
+  `--workspace`, inicia Git en `main` y genera un commit inicial vacío. No crea
+  archivos de producto; el primer ciclo parte de un repositorio limpio.
+
+Al asociar, Studio propone la branch principal y selecciona todo el repositorio
+como alcance inicial. El usuario puede cambiar ambos valores antes del run. El
+alcance queda en `repo-context.json` y acompaña a todos los agentes.
 
 Antes de ejecutar, Studio muestra un preflight con historia, repo, remoto,
 branch base, cambios locales, ahead/behind, stack, comandos de verificación y

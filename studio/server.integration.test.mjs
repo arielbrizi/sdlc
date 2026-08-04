@@ -81,6 +81,9 @@ printf '%s\n' '{"type":"result","is_error":false,"result":"Turno terminado","num
     assert.match(home, /window\.open\('about:blank', `sdlc-\$\{server\}-oauth`\)/);
     assert.match(home, /ev\.t === 'url'/);
     assert.doesNotMatch(home, /async function open\(/);
+    assert.match(home, /Proyecto existente/);
+    assert.match(home, /Proyecto nuevo/);
+    assert.match(home, /Crear y asociar/);
     const plugin = await fetch(`${baseUrl}/api/plugin`).then(r => r.json());
     assert.equal(plugin.targetRepo, path.resolve(repo));
     assert.equal(plugin.targetRepoExplicit, true);
@@ -90,6 +93,28 @@ printf '%s\n' '{"type":"result","is_error":false,"result":"Turno terminado","num
     }).then(r => r.json());
     assert.equal(prepare.dir, fs.realpathSync(repo));
     assert.ok(prepare.workspaces.includes('apps/web'));
+
+    const created = await fetch(`${baseUrl}/api/repo/prepare`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ mode: 'new', url: 'proyecto-vacio' }),
+    }).then(r => r.json());
+    assert.equal(created.created, true);
+    assert.equal(created.dir, path.join(workspace, 'proyecto-vacio'));
+    assert.deepEqual(created.workspaces, ['.']);
+    assert.ok(created.branches.includes('main'));
+    assert.ok(fs.existsSync(path.join(created.dir, '.git')));
+
+    const duplicate = await fetch(`${baseUrl}/api/repo/prepare`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ mode: 'new', url: 'proyecto-vacio' }),
+    });
+    assert.equal(duplicate.status, 409);
+
+    const traversal = await fetch(`${baseUrl}/api/repo/prepare`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ mode: 'new', url: '../fuera' }),
+    });
+    assert.equal(traversal.status, 400);
 
     const missingScope = await fetch(`${baseUrl}/api/repo/preflight`, {
       method: 'POST', headers: { 'content-type': 'application/json' },

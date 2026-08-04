@@ -4,9 +4,9 @@ Plugin de Claude Code que corre el ciclo de una historia de usuario de punta a
 punta, desde el ID del ticket hasta un Pull Request en draft.
 
 ```bash
-/us PROJ-1234      # Jira
-/us 8891           # Azure DevOps
-/us #245           # GitHub Issues
+/sdlc:us PROJ-1234      # Jira
+/sdlc:us 8891           # Azure DevOps
+/sdlc:us #245           # GitHub Issues
 ```
 
 ¿Sin tracker? La historia se escribe a mano en el studio y el ciclo es el mismo
@@ -15,7 +15,7 @@ punta, desde el ID del ticket hasta un Pull Request en draft.
 ## Qué hace
 
 ```
-/us <ID>
+/sdlc:us <ID>
   │
   ├─ 0  resolve-story.sh   detecta tracker, normaliza la historia
   │     config.sh          qué agentes tiene habilitados este repo
@@ -71,20 +71,22 @@ Ver `skills/us/references/design.md` para configurar Storybook y Figma.
 ## Instalación
 
 ```bash
-# 1. Instalar desde la fuente registrada, a nivel proyecto
-claude plugin install sdlc@sdlc --scope project
+# Una vez por computadora: indicarle a Claude Code dónde vive la fuente
+claude plugin marketplace add arielbrizi/sdlc
 
-# 2. Verificar
-claude plugin details sdlc
+# Dentro del proyecto: habilitar el plugin sdlc
+claude plugin install sdlc@sdlc --scope project
 ```
 
-`--scope project` lo escribe en `.claude/settings.json` del repo: queda
-versionado y todo el que clona lo tiene.
+`arielbrizi` es el usuario que aloja el repositorio en GitHub, no parte del
+nombre del plugin. `--scope project` registra `sdlc` en
+`.claude/settings.json`: queda versionado y todo el que clona lo tiene. Para
+comprobarlo, ejecutá `claude plugin details sdlc`.
 
 Para desarrollo local del propio plugin:
 
 ```bash
-claude --plugin-dir ./sdlc
+claude --plugin-dir ./plugins/sdlc
 ```
 
 Antes de ejecutar un run headless, usá **Conectar Figma** en la configuración
@@ -122,7 +124,7 @@ Integrar con Jira o ADO no es requisito para usar el plugin. Con
 El studio la guarda en `.claude/run/<ID>/story.json` con el esquema canónico
 antes de arrancar el run, y el resolver la encuentra ahí sin consultar ningún
 MCP. También podés escribir ese archivo a mano y correr
-`/us <ID> --tracker manual` directo desde la terminal.
+`/sdlc:us <ID> --tracker manual` dentro de Claude Code.
 
 De la fase 1 en adelante nada distingue una historia escrita a mano de una que
 vino de un tracker — incluido `@refinamiento`, que la bloquea igual si los
