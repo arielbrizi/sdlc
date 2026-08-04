@@ -49,6 +49,9 @@ printf '%s\n' '{"tool_input":{"command":"git status"}}' \\
 printf '%s\n' '{"type":"system","subtype":"init","session_id":"session-test"}'
 printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"tool-1","name":"ToolSearch","input":{"query":"+bash shell command git"}}]}}'
 printf '%s\n' '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"tool-1","content":[]}]}}'
+printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"agent-1","name":"Task","input":{"subagent_type":"sdlc:qa","description":"Auditar la historia"}}]}}'
+printf '%s\n' '{"type":"assistant","parent_tool_use_id":"agent-1","message":{"content":[{"type":"text","text":"SDLC_PROGRESS {\\\"step\\\":2,\\\"total\\\":6,\\\"label\\\":\\\"Ejecutar la suite relevante\\\"}"}]}}'
+printf '%s\n' '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"agent-1","content":"{\\\"verdict\\\":\\\"PASS\\\"}"}]}}'
 printf '%s\n' '{"type":"assistant","message":{"id":"msg-usage","usage":{"input_tokens":120,"output_tokens":30,"cache_read_input_tokens":400},"content":[{"type":"text","text":"Listo"}]}}'
 printf '%s\n' '{"type":"result","is_error":false,"result":"Turno terminado","num_turns":1,"total_cost_usd":0}'
 `, { mode: 0o755 });
@@ -87,6 +90,7 @@ printf '%s\n' '{"type":"result","is_error":false,"result":"Turno terminado","num
     const plugin = await fetch(`${baseUrl}/api/plugin`).then(r => r.json());
     assert.equal(plugin.targetRepo, path.resolve(repo));
     assert.equal(plugin.targetRepoExplicit, true);
+    assert.equal(plugin.agents.find(a => a.name === 'qa').progressSteps.length, 6);
     const prepare = await fetch(`${baseUrl}/api/repo/prepare`, {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ url: path.join(repo, 'apps/web') }),
@@ -170,6 +174,8 @@ printf '%s\n' '{"type":"result","is_error":false,"result":"Turno terminado","num
     assert.match(stream, /"progress":"Buscando una herramienta para ejecutar comandos del repositorio y trabajar con Git"/);
     assert.match(stream, /"success":"Búsqueda completada; Claude Code recibió una respuesta y puede continuar"/);
     assert.match(stream, /"isError":false/);
+    assert.match(stream, /"t":"agent_progress","agent":"qa","phase":5,"step":2,"total":6/);
+    assert.match(stream, /--forward-subagent-text/);
     assert.match(stream, /"tokenUsage":\{"input":120,"output":30,"cacheRead":400,"cacheWrite":0\}/);
     assert.match(stream, /"usagePlan":\{"kind":"subscription","label":"Crédito mensual SDK"\}/);
   } finally {

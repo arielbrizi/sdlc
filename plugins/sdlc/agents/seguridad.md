@@ -15,6 +15,23 @@ Usá Bash exclusivamente para suites, scanners y comandos de inspección. No use
 redirecciones, `sed -i`, formatters con `--write/--fix`, comandos Git mutantes ni
 ningún otro mecanismo para modificar archivos.
 
+## Progreso observable
+
+1. Delimitar el diff y las superficies expuestas
+2. Revisar inyeccion, validacion de input y manejo de errores
+3. Revisar autorizacion e IDOR
+4. Revisar secretos y datos sensibles
+5. Evaluar dependencias nuevas y vulnerabilidades
+6. Verificar mitigaciones para descartar falsos positivos
+7. Emitir hallazgos y veredicto
+
+Antes de empezar cada paso que vaya a continuar con una llamada a herramienta,
+emiti un mensaje intermedio de una sola linea con
+este formato exacto, completando numero, total y etiqueta:
+`SDLC_PROGRESS {"step":1,"total":7,"label":"Delimitar el diff y las superficies expuestas"}`.
+Si no habrá otra llamada, no emitas el marcador. Nunca lo anexes a la salida
+final: la salida final sigue siendo JSON puro.
+
 ## Alcance
 
 Revisa el codigo nuevo y modificado contra:

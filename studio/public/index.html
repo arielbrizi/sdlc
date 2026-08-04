@@ -524,6 +524,20 @@ table.cat tbody tr[data-open="1"]{background:color-mix(in srgb,var(--accent) 9%,
 .detail-context .label{color:var(--subtle);font-size:10.5px;font-weight:700;
   letter-spacing:.07em;text-transform:uppercase}
 .detail-actions{display:flex;gap:8px;flex-wrap:wrap}
+.agent-progress{padding:12px 13px;border:1px solid var(--border);border-radius:var(--r-md);
+  background:var(--surface-2)}
+.agent-progress-head{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.agent-progress-head strong{font-size:12.5px}
+.agent-progress-head .tag{margin-left:auto}
+.agent-steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.agent-steps li{display:flex;gap:8px;align-items:flex-start;color:var(--subtle);
+  font-size:12px;line-height:1.4}
+.agent-steps i{width:16px;height:16px;display:grid;place-items:center;flex:0 0 16px;
+  border:1px solid var(--border-strong);border-radius:50%;font-style:normal;font-size:10px}
+.agent-steps li[data-s="done"]{color:var(--muted)}
+.agent-steps li[data-s="done"] i{color:var(--ok);border-color:var(--ok)}
+.agent-steps li[data-s="active"]{color:var(--text);font-weight:600}
+.agent-steps li[data-s="active"] i{color:var(--accent);border-color:var(--accent)}
 .out{
   background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-md);
   border-left:3px solid var(--border-strong);padding:10px 12px;
@@ -1480,6 +1494,7 @@ let authES = null, mcpAuthES = null, mcpAuthWindow = null, mcpPendingUrl = '', i
 let MCP_STATUS = {};
 let RUN_MODEL = {
   status: 'none', phase: null, blocked: null, complete: false,
+  currentAgent: null,
   connection: 'closed', sessionReady: false,
   cost: 0, costReported: false, turns: null,
   usagePlan: { kind: 'unknown', label: 'Cuenta no identificada' },
@@ -1583,7 +1598,9 @@ function renderRunSurfaces() {
   $('consolePhase').textContent = RUN_MODEL.phase == null
     ? 'Todavía no comenzó ninguna fase'
     : `${String(RUN_MODEL.phase).padStart(2, '0')} · ${phaseName(RUN_MODEL.phase)} · ${
-        STATE_WORD[PHASE_STATE[RUN_MODEL.phase]] || 'sin correr'}`;
+        STATE_WORD[PHASE_STATE[RUN_MODEL.phase]] || 'sin correr'}${
+        RUN_MODEL.currentAgent && agentProgressLabel(RUN_MODEL.currentAgent)
+          ? ` · @${RUN_MODEL.currentAgent} ${agentProgressLabel(RUN_MODEL.currentAgent)}` : ''}`;
 
   if (RUN_MODEL.blocked) {
     const blockedText = `Bloqueado en ${String(RUN_MODEL.phase).padStart(2, '0')} · ${phaseName(RUN_MODEL.phase)}`;
@@ -2380,6 +2397,7 @@ async function start() {
   $('log').innerHTML = '';
   RUN_MODEL = {
     status: 'running', phase: null, blocked: null, complete: false,
+    currentAgent: null,
     connection: 'starting', sessionReady: false,
     cost: 0, costReported: false, turns: null,
     usagePlan: RUN_MODEL.usagePlan || { kind: 'unknown', label: 'Cuenta no identificada' },
@@ -2390,7 +2408,7 @@ async function start() {
     correctionSource: null,
   };
   renderRunSurfaces();
-  NODE_OUT = {}; NODE_STATE = {}; HOOK_COUNTS = {}; renderGraph();
+  NODE_OUT = {}; NODE_STATE = {}; HOOK_COUNTS = {}; AGENT_PROGRESS = {}; renderGraph();
 
   try {
     const r = await api('/api/run', {
@@ -2534,12 +2552,20 @@ function onEvent(ev) {
   if (ev.t === 'phase' || ev.t === 'agent') {
     if (!RUN_MODEL.blocked) {
       RUN_MODEL.phase = ev.phase;
+      RUN_MODEL.currentAgent = ev.t === 'agent' ? ev.agent : null;
+      if (ev.t === 'agent') {
+        AGENT_PROGRESS[ev.agent] = {
+          step: 1, total: agentSteps(ev.agent).length, label: '', done: false,
+        };
+      }
       // El retorno queda resaltado mientras @desarrollador corrige. Al volver
       // a Verificación ya se consumió esa flecha y el flujo sigue hacia abajo.
       if (Number(ev.phase) >= 5) RUN_MODEL.correctionSource = null;
       for (let k = 0; k < ev.phase; k++) marcar(k, 'done');
       marcar(ev.phase, 'active');
-      PHASE_NOTE[ev.phase] = ev.detail || ev.agent || '';
+      PHASE_NOTE[ev.phase] = ev.t === 'agent'
+        ? `@${ev.agent}${agentProgressLabel(ev.agent) ? ` · ${agentProgressLabel(ev.agent)}` : ''}`
+        : ev.detail || '';
     }
   }
   if (ev.t === 'action') {
@@ -2578,6 +2604,17 @@ function onEvent(ev) {
     }
     renderGraph();
   }
+  if (ev.t === 'agent_progress') {
+    const previous = AGENT_PROGRESS[ev.agent] || {};
+    AGENT_PROGRESS[ev.agent] = {
+      step: Math.max(Number(previous.step) || 0, Number(ev.step) || 0),
+      total: Math.max(Number(previous.total) || 0, Number(ev.total) || 0),
+      label: ev.label || previous.label || '', done: false,
+    };
+    RUN_MODEL.currentAgent = ev.agent;
+    PHASE_NOTE[ev.phase] = `@${ev.agent} · ${agentProgressLabel(ev.agent)}`;
+    if (selectedNode === `agent:${ev.agent}`) renderNodeDetail();
+  }
   if (ev.t === 'output') {
     // Que termine UNA herramienta no termina la fase que la contiene: eso lo
     // decide el avance de fase.
@@ -2590,6 +2627,13 @@ function onEvent(ev) {
     pushOut(ev.node, {
       kind: 'result', title: ev.isError ? 'error' : 'completado', text: outputText,
     });
+    if (ev.agent && !ev.isError) {
+      const knownTotal = agentSteps(ev.agent).length || AGENT_PROGRESS[ev.agent]?.total || 0;
+      AGENT_PROGRESS[ev.agent] = {
+        ...(AGENT_PROGRESS[ev.agent] || {}), step: knownTotal, total: knownTotal, done: true,
+      };
+      PHASE_NOTE[RUN_MODEL.phase] = `@${ev.agent} · ${agentProgressLabel(ev.agent)}`;
+    }
     if (!RUN_MODEL.blocked && !RUN_MODEL.complete) {
       setSession('running', ev.isError
         ? 'Una operación falló · Claude está evaluando cómo continuar…'
@@ -2651,7 +2695,7 @@ function onEvent(ev) {
     isReplaying = false;
     if (openAction()) showAction();
   }
-  if (ev.t === 'phase' || ev.t === 'agent' || ev.t === 'blocked' ||
+  if (ev.t === 'phase' || ev.t === 'agent' || ev.t === 'agent_progress' || ev.t === 'blocked' ||
       ev.t === 'action_resolved' || ev.t === 'cycle_complete' ||
       ev.t === 'correction_round' || ev.t === 'audit_verdict') renderGraph();
 
@@ -2828,6 +2872,7 @@ function resetPhases() {
 // Lo que dijo el modelo, agrupado por el componente que lo produjo. Es lo que
 // se ve al clickear un nodo: el output de ESE componente, no el log entero.
 let NODE_OUT = {}, NODE_STATE = {}, HOOK_COUNTS = {}, selectedNode = null;
+let AGENT_PROGRESS = {};
 
 const esFase = id => String(id || '').startsWith('phase:');
 
@@ -2847,6 +2892,20 @@ const STATE_WORD = {
   blocked: 'bloqueado', error: 'interrumpido',
 };
 const activationLabel = count => `${count} ${count === 1 ? 'activación' : 'activaciones'}`;
+const agentSteps = name => PLUGIN?.agents.find(a => a.name === name)?.progressSteps || [];
+const agentProgress = name => {
+  const steps = agentSteps(name);
+  const live = AGENT_PROGRESS[name] || {};
+  const total = Math.max(steps.length, Number(live.total) || 0);
+  const completed = live.done
+    ? total
+    : Math.max(0, Math.min(total, (Number(live.step) || 1) - 1));
+  return { ...live, steps, total, completed };
+};
+const agentProgressLabel = name => {
+  const p = agentProgress(name);
+  return p.total ? `${p.completed}/${p.total} tareas` : '';
+};
 
 const pushOut = (node, entry) => {
   if (!node) return;
@@ -2892,7 +2951,10 @@ function layout() {
       maxX = Math.max(maxX, x + CW);
       nodes.push({
         ...c, x, y: TOP + i * ROW + 2, w: CW, h: 48,
-        sub: c.kind === 'agent' ? (AGENT_TAG[String(c.id).split(':')[1]] || 'subagente')
+        sub: c.kind === 'agent' ? [
+          agentProgressLabel(String(c.id).split(':')[1]),
+          AGENT_TAG[String(c.id).split(':')[1]] || 'subagente',
+        ].filter(Boolean).join(' · ')
            : c.kind === 'main' ? (MAIN_TAG[p.id] || 'corre el skill')
            : c.kind,
       });
@@ -3151,6 +3213,20 @@ function renderNodeDetail() {
   const warningFigma = esDiseno && uxSinFigma();
   const agente = kind === 'agent' ? PLUGIN.agents.find(a => a.name === name) : null;
   const resumen = agente?.description || '';
+  const progreso = kind === 'agent' ? agentProgress(name) : null;
+  const progresoHtml = progreso?.total ? `
+    <div class="agent-progress">
+      <div class="agent-progress-head">
+        <strong>Trabajo del agente</strong>
+        <span class="tag">${progreso.completed}/${progreso.total} tareas</span>
+      </div>
+      <ol class="agent-steps">${progreso.steps.map((step, index) => {
+        const number = index + 1;
+        const state = progreso.done || number < progreso.step ? 'done'
+          : number === progreso.step ? 'active' : 'pending';
+        return `<li data-s="${state}"><i>${state === 'done' ? '✓' : number}</i><span>${esc(step)}</span></li>`;
+      }).join('')}</ol>
+    </div>` : '';
 
   const cuerpo = entries.length
     ? entries.map(e => `
@@ -3182,7 +3258,8 @@ function renderNodeDetail() {
         <div class="detail-context">
           <span class="label">Cómo trabaja</span>
           <p class="prose">${esc(KINDS.agent.what)}</p>
-        </div>` : `
+        </div>
+        ${progresoHtml}` : `
         <p class="prose">${kind === 'main'
           ? 'La sesión que corre el skill, no un subagente. Orquesta el ciclo: pasa el contexto a cada agente, encadena las fases y abre el PR.'
           : esc(KINDS[NODE_KIND[kind] || 'skill']?.what || '')}</p>`}

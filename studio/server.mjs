@@ -161,6 +161,20 @@ function parseFrontmatter(text) {
   return { data, raw, body, flat };
 }
 
+/**
+ * Los checkpoints viven en el prompt del agente para que Studio no mantenga
+ * una segunda lista que pueda desincronizarse. Solo se acepta una lista
+ * numerada simple bajo `## Progreso observable`.
+ */
+function agentProgressSteps(body) {
+  const section = String(body || '').match(
+    /^## Progreso observable\s*\n([\s\S]*?)(?=^##\s|(?![\s\S]))/m,
+  )?.[1] || '';
+  return [...section.matchAll(/^\s*\d+\.\s+(.+)$/gm)]
+    .map(([, label]) => label.replace(/`/g, '').trim())
+    .filter(Boolean);
+}
+
 /** Corre un subcomando de `claude` y junta su salida. Para comandos cortos. */
 const runClaude = (args, opts = {}) => runClaudeLike('claude', args, opts);
 
@@ -252,6 +266,7 @@ async function scanPlugin() {
         model: d.model || '(heredado)',
         effort: d.effort || null,
         maxTurns: d.maxTurns || null,
+        progressSteps: agentProgressSteps(fm.body),
         readOnly: denied.includes('Write') && denied.includes('Edit'),
         disallowedTools: denied,
       });
@@ -1112,25 +1127,48 @@ function blockText(b) {
 /** Extrae la primera respuesta JSON de un subagente, incluso si vino en un fence. */
 function agentJson(text) {
   const raw = String(text || '').replace(/```(?:json)?\s*/gi, '').replace(/```/g, '').trim();
-  try { return JSON.parse(raw); } catch { /* puede venir acompañada de prosa */ }
-  const start = raw.indexOf('{');
-  if (start === -1) return null;
-  let depth = 0, quoted = false, escaped = false;
-  for (let i = start; i < raw.length; i++) {
-    const c = raw[i];
-    if (quoted) {
-      if (escaped) escaped = false;
-      else if (c === '\\') escaped = true;
-      else if (c === '"') quoted = false;
-      continue;
-    }
-    if (c === '"') quoted = true;
-    else if (c === '{') depth++;
-    else if (c === '}' && --depth === 0) {
-      try { return JSON.parse(raw.slice(start, i + 1)); } catch { return null; }
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed?.verdict) return parsed;
+  } catch { /* puede venir acompañada de prosa */ }
+  for (let start = raw.indexOf('{'); start !== -1; start = raw.indexOf('{', start + 1)) {
+    let depth = 0, quoted = false, escaped = false;
+    for (let i = start; i < raw.length; i++) {
+      const c = raw[i];
+      if (quoted) {
+        if (escaped) escaped = false;
+        else if (c === '\\') escaped = true;
+        else if (c === '"') quoted = false;
+        continue;
+      }
+      if (c === '"') quoted = true;
+      else if (c === '{') depth++;
+      else if (c === '}' && --depth === 0) {
+        try {
+          const parsed = JSON.parse(raw.slice(start, i + 1));
+          if (parsed?.verdict) return parsed;
+        } catch { /* sigue buscando otro objeto */ }
+        break;
+      }
     }
   }
   return null;
+}
+
+/** Marcadores emitidos por los subagentes y reenviados por Claude Code. */
+function agentProgress(text) {
+  const out = [];
+  const pattern = /SDLC_PROGRESS\s+(\{[^\n]*\})/g;
+  for (const match of String(text || '').matchAll(pattern)) {
+    try {
+      const value = JSON.parse(match[1]);
+      const step = Number(value.step);
+      const total = Number(value.total);
+      if (!Number.isInteger(step) || !Number.isInteger(total) || step < 1 || total < step) continue;
+      out.push({ step, total, label: String(value.label || '').slice(0, 160) });
+    } catch { /* un marcador parcial no debe romper el stream */ }
+  }
+  return out;
 }
 
 const BLOCK_REASON = {
@@ -1179,6 +1217,21 @@ function completeCycle(run, detail = 'PR listo') {
 function inferPhase(run, msg) {
   const blocks = msg?.message?.content;
   if (!Array.isArray(blocks)) return;
+
+  // `--forward-subagent-text` conserva el id de la llamada Task/Agent padre.
+  // Eso permite atribuir checkpoints internos sin confundirlos con la sesión
+  // orquestadora ni inventarlos a partir de la cantidad de tools usadas.
+  const parentId = msg.parent_tool_use_id || msg.message?.parent_tool_use_id;
+  const parent = parentId ? run.pending.get(parentId) : null;
+  if (parent?.agent) {
+    const text = blocks.map(blockText).join('\n');
+    for (const progress of agentProgress(text)) {
+      emit(run, {
+        t: 'agent_progress', agent: parent.agent, phase: parent.phase,
+        ...progress, at: Date.now(),
+      });
+    }
+  }
 
   for (const b of blocks) {
     if (b.type === 'tool_use') {
@@ -1414,6 +1467,7 @@ function startRun({ storyId, repoDir, sourceRepo, manual, baseBranch, permission
     '-p',
     '--input-format', 'stream-json',
     '--output-format', 'stream-json',
+    '--forward-subagent-text',
     '--verbose',
     // Sin esto la sesión corre en el repo objetivo sin el plugin cargado, y
     // `/sdlc:us` no existe. Además hace que corra lo que hay en disco,
@@ -1510,7 +1564,11 @@ function startRun({ storyId, repoDir, sourceRepo, manual, baseBranch, permission
         inferPhase(run, msg);
         const text = (msg.message?.content || [])
           .filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
-        if (text) {
+        // El texto reenviado de un subagente se usa para sus checkpoints. Su
+        // salida completa llegará además como tool_result; publicarlo acá la
+        // duplicaría y la atribuiría erróneamente a la fase principal.
+        const forwarded = msg.parent_tool_use_id || msg.message?.parent_tool_use_id;
+        if (text && !forwarded) {
           emit(run, {
             t: 'say', node: `phase:${run.phase ?? 0}`,
             text: text.slice(0, 4000), at: Date.now(),

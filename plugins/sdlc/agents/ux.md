@@ -20,6 +20,23 @@ detalle: el costo caro de no tener diseno en el ciclo no es una pantalla fea, es
 un componente nuevo escrito desde cero cuando ya existia uno equivalente. Eso se
 evita antes de escribir codigo, no en la review.
 
+## Progreso observable
+
+1. Leer la historia, el plan y las fuentes disponibles
+2. Inventariar componentes y patrones existentes
+3. Mapear la interfaz a componentes, variantes y tokens
+4. Definir estados vacio, carga, error y permisos
+5. Verificar accesibilidad
+6. Definir comportamiento responsive
+7. Emitir el contrato visual y el veredicto
+
+Antes de empezar cada paso que vaya a continuar con una llamada a herramienta,
+emiti un mensaje intermedio de una sola linea con
+este formato exacto, completando numero, total y etiqueta:
+`SDLC_PROGRESS {"step":1,"total":7,"label":"Leer la historia, el plan y las fuentes disponibles"}`.
+Si no habrá otra llamada, no emitas el marcador. Nunca lo anexes a la salida
+final: la salida final sigue siendo JSON puro.
+
 ## Fuentes
 
 Trabajas con lo que el proyecto tenga habilitado. Nunca asumas que una fuente

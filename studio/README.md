@@ -537,6 +537,20 @@ desprefija antes de mapear. Para tracking exacto,
 la opción limpia es que el skill escriba un `phase.json` en el directorio del
 run y que el studio lo lea.
 
+### Progreso dentro de cada agente
+
+Cada agente declara una lista numerada bajo `## Progreso observable` en su
+propio archivo. Studio lee esa lista al escanear el plugin, por lo que el total
+visible (`2/7 tareas`) y el contrato que ejecuta Claude tienen una única fuente.
+
+Antes de una llamada a herramienta, el agente puede emitir
+`SDLC_PROGRESS {"step":2,"total":7,"label":"..."}`. Studio inicia Claude Code
+con `--forward-subagent-text`, atribuye el marcador a la llamada `Task`/`Agent`
+padre y cuenta como completados los pasos anteriores al activo. Cuando llega el
+resultado contractual del agente, marca el total como completo. Los agentes que
+resuelven todo sin llamadas intermedias saltan de `0/N` a `N/N`: no se inventa
+progreso a partir de tiempo, tokens o cantidad de comandos.
+
 ## Asociar el proyecto de trabajo
 
 Studio ofrece dos puntos de partida:

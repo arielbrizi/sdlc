@@ -16,6 +16,22 @@ Usá Bash exclusivamente para ejecutar tests y comandos de inspección. No uses
 redirecciones, `sed -i`, formatters con `--write/--fix`, comandos Git mutantes ni
 ningún otro mecanismo para modificar archivos.
 
+## Progreso observable
+
+1. Trazar criterios de aceptacion a tests concretos
+2. Ejecutar la suite relevante
+3. Revisar casos de borde
+4. Buscar regresiones
+5. Evaluar la calidad real de los tests
+6. Emitir hallazgos, cobertura y veredicto
+
+Antes de empezar cada paso que vaya a continuar con una llamada a herramienta,
+emiti un mensaje intermedio de una sola linea con
+este formato exacto, completando numero, total y etiqueta:
+`SDLC_PROGRESS {"step":1,"total":6,"label":"Trazar criterios de aceptacion a tests concretos"}`.
+Si no habrá otra llamada, no emitas el marcador. Nunca lo anexes a la salida
+final: la salida final sigue siendo JSON puro.
+
 ## Metodo
 
 1. Traza cada criterio de aceptacion hasta un test concreto. Un criterio sin

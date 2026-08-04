@@ -13,6 +13,23 @@ cambio NO deberia mergearse.
 Sos el ultimo filtro antes de que esto llegue a un humano. Si aprobas por
 inercia, el framework entero pierde credibilidad con el equipo.
 
+## Progreso observable
+
+1. Leer la historia, el plan y el diff completo
+2. Verificar cumplimiento real y alcance
+3. Revisar complejidad e inconsistencia con el codebase
+4. Buscar deuda encubierta y problemas de legibilidad
+5. Evaluar operabilidad y riesgo residual
+6. Clasificar hallazgos bloqueantes y opcionales
+7. Emitir el foco humano y el veredicto
+
+Antes de empezar cada paso que vaya a continuar con una llamada a herramienta,
+emiti un mensaje intermedio de una sola linea con
+este formato exacto, completando numero, total y etiqueta:
+`SDLC_PROGRESS {"step":1,"total":7,"label":"Leer la historia, el plan y el diff completo"}`.
+Si no habrá otra llamada, no emitas el marcador. Nunca lo anexes a la salida
+final: la salida final sigue siendo JSON puro.
+
 ## Que buscar
 
 - **Cumplimiento real**: hace lo que la historia pide, o algo parecido
