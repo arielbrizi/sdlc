@@ -1914,7 +1914,7 @@ function renderCatalog() {
     </tr>`).join('');
 
   $('catRows').querySelectorAll('tr').forEach(tr => {
-    const abrir = e => { if (!e?.target?.closest?.('.switch')) open(tr.dataset.path); };
+    const abrir = e => { if (!e?.target?.closest?.('.switch')) openFile(tr.dataset.path); };
     tr.addEventListener('click', abrir);
     tr.addEventListener('keydown', e => {
       if (e.target.closest('.switch')) return;
@@ -2106,7 +2106,7 @@ function fmField(key, value) {
   </div>`;
 }
 
-async function open(path) {
+async function openFile(path) {
   if (!path) return;
   // Comparar contra `compose()`, no contra el textarea: con frontmatter el
   // textarea tiene solo el cuerpo y `original` el archivo entero, así que
@@ -2193,7 +2193,7 @@ $('dlgEditor').addEventListener('close', () => {
   current = null;
   $('catRows').querySelectorAll('tr').forEach(tr => tr.dataset.open = '0');
 });
-$('btnRevert').addEventListener('click', () => current && open(current.path));
+$('btnRevert').addEventListener('click', () => current && openFile(current.path));
 document.addEventListener('keydown', e => {
   if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); save(); }
 });
@@ -3180,9 +3180,9 @@ function renderNodeDetail() {
       ${cuerpo}
     </div>`;
 
-  if (file) $('ndOpen').addEventListener('click', () => open(file));
+  if (file) $('ndOpen').addEventListener('click', () => openFile(file));
   if (esDiseno) $('ndDesignConfig').addEventListener('click', openDesignConfig);
-  if (hookScript) $('ndScript').addEventListener('click', () => open(hookScript));
+  if (hookScript) $('ndScript').addEventListener('click', () => openFile(hookScript));
   if (kind === 'agent') {
     $('ndToggle').addEventListener('click', async () => {
       $('ndToggle').disabled = true;

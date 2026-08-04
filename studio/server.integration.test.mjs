@@ -80,6 +80,7 @@ printf '%s\n' '{"type":"result","is_error":false,"result":"Turno terminado","num
     assert.doesNotMatch(home, /URL completa del callback|Abrir autenticación/);
     assert.match(home, /window\.open\('about:blank', `flow360-\$\{server\}-oauth`\)/);
     assert.match(home, /ev\.t === 'url'/);
+    assert.doesNotMatch(home, /async function open\(/);
     const plugin = await fetch(`${baseUrl}/api/plugin`).then(r => r.json());
     assert.equal(plugin.targetRepo, path.resolve(repo));
     assert.equal(plugin.targetRepoExplicit, true);
