@@ -9,9 +9,9 @@ agregar un mapeo acá, no tocar los agentes.
 
 ```json
 {
-  "id": "GLOB-1234",
+  "id": "PROJ-1234",
   "tracker": "jira",
-  "url": "https://globant.atlassian.net/browse/GLOB-1234",
+  "url": "https://example.atlassian.net/browse/PROJ-1234",
   "type": "story",
   "title": "Permitir exportar el reporte de consumo a CSV",
   "description": "<texto plano>",
@@ -21,10 +21,10 @@ agregar un mapeo acá, no tocar los agentes.
     "Un reporte de más de 50k filas se genera de forma asíncrona"
   ],
   "story_points": 5,
-  "epic": "GLOB-1100",
+  "epic": "PROJ-1100",
   "labels": ["backend", "reporting"],
   "attachments": [{"name": "mockup.png", "url": "..."}],
-  "linked_issues": [{"id": "GLOB-1180", "relation": "blocks"}],
+  "linked_issues": [{"id": "PROJ-1180", "relation": "blocks"}],
   "repo_hint": "consumo-api",
   "raw": { }
 }
@@ -47,7 +47,7 @@ El resolver infiere el tracker por la forma del ID:
 |---|---|---|
 | `--tracker <x>` explícito | gana siempre | |
 | Ya existe un `story.json` con `"tracker": "manual"` | manual | |
-| `^[A-Z][A-Z0-9]+-\d+$` | jira | `GLOB-1234` |
+| `^[A-Z][A-Z0-9]+-\d+$` | jira | `PROJ-1234` |
 | `^#?\d+$` + remote de GitHub | github | `#245` |
 | `^\d+$` sin remote de GitHub | ado | `8891` |
 

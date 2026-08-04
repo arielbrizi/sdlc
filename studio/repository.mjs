@@ -86,7 +86,7 @@ export function isolatedWorktreePath(workspace, repoRoot, storyId, scope = '.') 
   const digest = createHash('sha256').update(`${path.resolve(repoRoot)}\0${scope}`).digest('hex').slice(0, 10);
   const repo = path.basename(repoRoot).replace(/[^A-Za-z0-9._-]/g, '-');
   const story = String(storyId).replace(/[^A-Za-z0-9._-]/g, '-');
-  return path.join(workspace, '.flow360-worktrees', `${repo}-${digest}`, story);
+  return path.join(workspace, '.sdlc-worktrees', `${repo}-${digest}`, story);
 }
 
 export function safeScope(repoRoot, scope = '.') {

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>globant-sdlc · studio</title>
+<title>sdlc · studio</title>
 <style>
 /* ============================================================================
    Sistema visual del studio
@@ -733,7 +733,7 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
 <header class="topbar">
   <div class="brand">
     <span class="mark" aria-hidden="true">GS</span>
-    globant-sdlc <small>studio</small>
+    sdlc <small>studio</small>
   </div>
   <div class="context" id="railMeta" title="Plugin que se edita → repositorio donde se ejecuta">
     cargando…
@@ -756,7 +756,7 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
     <option value="console">Solo consola, sin historia</option>
   </select>
   <input class="field" id="story" aria-label="ID de la historia"
-         placeholder="ID de historia — GLOB-1234, 8891, #245" autocomplete="off">
+         placeholder="ID de historia — PROJ-1234, 8891, #245" autocomplete="off">
   <button class="btn primary" id="btnRun">Ejecutar ciclo</button>
   <button class="btn danger" id="btnStop" disabled>Detener</button>
   <span class="run-state" id="runState" data-s="none">
@@ -1298,7 +1298,7 @@ const hhmm = ts => new Date(ts).toTimeString().slice(0, 8);
 /* ------------------------------------------------------------------ tema */
 // Arranca en el del sistema y recuerda la elección: el studio se mira muchas
 // horas seguidas y no todos los escritorios están igual de iluminados.
-const THEME_KEY = 'globant-sdlc-studio-theme';
+const THEME_KEY = 'sdlc-studio-theme';
 function setTheme(t) {
   document.documentElement.dataset.theme = t;
   $('themeText').textContent = t === 'dark' ? 'Claro' : 'Oscuro';
@@ -1422,7 +1422,7 @@ const KINDS = {
   },
   plugin: {
     label: 'Plugin',
-    what: 'El paquete que junta todo lo anterior y se instala desde un marketplace. Acá el plugin es globant-sdlc.',
+    what: 'El paquete que junta todo lo anterior y se instala desde un marketplace. Acá el plugin es sdlc.',
   },
 };
 
@@ -1580,7 +1580,7 @@ async function load() {
   const [plugin, ph] = await Promise.all([api('/api/plugin'), api('/api/phases')]);
   PLUGIN = plugin; PHASES = ph.phases;
 
-  // `--repo` y GLOBANT_TARGET_REPO son selecciones explícitas del usuario, no
+  // `--repo` y SDLC_TARGET_REPO son selecciones explícitas del usuario, no
   // defaults del Studio. En ese caso se carga la config al abrir para que el
   // estado de @ux y el warning de Figma sean correctos desde el primer render.
   // Sin una selección explícita, repo, branch y alcance siguen vacíos.
@@ -1675,7 +1675,7 @@ function catalogItems() {
 
 // Un agente apagado no corre: lo impide un hook, no la buena voluntad del
 // modelo. El studio muestra y edita ese estado, que vive en el repo objetivo
-// —`.claude/globant-sdlc.json`— porque es una propiedad del proyecto, no de
+// —`.claude/sdlc.json`— porque es una propiedad del proyecto, no de
 // quien lo abre. Un repo de backend no tiene interfaz que revisar, y eso no
 // cambia según quién corra el ciclo.
 let CONFIG = null;
@@ -1939,7 +1939,7 @@ $('catSearch').addEventListener('input', renderCatalog);
 
 /* ------------------------------------------------------------- consola */
 
-const DOCK_HEIGHT_LS = 'globant-sdlc-studio-dock-height';
+const DOCK_HEIGHT_LS = 'sdlc-studio-dock-height';
 let dockBeforeLarge = null;
 
 const dockLimits = () => ({ min: 220, max: Math.max(220, innerHeight - 120) });
@@ -2039,7 +2039,7 @@ $('dockResize').addEventListener('dblclick', () => $('btnDockSize').click());
 const FIELD_HELP = {
   name: {
     label: 'Nombre',
-    help: 'Con el que se lo invoca. Dentro de un plugin va calificado: globant-sdlc:<nombre>.',
+    help: 'Con el que se lo invoca. Dentro de un plugin va calificado: sdlc:<nombre>.',
   },
   description: {
     label: 'Cuándo usarlo',
@@ -2247,7 +2247,7 @@ function syncSource() {
   $('story').hidden = manual || consola;
   $('story').placeholder = consola
     ? 'sin historia — la sesión se abre vacía y le escribís vos'
-    : 'ID de historia — GLOB-1234, 8891, #245';
+    : 'ID de historia — PROJ-1234, 8891, #245';
   $('btnRun').textContent = manual ? 'Ejecutar esta historia' : consola ? 'Abrir consola' : 'Ejecutar ciclo';
 }
 // Elegir "escrita acá" te lleva al formulario: es lo próximo que hay que hacer.
@@ -3374,7 +3374,7 @@ async function connectMcp(server = 'figma') {
   closeMcpAuthWindow();
   // Se abre durante el click para que el bloqueador del navegador no impida
   // navegarla cuando el CLI entregue la URL OAuth unos segundos después.
-  mcpAuthWindow = window.open('about:blank', `flow360-${server}-oauth`);
+  mcpAuthWindow = window.open('about:blank', `sdlc-${server}-oauth`);
   try {
     if (mcpAuthWindow?.document) mcpAuthWindow.document.title = 'Conectando con Figma…';
   } catch {}
@@ -3433,7 +3433,7 @@ $('btnFigmaMcpConnect').addEventListener('click', () => {
   if (mcpPendingUrl) {
     const url = mcpPendingUrl;
     mcpPendingUrl = '';
-    mcpAuthWindow = window.open(url, 'flow360-figma-oauth');
+    mcpAuthWindow = window.open(url, 'sdlc-figma-oauth');
     renderMcpStatus('figma', { status: 'authorizing' });
     return;
   }
@@ -3534,7 +3534,7 @@ $('btnGlosClose').addEventListener('click', () => $('dlgGlosario').close());
 // Un F5 no debería perder el run en curso. El servidor ya guarda todos los
 // eventos y los repite al reconectar, así que alcanza con recordar el id y
 // volver a engancharse: el replay reconstruye fases, grafo, log y sesión.
-const LS = 'globant-sdlc-studio';
+const LS = 'sdlc-studio';
 const CAMPOS = ['source', 'story',
                 'permMode', 'allowedTools', 'extraFlags', 'stTitle', 'stDesc', 'stAc', 'stRepoHint'];
 

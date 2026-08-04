@@ -1,4 +1,4 @@
-# Globant AI SDLC
+# AI SDLC
 
 > De una historia de usuario a un Pull Request en draft, con agentes
 > especializados, controles determinísticos y trazabilidad de punta a punta.
@@ -9,7 +9,7 @@
 ![License](https://img.shields.io/badge/license-internal-lightgrey)
 
 Este repositorio publica
-[`globant-sdlc`](./plugins/globant-sdlc), un plugin de Claude Code que coordina
+[`sdlc`](./plugins/sdlc), un plugin de Claude Code que coordina
 el ciclo completo de una historia: entiende el requerimiento, analiza el
 repositorio, diseña la solución, implementa, verifica y abre el PR.
 
@@ -19,7 +19,7 @@ la historia puede modificar. El checkout puede aislarse en un `worktree`, por
 lo que el run no necesita cambiar la branch activa ni mezclar cambios locales.
 
 <p align="center">
-  <img src="./docs/assets/studio-cycle.png" alt="Mapa del ciclo de una historia en Globant SDLC Studio" width="100%">
+  <img src="./docs/assets/studio-cycle.png" alt="Mapa del ciclo de una historia en SDLC Studio" width="100%">
 </p>
 
 ## Qué aporta
@@ -87,8 +87,8 @@ claude plugin marketplace add arielbrizi/sdlc
 ```
 
 Registra `arielbrizi/sdlc` como la ubicación desde la que Claude Code puede
-descargar `globant-sdlc`. No se conecta a un catálogo de Globant ni a otro
-servicio corporativo. La palabra `marketplace` aparece porque es el nombre
+descargar `sdlc`. No se conecta a ningún catálogo ni servicio corporativo.
+La palabra `marketplace` aparece porque es el nombre
 técnico que usa el comando de Claude Code para registrar un repositorio que
 publica plugins.
 
@@ -103,7 +103,7 @@ Primero abrí la terminal dentro de la carpeta del proyecto donde querés trabaj
 y ejecutá:
 
 ```bash
-claude plugin install globant-sdlc@globant --scope project
+claude plugin install sdlc@sdlc --scope project
 ```
 
 Descarga el plugin y lo asocia con ese proyecto. `--scope project` significa
@@ -117,19 +117,19 @@ producto. Solo deja el plugin disponible para cuando se ejecute una historia.
 #### 3. Comprobar que quedó instalado
 
 ```bash
-claude plugin details globant-sdlc
+claude plugin details sdlc
 ```
 
 Muestra la ficha del plugin: versión, componentes y estado de carga. Es una
 consulta de diagnóstico; no cambia ninguna configuración. Si devuelve los
-datos de `globant-sdlc` sin errores, la instalación está lista.
+datos de `sdlc` sin errores, la instalación está lista.
 
 | Término | Explicación simple |
 |---|---|
 | Plugin | El paquete que contiene el proceso, los agentes y las reglas de seguridad |
 | Marketplace | Nombre técnico que usa Claude Code para una fuente de plugins; acá es este repositorio de GitHub |
 | Proyecto | El repositorio o carpeta de código sobre la que va a trabajar el equipo |
-| `globant-sdlc@globant` | El plugin `globant-sdlc`; `globant` es el alias técnico declarado por este repositorio, no un catálogo externo |
+| `sdlc@sdlc` | El plugin `sdlc`; `sdlc` es el alias técnico declarado por este repositorio, no un catálogo externo |
 
 ### Ejecutar una historia
 
@@ -138,17 +138,17 @@ terminal del sistema. Todos inician el mismo ciclo; lo único que cambia es el
 tipo de identificador de la historia.
 
 ```text
-/globant-sdlc:us GLOB-1234   # Jira
-/globant-sdlc:us 8891        # Azure DevOps
-/globant-sdlc:us #245        # GitHub Issues
+/sdlc:us PROJ-1234   # Jira
+/sdlc:us 8891        # Azure DevOps
+/sdlc:us #245        # GitHub Issues
 ```
 
-`/globant-sdlc:us` significa “usar el flujo de historias del plugin”. Lo que
-aparece después —por ejemplo `GLOB-1234`— identifica la historia que Claude debe
+`/sdlc:us` significa “usar el flujo de historias del plugin”. Lo que
+aparece después —por ejemplo `PROJ-1234`— identifica la historia que Claude debe
 leer e implementar.
 
 No hace falta memorizar el comando completo. También podés escribir pedidos
-normales como `implementá GLOB-1234` o `arrancá con el ticket 8891`; Claude Code
+normales como `implementá PROJ-1234` o `arrancá con el ticket 8891`; Claude Code
 reconoce la intención y dispara el mismo ciclo.
 
 ## Trabajar sobre un proyecto existente
@@ -176,11 +176,11 @@ Abrí [http://127.0.0.1:4477](http://127.0.0.1:4477) y completá:
 Una ruta inválida no genera errores al abrir la plataforma: se valida cuando
 el usuario intenta preparar o ejecutar el repositorio. La configuración de
 agentes, Figma y Storybook se guarda en
-`<repo>/.claude/globant-sdlc.json`, por lo que pertenece al proyecto y puede
+`<repo>/.claude/sdlc.json`, por lo que pertenece al proyecto y puede
 versionarse con él.
 
 <p align="center">
-  <img src="./docs/assets/studio-configuration.png" alt="Configuración de repositorio, branch y alcance en Globant SDLC Studio" width="100%">
+  <img src="./docs/assets/studio-configuration.png" alt="Configuración de repositorio, branch y alcance en SDLC Studio" width="100%">
 </p>
 
 ## Studio
@@ -202,7 +202,7 @@ La consola inferior conserva el stream de herramientas y la conversación. Al
 terminar el ciclo, la sesión queda abierta en vez de perder el contexto.
 
 <p align="center">
-  <img src="./docs/assets/studio-catalog.png" alt="Catálogo de componentes del plugin en Globant SDLC Studio" width="100%">
+  <img src="./docs/assets/studio-catalog.png" alt="Catálogo de componentes del plugin en SDLC Studio" width="100%">
 </p>
 
 La documentación completa del panel está en
@@ -252,14 +252,14 @@ del modelo.
 El Studio comprueba Figma antes del run y abre el OAuth fuera de la ejecución
 headless. La autorización se hace una sola vez por computadora; Claude Code
 guarda y renueva la credencial. Como alternativa técnica, se puede ejecutar
-`claude --plugin-dir plugins/globant-sdlc mcp login plugin:globant-sdlc:figma`.
+`claude --plugin-dir plugins/sdlc mcp login plugin:sdlc:figma`.
 
 ## Evidencia de cada run
 
 Cada ejecución deja artefactos estructurados en `.claude/run/<ID>/`:
 
 ```text
-.claude/run/GLOB-1234/
+.claude/run/PROJ-1234/
 ├── run.json
 ├── story.json
 ├── config.json
@@ -284,7 +284,7 @@ evidencia de compliance. La decisión es del repositorio objetivo.
 ```text
 .
 ├── .claude-plugin/marketplace.json    # índice de instalación para Claude Code
-├── plugins/globant-sdlc/
+├── plugins/sdlc/
 │   ├── .claude-plugin/plugin.json   # manifiesto y versión
 │   ├── skills/us/                    # skill orquestadora
 │   ├── agents/                       # subagentes especializados
@@ -298,7 +298,7 @@ evidencia de compliance. La decisión es del repositorio objetivo.
 
 Las razones detrás de la arquitectura están registradas en
 [`docs/decisiones.md`](./docs/decisiones.md). El detalle operativo del plugin
-está en [`plugins/globant-sdlc/README.md`](./plugins/globant-sdlc/README.md).
+está en [`plugins/sdlc/README.md`](./plugins/sdlc/README.md).
 
 ## Desarrollo y contribución
 
@@ -313,7 +313,7 @@ Para iterar contra un repositorio sandbox sin instalar el plugin:
 
 ```bash
 cd ~/repos/sandbox
-claude --plugin-dir ~/repos/sdlc/plugins/globant-sdlc
+claude --plugin-dir ~/repos/sdlc/plugins/sdlc
 ```
 
 Antes de abrir un PR:
@@ -323,18 +323,18 @@ Antes de abrir un PR:
 3. Si tocaste un hook, verificá tanto el bloqueo correcto como la ausencia de
    falsos positivos.
 4. Si tocaste el plugin, actualizá la versión de
-   `plugins/globant-sdlc/.claude-plugin/plugin.json`.
+   `plugins/sdlc/.claude-plugin/plugin.json`.
 5. Documentá qué cambió y qué verificaste.
 
 ## Documentación
 
-- [Plugin `globant-sdlc`](./plugins/globant-sdlc/README.md)
+- [Plugin `sdlc`](./plugins/sdlc/README.md)
 - [Studio](./studio/README.md)
 - [Decisiones de diseño](./docs/decisiones.md)
 - [Reglas para contribuir](./CLAUDE.md)
 
 ---
 
-Uso interno de Globant. El plugin permanece en `0.x` mientras se valida en
+Uso interno. El plugin permanece en `0.x` mientras se valida en
 pilotos; la versión efectiva siempre es la declarada en
-[`plugin.json`](./plugins/globant-sdlc/.claude-plugin/plugin.json).
+[`plugin.json`](./plugins/sdlc/.claude-plugin/plugin.json).

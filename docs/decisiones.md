@@ -74,11 +74,11 @@ no pueden depender de que el modelo las recuerde en el turno 40.
 **Decisión.** Distribuir como plugin desde este repositorio, usando el mecanismo
 que Claude Code denomina `marketplace`, en vez de copiar un `.claude/` en cada
 repo. En este contexto `marketplace` es solamente el índice técnico que permite
-instalar el plugin: no existe ni se consulta un catálogo corporativo de Globant.
+instalar el plugin: no existe ni se consulta un catálogo corporativo.
 
 **Por qué.** Versionado, actualización centralizada y un solo lugar donde
 corregir un agente. El costo es el namespacing de las skills
-(`/globant-sdlc:us`) y un paso de instalación. A escala de varios squads, el
+(`/sdlc:us`) y un paso de instalación. A escala de varios squads, el
 costo de mantener copias divergentes es mucho mayor.
 
 ## Pendientes de decidir
@@ -235,7 +235,7 @@ security scanner en CI, uno que hace code review humano y no quiere el reviewer
 adversarial. Todos necesitan lo mismo.
 
 **Decisión.** Cualquier agente se habilita o deshabilita por proyecto, en
-`<repo>/.claude/globant-sdlc.json`. `@ux` y las dos integraciones de diseño
+`<repo>/.claude/sdlc.json`. `@ux` y las dos integraciones de diseño
 —Figma y Storybook— vienen apagadas; el resto, encendido.
 
 La config vive en el repo objetivo y no en el `userConfig` del plugin porque es

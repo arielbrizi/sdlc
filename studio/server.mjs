@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * globant-sdlc studio — servidor local.
+ * sdlc studio — servidor local.
  *
  * Sin dependencias npm: solo built-ins de Node. En un entorno corporativo eso
  * significa que no hay supply chain que revisar antes de que el equipo lo use.
@@ -56,8 +56,8 @@ function arg(name, fallback) {
   return i !== -1 && process.argv[i + 1] ? process.argv[i + 1] : fallback;
 }
 
-const PLUGIN_DIR = path.resolve(arg('plugin', path.join(REPO_ROOT, 'plugins/globant-sdlc')));
-const TARGET_REPO_INPUT = arg('repo', process.env.GLOBANT_TARGET_REPO || '');
+const PLUGIN_DIR = path.resolve(arg('plugin', path.join(REPO_ROOT, 'plugins/sdlc')));
+const TARGET_REPO_INPUT = arg('repo', process.env.SDLC_TARGET_REPO || '');
 const TARGET_REPO_EXPLICIT = !!TARGET_REPO_INPUT;
 const TARGET_REPO = path.resolve(TARGET_REPO_INPUT || process.cwd());
 const PORT = Number(arg('port', 4477));
@@ -65,7 +65,7 @@ const PUBLIC_DIR = path.join(HERE, 'public');
 // Dónde se clonan los repos que se piden por URL. Fuera del repo del plugin a
 // propósito: son repos de trabajo, no parte de este proyecto.
 const WORKSPACE = path.resolve(
-  arg('workspace', process.env.GLOBANT_WORKSPACE || path.join(os.homedir(), 'globant-sdlc-repos')),
+  arg('workspace', process.env.SDLC_WORKSPACE || path.join(os.homedir(), 'sdlc-repos')),
 );
 
 // Extensiones editables. Todo lo demás es de solo lectura desde el studio.
@@ -75,7 +75,7 @@ const EDITABLE = new Set(['.md', '.json', '.sh', '.yml', '.yaml']);
  * Nombre del plugin, leído del manifest.
  *
  * Hace falta porque las skills y los subagentes de un plugin se invocan
- * calificados con él: `/globant-sdlc:us`, no `/us`. Sin el prefijo, Claude
+ * calificados con él: `/sdlc:us`, no `/us`. Sin el prefijo, Claude
  * responde "Unknown command".
  */
 const PLUGIN_NAME = (() => {
@@ -87,10 +87,10 @@ const PLUGIN_NAME = (() => {
   }
 })();
 
-/** `us` → `globant-sdlc:us`. Sin manifest legible cae al nombre suelto. */
+/** `us` → `sdlc:us`. Sin manifest legible cae al nombre suelto. */
 const qualify = name => (PLUGIN_NAME ? `${PLUGIN_NAME}:${name}` : name);
 
-/** `globant-sdlc:refinamiento` → `refinamiento`, para mapear contra AGENT_PHASE. */
+/** `sdlc:refinamiento` → `refinamiento`, para mapear contra AGENT_PHASE. */
 const unqualify = name => String(name).slice(String(name).indexOf(':') + 1);
 
 // ------------------------------------------------------------------ helpers
@@ -347,7 +347,7 @@ function readProjectConfig(repoDir) {
 }
 
 /**
- * Escribe `.claude/globant-sdlc.json` en el repo objetivo.
+ * Escribe `.claude/sdlc.json` en el repo objetivo.
  *
  * Se normaliza contra los agentes que existen en el plugin: un nombre que no
  * corresponde a ningún agente no se guarda. Sin eso, el archivo acumula claves
@@ -404,7 +404,7 @@ async function writeProjectConfig(repoDir, body) {
 
   const dir = path.join(path.resolve(repoDir), '.claude');
   await fsp.mkdir(dir, { recursive: true });
-  const file = path.join(dir, 'globant-sdlc.json');
+  const file = path.join(dir, 'sdlc.json');
   await fsp.writeFile(file, `${JSON.stringify(cfg, null, 2)}\n`, 'utf8');
   return file;
 }
@@ -762,7 +762,7 @@ async function repositoryPreflight({ repoDir, baseBranch, scope = '', storyId = 
   }
   const dirtyRaw = await gitValue(root, ['status', '--porcelain', '--untracked-files=all']);
   const dirty = dirtyRaw.split('\n').filter(Boolean)
-    .filter(line => !/^.. \.claude\/(run\/|globant-sdlc\.json$)/.test(line));
+    .filter(line => !/^.. \.claude\/(run\/|sdlc\.json$)/.test(line));
   const current = await gitValue(root, ['branch', '--show-current']);
   const counts = (await gitValue(root, ['rev-list', '--left-right', '--count', `${baseRef}...HEAD`]))
     .split(/\s+/).map(Number);
@@ -785,11 +785,11 @@ async function repositoryPreflight({ repoDir, baseBranch, scope = '', storyId = 
 }
 
 async function copyRunConfig(sourceScope, targetScope) {
-  const source = path.join(sourceScope, '.claude', 'globant-sdlc.json');
+  const source = path.join(sourceScope, '.claude', 'sdlc.json');
   if (!fs.existsSync(source)) return;
   const targetDir = path.join(targetScope, '.claude');
   await fsp.mkdir(targetDir, { recursive: true });
-  await fsp.copyFile(source, path.join(targetDir, 'globant-sdlc.json'));
+  await fsp.copyFile(source, path.join(targetDir, 'sdlc.json'));
 }
 
 /** Crea o reutiliza un checkout aislado estable para repo + historia. */
@@ -1162,7 +1162,7 @@ function inferPhase(run, msg) {
       });
 
       if (isSubagentTool(name)) {
-        // Los subagentes de un plugin llegan calificados: `globant-sdlc:qa`.
+        // Los subagentes de un plugin llegan calificados: `sdlc:qa`.
         const phase = AGENT_PHASE[agent];
         if (phase !== undefined) {
           const nextRound = correctionRoundForTransition(
@@ -1374,7 +1374,7 @@ function startRun({ storyId, repoDir, sourceRepo, manual, baseBranch, permission
     '--output-format', 'stream-json',
     '--verbose',
     // Sin esto la sesión corre en el repo objetivo sin el plugin cargado, y
-    // `/globant-sdlc:us` no existe. Además hace que corra lo que hay en disco,
+    // `/sdlc:us` no existe. Además hace que corra lo que hay en disco,
     // que es lo que el studio deja editar.
     '--plugin-dir', PLUGIN_DIR,
   ];
@@ -1405,12 +1405,12 @@ function startRun({ storyId, repoDir, sourceRepo, manual, baseBranch, permission
     // `resolve-story.sh` ya lee esta variable para dejarla en run.json, así que
     // elegir la branch base en el panel alcanza para que el ciclo la respete.
     const env = { ...process.env };
-    env.FLOW360_STUDIO_RUN_ID = id;
+    env.SDLC_STUDIO_RUN_ID = id;
     if (baseBranch) env.CLAUDE_PLUGIN_OPTION_BASE_BRANCH = baseBranch;
-    if (storyId) env.FLOW360_STORY_ID = storyId.replace(/^#/, '');
-    if (sourceRepo) env.FLOW360_SOURCE_REPO = sourceRepo;
-    if (workspaceInfo?.isolated) env.FLOW360_ISOLATED_WORKTREE = '1';
-    if (branchStrategy === 'new') env.FLOW360_FORCE_NEW_BRANCH = '1';
+    if (storyId) env.SDLC_STORY_ID = storyId.replace(/^#/, '');
+    if (sourceRepo) env.SDLC_SOURCE_REPO = sourceRepo;
+    if (workspaceInfo?.isolated) env.SDLC_ISOLATED_WORKTREE = '1';
+    if (branchStrategy === 'new') env.SDLC_FORCE_NEW_BRANCH = '1';
     child = spawn('claude', args, { cwd: repoDir, env, stdio: ['pipe', 'pipe', 'pipe'] });
   } catch (e) {
     pauseRunWork(run);
@@ -1980,7 +1980,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, '127.0.0.1', () => {
-  console.log(`\n  globant-sdlc studio`);
+  console.log(`\n  sdlc studio`);
   console.log(`  ───────────────────────────────────────────`);
   console.log(`  plugin : ${PLUGIN_DIR}`);
   console.log(`  repo   : ${TARGET_REPO}`);

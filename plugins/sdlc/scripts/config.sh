@@ -8,7 +8,7 @@
 #
 # La config vive en el repo objetivo, no en el plugin:
 #
-#   <repo>/.claude/globant-sdlc.json
+#   <repo>/.claude/sdlc.json
 #
 # Es una decisión por proyecto, no por persona. Que un repo tenga UI que revisar
 # es una propiedad del repo, y se versiona con él: el que clona hereda la misma
@@ -23,7 +23,7 @@
 set -euo pipefail
 
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
-CONFIG_FILE="${PROJECT_DIR}/.claude/globant-sdlc.json"
+CONFIG_FILE="${PROJECT_DIR}/.claude/sdlc.json"
 PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 
 # ---------------------------------------------------------------- defaults

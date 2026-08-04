@@ -1,6 +1,6 @@
 ---
 name: us
-description: Desarrolla una historia de usuario de punta a punta a partir de su ID (Jira, Azure DevOps o GitHub Issues), coordinando agentes de refinamiento, arquitectura, diseno de interfaz, QA y seguridad hasta abrir el Pull Request. Usar SIEMPRE que el usuario mencione un ID de historia, ticket o issue y quiera implementarla, aunque no diga "us" explicitamente — por ejemplo "implementa GLOB-1234", "arranca con el ticket 8891", "haceme la historia #245".
+description: Desarrolla una historia de usuario de punta a punta a partir de su ID (Jira, Azure DevOps o GitHub Issues), coordinando agentes de refinamiento, arquitectura, diseno de interfaz, QA y seguridad hasta abrir el Pull Request. Usar SIEMPRE que el usuario mencione un ID de historia, ticket o issue y quiera implementarla, aunque no diga "us" explicitamente — por ejemplo "implementa PROJ-1234", "arranca con el ticket 8891", "haceme la historia #245".
 ---
 
 # Ciclo de desarrollo de una historia de usuario
@@ -12,7 +12,7 @@ evidencia auditable y el flujo se aborta ante señales de riesgo en vez de impro
 ## Invocación
 
 ```
-/us GLOB-1234
+/us PROJ-1234
 /us 8891 --tracker ado
 /us #245 --no-pr                        # corre todo pero no abre el PR
 /us LOCAL-exportar-csv --tracker manual # historia escrita a mano, sin tracker
@@ -104,7 +104,7 @@ branch para `desarrollador`: contiene `base_branch`, `base_ref`, `branch` y si e
 run fue creado o reanudado.
 
 Cuando Studio entrega un worktree aislado, trabajá únicamente en el cwd actual.
-No vuelvas al checkout fuente indicado por `FLOW360_SOURCE_REPO`: puede contener
+No vuelvas al checkout fuente indicado por `SDLC_SOURCE_REPO`: puede contener
 cambios del desarrollador y existe solo como referencia de procedencia.
 
 ### Contrato de salidas de agentes
@@ -274,7 +274,7 @@ Abrí el PR **en draft**, con esta descripción:
 con cada uno. Omitilo si corrieron todos.>
 
 ---
-Generado por globant-sdlc. Los agentes no aprueban su propio trabajo:
+Generado por sdlc. Los agentes no aprueban su propio trabajo:
 este PR requiere revisión humana antes del merge.
 ```
 

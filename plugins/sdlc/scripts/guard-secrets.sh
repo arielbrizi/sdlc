@@ -35,7 +35,7 @@ BLOCKED_PATTERNS=(
 while IFS= read -r FIELD; do
   for pattern in "${BLOCKED_PATTERNS[@]}"; do
     if printf '%s' "$FIELD" | grep -qiE "$pattern"; then
-      echo "BLOQUEADO por politica de Globant: ${FIELD} puede contener secretos." >&2
+      echo "BLOQUEADO por política del plugin: ${FIELD} puede contener secretos." >&2
       echo "Si necesitas una variable de entorno, referenciala por nombre sin leer el archivo." >&2
       exit 2
     fi

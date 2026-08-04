@@ -17,7 +17,7 @@ equipos con Figma y sin catálogo publicado.
 
 ## Configuración
 
-En el repo objetivo, `.claude/globant-sdlc.json`:
+En el repo objetivo, `.claude/sdlc.json`:
 
 ```json
 {
@@ -31,7 +31,7 @@ En el repo objetivo, `.claude/globant-sdlc.json`:
   "storybook": {
     "enabled": true,
     "dir": ".storybook",
-    "url": "https://storybook.interno/globant-ui"
+    "url": "https://storybook.example.com"
   }
 }
 ```

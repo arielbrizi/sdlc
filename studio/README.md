@@ -11,13 +11,13 @@ node studio/server.mjs --repo ~/repos/mi-proyecto
 
 | Flag | Default |
 |---|---|
-| `--plugin <dir>` | `plugins/globant-sdlc` |
-| `--repo <dir>` | `$GLOBANT_TARGET_REPO`, o sin selección explícita |
+| `--plugin <dir>` | `plugins/sdlc` |
+| `--repo <dir>` | `$SDLC_TARGET_REPO`, o sin selección explícita |
 | `--port <n>` | `4477` |
 
 El servidor conserva el cwd como fallback técnico para sus endpoints, pero la
 interfaz no lo toma como repo seleccionado. Solo `--repo`,
-`GLOBANT_TARGET_REPO` o la acción **Preparar** expresan una elección del usuario.
+`SDLC_TARGET_REPO` o la acción **Preparar** expresan una elección del usuario.
 
 ## Por qué es una app local y no una web
 
@@ -94,7 +94,7 @@ apenas abre. Una ruta ausente o inválida se informa al presionar **Ejecutar**;
 explícitamente al repositorio.
 
 La excepción es una selección explícita al iniciar el servidor: `--repo` o
-`GLOBANT_TARGET_REPO`. En ese caso el Studio carga únicamente la configuración
+`SDLC_TARGET_REPO`. En ese caso el Studio carga únicamente la configuración
 de agentes e integraciones de ese repo para que, si `@ux` está habilitado sin un
 frame de Figma, el warning aparezca desde el primer render. Branch base y alcance
 siguen sin valores predeterminados.
@@ -287,7 +287,7 @@ se listan arriba de la tabla. Son exactamente los que rompen el plugin en
 silencio.
 
 **Cada subagente tiene un interruptor.** Apagarlo escribe
-`.claude/globant-sdlc.json` en el repo objetivo en el acto —no hay un "guardar"
+`.claude/sdlc.json` en el repo objetivo en el acto —no hay un "guardar"
 que se pueda olvidar— y es el mismo archivo que lee el hook que después impide
 invocarlo.
 
@@ -311,7 +311,7 @@ como opción separada porque responde otra pregunta: qué componentes ya existen
 en código. Sus campos técnicos están plegados como opciones avanzadas.
 
 El link y el acceso son dos cosas distintas: pegar el frame no autentica el MCP.
-La misma sección muestra el estado real de `plugin:globant-sdlc:figma` y ofrece
+La misma sección muestra el estado real de `plugin:sdlc:figma` y ofrece
 **Conectar Figma**. El Studio ejecuta `claude mcp login` antes del run, abre el
 OAuth en el navegador y confirma el resultado con `claude mcp get`. El login
 conserva una terminal interactiva —o crea una terminal virtual en macOS si el
@@ -397,16 +397,16 @@ claude -p --input-format stream-json --output-format stream-json --verbose \
        --plugin-dir <PLUGIN_DIR>
 ```
 
-y le manda `/globant-sdlc:us <ID>` como primer mensaje por stdin.
+y le manda `/sdlc:us <ID>` como primer mensaje por stdin.
 
 Los dos detalles importan y no son obvios:
 
 - **`--plugin-dir`**: sin esto la sesión corre en el repo objetivo sin el plugin
-  cargado y `/globant-sdlc:us` no existe. Además hace que corra el plugin que
+  cargado y `/sdlc:us` no existe. Además hace que corra el plugin que
   hay **en disco**, que es el que el studio deja editar.
 - **El nombre va calificado.** Las skills y los subagentes de un plugin se
-  invocan con el nombre del plugin adelante: `/globant-sdlc:us`, no `/us`, y
-  `globant-sdlc:qa`, no `qa`. Escribir el nombre suelto da
+  invocan con el nombre del plugin adelante: `/sdlc:us`, no `/us`, y
+  `sdlc:qa`, no `qa`. Escribir el nombre suelto da
   `Unknown command: /us`. El studio lo arma a partir del `name` del manifest, y
   por eso el encabezado del grafo muestra el comando completo: es lo que hay
   que tipear. `stream-json` requiere
@@ -532,7 +532,7 @@ todavía no ocurrió.
 
 Esto es inferencia, no telemetría: si cambiás el flujo del skill, actualizá el
 mapeo en `AGENT_PHASE` y `PHASES` dentro de `server.mjs`. Ojo que los subagentes
-de un plugin llegan calificados (`globant-sdlc:qa`), así que el nombre se
+de un plugin llegan calificados (`sdlc:qa`), así que el nombre se
 desprefija antes de mapear. Para tracking exacto,
 la opción limpia es que el skill escriba un `phase.json` en el directorio del
 run y que el studio lo lea.

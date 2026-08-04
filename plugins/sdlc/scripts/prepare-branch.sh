@@ -36,7 +36,7 @@ DIRTY="$(git -C "$PROJECT_DIR" status --porcelain --untracked-files=all \
       {
         file = substr($0, 4)
         if (index(file, prefix "run/") == 1) next
-        if (file == prefix "globant-sdlc.json") next
+        if (file == prefix "sdlc.json") next
         print
       }' || true)"
 [[ -z "$DIRTY" ]] || fail "el working tree tiene cambios ajenos al run; guardalos o commitealos antes de continuar:\n${DIRTY}"
@@ -46,7 +46,7 @@ SLUG="$(printf '%s' "$TITLE" \
   | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//; s/-+/-/g' \
   | cut -c1-48)"
 BRANCH="feature/${ID}${SLUG:+-${SLUG}}"
-if [[ "${FLOW360_FORCE_NEW_BRANCH:-}" == "1" ]]; then
+if [[ "${SDLC_FORCE_NEW_BRANCH:-}" == "1" ]]; then
   BRANCH="${BRANCH}-run-$(date -u +%Y%m%d%H%M%S)"
 fi
 CURRENT="$(git -C "$PROJECT_DIR" branch --show-current)"

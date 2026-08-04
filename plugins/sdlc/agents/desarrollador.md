@@ -82,8 +82,8 @@ Eso es tu trabajo.
 ```json
 {
   "verdict": "DONE | BLOCKED",
-  "branch": "feature/GLOB-1234-exportar-csv",
-  "commits": ["GLOB-1234 agrega endpoint de exportacion"],
+  "branch": "feature/PROJ-1234-exportar-csv",
+  "commits": ["PROJ-1234 agrega endpoint de exportacion"],
   "files_changed": [{"path": "...", "action": "added | modified | deleted"}],
   "tests": {
     "added": ["test_exporta_csv"],

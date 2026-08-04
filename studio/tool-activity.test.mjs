@@ -11,8 +11,8 @@ test('explica ToolSearch para Git sin exponer la consulta técnica', () => {
 });
 
 test('explica búsquedas y archivos con contexto breve', () => {
-  assert.equal(toolActivity('Grep', { pattern: 'FLOW360' }).summary,
-    'Buscando “FLOW360” en el proyecto');
+  assert.equal(toolActivity('Grep', { pattern: 'SDLC' }).summary,
+    'Buscando “SDLC” en el proyecto');
   assert.equal(toolActivity('Read', { file_path: '/repo/studio/server.mjs' }).progress,
     'Leyendo studio/server.mjs');
 });

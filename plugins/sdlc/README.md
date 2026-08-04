@@ -1,10 +1,10 @@
-# globant-sdlc
+# sdlc
 
 Plugin de Claude Code que corre el ciclo de una historia de usuario de punta a
 punta, desde el ID del ticket hasta un Pull Request en draft.
 
 ```bash
-/us GLOB-1234      # Jira
+/us PROJ-1234      # Jira
 /us 8891           # Azure DevOps
 /us #245           # GitHub Issues
 ```
@@ -35,7 +35,7 @@ Cualquier agente se prende o apaga **por proyecto**, en el repo donde corre el
 ciclo:
 
 ```json
-// <repo>/.claude/globant-sdlc.json
+// <repo>/.claude/sdlc.json
 {
   "agents": { "ux": true },
   "storybook": { "enabled": true, "dir": ".storybook" },
@@ -72,10 +72,10 @@ Ver `skills/us/references/design.md` para configurar Storybook y Figma.
 
 ```bash
 # 1. Instalar desde la fuente registrada, a nivel proyecto
-claude plugin install globant-sdlc@globant --scope project
+claude plugin install sdlc@sdlc --scope project
 
 # 2. Verificar
-claude plugin details globant-sdlc
+claude plugin details sdlc
 ```
 
 `--scope project` lo escribe en `.claude/settings.json` del repo: queda
@@ -84,14 +84,14 @@ versionado y todo el que clona lo tiene.
 Para desarrollo local del propio plugin:
 
 ```bash
-claude --plugin-dir ./globant-sdlc
+claude --plugin-dir ./sdlc
 ```
 
 Antes de ejecutar un run headless, usá **Conectar Figma** en la configuración
 del Studio. El panel abre el OAuth mediante Claude Code y verifica solo la
 conexión antes de comenzar; no pide copiar URLs ni expone la consola técnica.
 Como alternativa, podés correr
-`claude --plugin-dir <plugin> mcp login plugin:globant-sdlc:figma`.
+`claude --plugin-dir <plugin> mcp login plugin:sdlc:figma`.
 GitHub toma `GITHUB_TOKEN`; Azure DevOps abre su login inicial.
 
 **Los scripts necesitan permiso de ejecución** después de clonar:
@@ -107,7 +107,7 @@ chmod +x scripts/*.sh
 | — | Jira y Figma usan OAuth de Claude Code; el plugin no guarda tokens |
 | `ADO_ORG` | Organización de Azure DevOps |
 | `GITHUB_TOKEN` | Auth del MCP de GitHub |
-| `GLOBANT_PROTECTED_BRANCHES` | Regex de branches protegidas (default: `main\|master\|develop\|release/.*`) |
+| `SDLC_PROTECTED_BRANCHES` | Regex de branches protegidas (default: `main\|master\|develop\|release/.*`) |
 
 ## Historias sin tracker
 
@@ -174,7 +174,7 @@ Todo lo que sea política de compañía va acá. Lo que requiera criterio, al ag
 Cada run deja rastro en `.claude/run/<ID>/`:
 
 ```
-.claude/run/GLOB-1234/
+.claude/run/PROJ-1234/
 ├── run.json        quién, cuándo, sobre qué branch
 ├── story.json      la historia normalizada
 ├── config.json     agentes e integraciones efectivas

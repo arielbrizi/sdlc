@@ -16,12 +16,12 @@ process.stdin.on("end", () => {
 
 [[ -z "$CMD" ]] && exit 0
 
-PROTECTED="${GLOBANT_PROTECTED_BRANCHES:-main|master|develop|release/.*}"
+PROTECTED="${SDLC_PROTECTED_BRANCHES:-main|master|develop|release/.*}"
 CONFIGURED_BASE="${CLAUDE_PLUGIN_OPTION_BASE_BRANCH:-}"
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 
 block() {
-  echo "BLOQUEADO por politica de Globant: $1" >&2
+  echo "BLOQUEADO por política del plugin: $1" >&2
   exit 2
 }
 

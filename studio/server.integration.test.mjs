@@ -21,7 +21,7 @@ async function waitFor(url) {
 }
 
 test('prepara monorepo, confirma contexto y ejecuta en worktree aislado', { timeout: 20_000 }, async () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'flow360-server-'));
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sdlc-server-'));
   const repo = path.join(tmp, 'repo');
   const workspace = path.join(tmp, 'workspace');
   const bin = path.join(tmp, 'bin');
@@ -34,18 +34,18 @@ case "$*" in
     printf '%s\n' '{"loggedIn":true,"authMethod":"claude.ai","apiProvider":"firstParty"}'
     exit 0
     ;;
-  *"mcp get plugin:globant-sdlc:figma"*)
-    printf '%s\n' 'plugin:globant-sdlc:figma:' '  Status: ✓ Connected'
+  *"mcp get plugin:sdlc:figma"*)
+    printf '%s\n' 'plugin:sdlc:figma:' '  Status: ✓ Connected'
     exit 0
     ;;
-  *"mcp login plugin:globant-sdlc:figma"*)
+  *"mcp login plugin:sdlc:figma"*)
     printf '%s\n' 'Open https://www.figma.com/oauth/authorize?client_id=test'
     exit 0
     ;;
 esac
 printf '%s\n' '{"tool_input":{"command":"git status"}}' \\
-  | CLAUDE_PROJECT_DIR="$PWD" CLAUDE_PLUGIN_ROOT="$FLOW360_TEST_PLUGIN_ROOT" \\
-    "$FLOW360_TEST_PLUGIN_ROOT/scripts/guard-git.sh"
+  | CLAUDE_PROJECT_DIR="$PWD" CLAUDE_PLUGIN_ROOT="$SDLC_TEST_PLUGIN_ROOT" \\
+    "$SDLC_TEST_PLUGIN_ROOT/scripts/guard-git.sh"
 printf '%s\n' '{"type":"system","subtype":"init","session_id":"session-test"}'
 printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"tool-1","name":"ToolSearch","input":{"query":"+bash shell command git"}}]}}'
 printf '%s\n' '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"tool-1","content":[]}]}}'
@@ -67,7 +67,7 @@ printf '%s\n' '{"type":"result","is_error":false,"result":"Turno terminado","num
     env: {
       ...process.env,
       PATH: `${bin}:${process.env.PATH}`,
-      FLOW360_TEST_PLUGIN_ROOT: path.join(ROOT, 'plugins/globant-sdlc'),
+      SDLC_TEST_PLUGIN_ROOT: path.join(ROOT, 'plugins/sdlc'),
     },
     stdio: 'ignore',
   });
@@ -78,7 +78,7 @@ printf '%s\n' '{"type":"result","is_error":false,"result":"Turno terminado","num
     const home = await fetch(baseUrl).then(r => r.text());
     assert.match(home, /Conectar Figma/);
     assert.doesNotMatch(home, /URL completa del callback|Abrir autenticación/);
-    assert.match(home, /window\.open\('about:blank', `flow360-\$\{server\}-oauth`\)/);
+    assert.match(home, /window\.open\('about:blank', `sdlc-\$\{server\}-oauth`\)/);
     assert.match(home, /ev\.t === 'url'/);
     assert.doesNotMatch(home, /async function open\(/);
     const plugin = await fetch(`${baseUrl}/api/plugin`).then(r => r.json());
@@ -107,7 +107,7 @@ printf '%s\n' '{"type":"result","is_error":false,"result":"Turno terminado","num
 
     const mcpStatus = await fetch(`${baseUrl}/api/mcp/status?server=figma`).then(r => r.json());
     assert.equal(mcpStatus.status, 'connected');
-    assert.equal(mcpStatus.qualified, 'plugin:globant-sdlc:figma');
+    assert.equal(mcpStatus.qualified, 'plugin:sdlc:figma');
     const mcpLogin = await fetch(`${baseUrl}/api/mcp/login`, {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ server: 'figma' }),

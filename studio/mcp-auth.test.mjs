@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mcpLoginCommand, parseMcpStatus, pluginMcpName } from './mcp-auth.mjs';
 
 test('reconoce conexión y nombre calificado de un MCP del plugin', () => {
-  assert.equal(pluginMcpName('globant-sdlc', 'figma'), 'plugin:globant-sdlc:figma');
+  assert.equal(pluginMcpName('sdlc', 'figma'), 'plugin:sdlc:figma');
   assert.equal(parseMcpStatus('Status: ✓ Connected').status, 'connected');
 });
 

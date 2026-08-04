@@ -34,7 +34,7 @@ test('safeScope no permite salir del repositorio', () => {
 });
 
 test('descubre stack y comandos sin ejecutar el proyecto', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'flow360-profile-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sdlc-profile-'));
   try {
     fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'vitest', build: 'vite build' } }));
     const profile = await discoverProjectProfile(dir);

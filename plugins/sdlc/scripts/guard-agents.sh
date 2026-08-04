@@ -28,7 +28,7 @@ RAW="$(printf '%s' "$INPUT" \
 
 [[ -z "$RAW" ]] && exit 0
 
-# Los subagentes de un plugin llegan calificados: `globant-sdlc:qa`. Si viene
+# Los subagentes de un plugin llegan calificados: `sdlc:qa`. Si viene
 # calificado con OTRO plugin, no es asunto nuestro aunque el nombre coincida:
 # un `otro-plugin:qa` no se bloquea porque nosotros tengamos `qa` apagado.
 PLUGIN_NAME="$(grep -oE '"name"[[:space:]]*:[[:space:]]*"[^"]*"' \
@@ -58,7 +58,7 @@ done <<< "$CONOCIDOS"
 
 if ! "$CONFIG" agent "$AGENT" >/dev/null 2>&1; then
   echo "BLOQUEADO: el agente '${AGENT}' está deshabilitado en este repo." >&2
-  echo "Se configura en .claude/globant-sdlc.json, o desde el studio en Catálogo." >&2
+  echo "Se configura en .claude/sdlc.json, o desde el studio en Catálogo." >&2
   echo "No lo reemplaces haciendo vos su trabajo: si está apagado, es a propósito." >&2
   exit 2
 fi
