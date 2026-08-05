@@ -89,6 +89,9 @@ printf '%s\n' '{"type":"result","is_error":false,"result":"Turno terminado","num
     assert.match(home, /Proyecto existente/);
     assert.match(home, /Proyecto nuevo/);
     assert.match(home, /Informes de corridas/);
+    assert.match(home, /Ciclos correctivos/);
+    assert.match(home, /deshabilitado · no participa/);
+    assert.doesNotMatch(home, /gloop-source/);
     assert.match(home, /Crear y asociar/);
     const plugin = await fetch(`${baseUrl}/api/plugin`).then(r => r.json());
     assert.equal(plugin.targetRepo, path.resolve(repo));

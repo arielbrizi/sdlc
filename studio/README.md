@@ -124,12 +124,12 @@ sobre cualquiera.
 
 El grafo muestra además los dos retornos correctivos del ciclo. Si QA o Seguridad
 fallan, el trabajo vuelve a Implementación. Si Reviewer rechaza el diff completo,
-también vuelve a Implementación y después repite QA y Seguridad. Cada retorno
-tiene su propia flecha y nombre; durante un run, la flecha que pidió la corrección
-se resalta y cada flecha muestra cuántas veces fue recorrida. El contador general
-indica cuántas de las tres rondas correctivas compartidas ya se usaron: puede
-haber varias devoluciones de QA/Seguridad y una sola de Reviewer, o cualquier
-otra combinación que no supere ese máximo global.
+también vuelve a Implementación y después repite QA y Seguridad. Durante un run,
+la flecha que pidió la corrección se resalta. Un resumen lateral muestra el total
+global —cuántas de las tres rondas ya se usaron— y lo desglosa entre
+**QA + Seguridad** y **@reviewer**. Así los ceros tienen contexto y no parecen
+parte del nombre de las flechas. Puede haber cualquier combinación por origen
+que no supere el máximo compartido.
 
 **Antes había una vía lateral además del grafo.** Se eliminó: era el mismo
 diagrama dibujado dos veces, con su propio acumulador de estado, y esa
@@ -486,11 +486,11 @@ decisión, pedirle que corrija algo, revisar el diff—. `Cerrar` la termina;
 Con **Solo consola, sin historia** la sesión se abre vacía, sin invocar `/us`:
 sirve para usar el repo objetivo de forma interactiva sin arrancar el ciclo.
 
-El lazo entre Verificación/Revisión e Implementación muestra la etiqueta
-`Correcciones` y un contador compacto `N / 3`. La implementación inicial no consume una ronda:
-el contador aumenta únicamente cuando `@desarrollador` vuelve a intervenir
-después de QA, seguridad o reviewer. El valor forma parte del estado del run y
-se conserva al recargar o reconectar el Studio.
+El resumen de **Ciclos correctivos** muestra `N de 3 usados` y el origen de cada
+retorno. La implementación inicial no consume una ronda: el contador aumenta
+únicamente cuando `@desarrollador` vuelve a intervenir después de QA, seguridad
+o reviewer. El valor forma parte del estado del run y se conserva al recargar o
+reconectar el Studio.
 
 Ojo: mientras la sesión esté abierta hay un proceso `claude` vivo. El botón
 Ejecutar queda deshabilitado hasta que la cierres — un run a la vez.

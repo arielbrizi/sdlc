@@ -506,15 +506,19 @@ table.cat tbody tr[data-open="1"]{background:color-mix(in srgb,var(--accent) 9%,
 .gedge.dashed{stroke-dasharray:4 4}
 .glabel{font-family:var(--sans);font-size:11px;font-weight:700;letter-spacing:.07em;
   text-transform:uppercase;fill:var(--subtle)}
-.gloop{fill:var(--warn);font-size:9px;text-anchor:middle;font-weight:700;
-  letter-spacing:.08em;text-transform:uppercase}
-.gloop-source{fill:var(--warn);font-family:var(--sans);font-size:8px;text-anchor:middle;
-  font-weight:750;letter-spacing:.04em;text-transform:uppercase}
-.gcycle rect{fill:var(--surface);stroke:var(--warn);stroke-width:1.5}
-.gcycle text{font-family:var(--mono);font-size:12px;font-weight:800;
-  text-anchor:middle;fill:var(--warn)}
-.gcycle[data-over="1"] rect{stroke:var(--danger)}
-.gcycle[data-over="1"] text{fill:var(--danger)}
+.gcorrection rect.panel{fill:var(--surface);stroke:var(--border-strong);stroke-width:1;rx:8}
+.gcorrection .title{fill:var(--warn);font-family:var(--sans);font-size:8px;font-weight:800;
+  letter-spacing:.07em;text-transform:uppercase}
+.gcorrection .total{fill:var(--text);font-family:var(--sans);font-size:12px;font-weight:700}
+.gcorrection .hint{fill:var(--subtle);font-family:var(--sans);font-size:8px}
+.gcorrection .divider{stroke:var(--border);stroke-width:1}
+.gcorrection .source{fill:var(--muted);font-family:var(--sans);font-size:8.5px}
+.gcorrection .count{fill:var(--warn);font-family:var(--mono);font-size:9px;font-weight:800;
+  text-anchor:middle}
+.gcorrection .count-bg{fill:color-mix(in srgb,var(--warn) 12%,var(--surface));
+  stroke:color-mix(in srgb,var(--warn) 48%,var(--border));stroke-width:1}
+.gcorrection[data-over="1"] .total,.gcorrection[data-over="1"] .count{fill:var(--danger)}
+.gcorrection[data-over="1"] .count-bg{stroke:var(--danger)}
 
 /* ------------------------------------------------------- panel de detalle */
 .detail{display:flex;flex-direction:column;gap:12px;padding:16px}
@@ -2988,8 +2992,16 @@ const agentProgress = name => {
 };
 const agentProgressLabel = name => {
   const p = agentProgress(name);
-  return p.total ? `${p.completed}/${p.total} tareas` : '';
+  return p.total ? `${p.completed} de ${p.total} tareas` : '';
 };
+
+// SVG no aplica ellipsis a <text>. Recortar acá mantiene cada línea dentro de
+// su tarjeta y el <title> del nodo conserva el texto completo para consulta.
+function graphText(value, width, fontSize = 10.5) {
+  const text = String(value || '');
+  const max = Math.max(4, Math.floor(width / (fontSize * .56)));
+  return text.length <= max ? text : `${text.slice(0, max - 1).trimEnd()}…`;
+}
 
 const pushOut = (node, entry) => {
   if (!node) return;
@@ -3006,7 +3018,7 @@ const pushOut = (node, entry) => {
 function layout() {
   // PX deja el margen izquierdo donde entra el lazo de corrección sin pisar
   // las cajas.
-  const ROW = 92, TOP = 40, PX = 190, PW = 206, CX = 448, CW = 194, GAP = 18;
+  const ROW = 92, TOP = 40, PX = 238, PW = 226, CX = 516, CW = 194, GAP = 18;
   const nodes = [], edges = [];
 
   PHASES.forEach((p, i) => {
@@ -3035,10 +3047,8 @@ function layout() {
       maxX = Math.max(maxX, x + CW);
       nodes.push({
         ...c, x, y: TOP + i * ROW + 2, w: CW, h: 48,
-        sub: c.kind === 'agent' ? [
-          agentProgressLabel(String(c.id).split(':')[1]),
-          AGENT_TAG[String(c.id).split(':')[1]] || 'subagente',
-        ].filter(Boolean).join(' · ')
+        sub: c.kind === 'agent'
+          ? (agentProgressLabel(String(c.id).split(':')[1]) || AGENT_TAG[String(c.id).split(':')[1]] || 'subagente')
            : c.kind === 'main' ? (MAIN_TAG[p.id] || 'corre el skill')
            : c.kind,
       });
@@ -3054,7 +3064,7 @@ function layout() {
   });
   edges.push({
     a: 'phase:6', b: 'phase:4', kind: 'loop', track: 1,
-    source: 'reviewer', label: 'reviewer',
+    source: 'reviewer', label: '@reviewer',
   });
 
   // Banda lateral. Ni los hooks ni los MCP cuelgan de una fase: los hooks
@@ -3119,20 +3129,24 @@ function renderGraph() {
       ? null
       : hookCount === 0 ? 'sin activaciones' : activationLabel(hookCount);
     const sub = apagado
-      ? ['deshabilitado', n.sub].filter(Boolean).join(' · ')
+      ? 'deshabilitado · no participa'
       : warning ? '⚠ falta link de Figma'
       : hookState ? [hookState, n.sub].filter(Boolean).join(' · ')
       : [palabra, n.sub].filter(Boolean).join(' · ');
     const label = n.label || n.name;
+    const labelWidth = n.w - 28 - (n.kind === 'agent' ? 42 : 0);
+    const shortLabel = graphText(label, labelWidth, 12);
+    const shortSub = graphText(sub, n.w - 28, 10.5);
     return `
       <g class="gnode" data-node="${esc(n.id)}" data-kind="${esc(n.kind)}"
          data-state="${esc(st)}" data-sel="${n.id === selectedNode ? 1 : 0}"
          data-off="${apagado ? 1 : 0}" data-warning="${warning ? 1 : 0}"
          tabindex="0" role="button"
          aria-label="${esc(label)}${apagado ? ', deshabilitado' : warning ? ', advertencia: falta configurar el link de Figma' : hookState ? `, ${hookState}` : palabra ? `, ${palabra}` : ''}">
+        <title>${esc([label, sub].filter(Boolean).join(' · '))}</title>
         <rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}"/>
-        <text x="${n.x + 14}" y="${n.y + (sub ? 23 : 30)}">${esc(label)}</text>
-        ${sub ? `<text class="gsub" x="${n.x + 14}" y="${n.y + 39}">${esc(sub)}</text>` : ''}
+        <text x="${n.x + 14}" y="${n.y + (sub ? 23 : 30)}">${esc(shortLabel)}</text>
+        ${sub ? `<text class="gsub" x="${n.x + 14}" y="${n.y + 39}">${esc(shortSub)}</text>` : ''}
       </g>`;
   };
 
@@ -3170,22 +3184,26 @@ function renderGraph() {
       e.kind === 'loop' && RUN_MODEL.correctionSource === e.source ? ' active' : ''}${
       done(e.b) && e.kind !== 'loop' ? ' done' : ''}" d="${edgePath(e)}"${
       e.kind === 'loop' ? ' marker-end="url(#loopArrow)"' : ''}/>`),
-    ...g.edges.filter(e => e.kind === 'loop').map(e => {
-      const a = byId[e.a], b = byId[e.b];
-      const lx = a.x - 28 - (Number(e.track) || 0) * 36;
-      const middle = (a.y + a.h / 2 + b.y + b.h / 2) / 2;
-      const count = Math.max(0, Number(RUN_MODEL.correctionCounts?.[e.source]) || 0);
-      return `<text class="gloop-source" transform="translate(${lx - 7},${middle}) rotate(-90)">${esc(`${e.label} · ${count}`)}</text>`;
-    }),
     (() => {
       const round = Math.max(0, Number(RUN_MODEL.correctionRound) || 0);
       const max = Math.max(1, Number(RUN_MODEL.maxCorrectionRounds) || 3);
+      const verification = Math.max(0, Number(RUN_MODEL.correctionCounts?.verification) || 0);
+      const reviewer = Math.max(0, Number(RUN_MODEL.correctionCounts?.reviewer) || 0);
       const middle = g.TOP + 4.5 * g.ROW;
-      return `<text class="gloop" transform="translate(18,${middle}) rotate(-90)">ciclos correctivos</text>
-      <g class="gcycle" data-over="${round > max ? 1 : 0}">
-        <title>${round} de ${max} ciclos correctivos usados</title>
-        <rect x="42" y="${middle - 14}" width="58" height="28" rx="14"/>
-        <text x="71" y="${middle + 4}">${round} / ${max}</text>
+      const x = 14, y = middle - 61, w = 142, h = 122;
+      return `<g class="gcorrection" data-over="${round > max ? 1 : 0}">
+        <title>Una corrección se cuenta cuando @desarrollador retoma el trabajo por un rechazo. QA + Seguridad: ${verification}. @reviewer: ${reviewer}.</title>
+        <rect class="panel" x="${x}" y="${y}" width="${w}" height="${h}"/>
+        <text class="title" x="${x + 12}" y="${y + 18}">Ciclos correctivos</text>
+        <text class="total" x="${x + 12}" y="${y + 39}">${round} de ${max} usados</text>
+        <text class="hint" x="${x + 12}" y="${y + 53}">Retornos a Implementación</text>
+        <line class="divider" x1="${x + 12}" y1="${y + 63}" x2="${x + w - 12}" y2="${y + 63}"/>
+        <text class="source" x="${x + 12}" y="${y + 82}">QA + Seguridad</text>
+        <rect class="count-bg" x="${x + w - 31}" y="${y + 70}" width="20" height="16" rx="8"/>
+        <text class="count" x="${x + w - 21}" y="${y + 81}">${verification}</text>
+        <text class="source" x="${x + 12}" y="${y + 105}">@reviewer</text>
+        <rect class="count-bg" x="${x + w - 31}" y="${y + 93}" width="20" height="16" rx="8"/>
+        <text class="count" x="${x + w - 21}" y="${y + 104}">${reviewer}</text>
       </g>`;
     })(),
     // Los hooks no se conectan a una fase: se marca con una línea punteada.
