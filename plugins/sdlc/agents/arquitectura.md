@@ -57,9 +57,19 @@ Devolvé JSON válido, sin prosa alrededor:
   "verdict": "READY | BLOCKED",
   "blast_radius": "low | medium | high",
   "blocking_questions": ["pregunta concreta, solo con BLOCKED"],
+  "decision_summary": {
+    "guidelines": ["lineamiento aplicado y de dónde sale, máximo 5"],
+    "technologies": [{"name": "tecnología", "decision": "usar | mantener | evitar", "reason": "por qué"}],
+    "patterns": [{"name": "patrón", "application": "dónde y para qué"}],
+    "constraints": ["límite explícito del cambio, máximo 5"]
+  },
   "plan_md": "# Plan tecnico: <ID>\n\n## Estado actual\n..."
 }
 ```
+
+`decision_summary` es el ledger compacto que alimenta el reporte final. No
+duplica párrafos del plan: registra únicamente decisiones tomadas, con un máximo
+de cinco entradas por lista.
 
 `plan_md` contiene el documento completo con esta estructura:
 

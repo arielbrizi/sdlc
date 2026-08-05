@@ -73,6 +73,7 @@ el run después de recargar la página.
 | Ciclo | El mapa del skill `us` con el estado del run en vivo |
 | Catálogo | Todo lo que aporta el plugin, en una tabla filtrable |
 | Historia | Escribir una historia a mano, sin tracker |
+| Informes | Historial descargable de los PDF generados por las corridas |
 | Configuración | Proyecto asociado, branch base, permisos, herramientas y flags |
 
 **Antes era una sola pantalla sin navegación**, con la configuración plegada
@@ -513,7 +514,11 @@ Por dos vías, porque ninguna sola alcanza:
 mira `.claude/run/<ID>/` y reconoce configuración, branch y todas las salidas
 estructuradas: `story.json`, `config.json`, `git.json`, `refinement.json`,
 `architecture.json`, `plan.md`, `design.json`, `implementation.json`, `qa.json`,
-`security.json` y `review.json`.
+`security.json`, `review.json` y `report.pdf`. Cuando aparece el reporte final,
+el Studio habilita su descarga desde la cabecera del ciclo y conserva una copia
+versionada en `.claude/run/<ID>/reports/`. La sección **Informes** lee ese archivo
+durable desde el proyecto asociado, así que el historial sobrevive a un F5, al
+reinicio del servidor y a los worktrees aislados.
 
 Dos correcciones sobre esa inferencia, que valen porque el modo de falla es
 mostrar progreso que no ocurrió:

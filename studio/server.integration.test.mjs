@@ -53,6 +53,8 @@ printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"tool_use","id"
 printf '%s\n' '{"type":"assistant","parent_tool_use_id":"agent-1","message":{"content":[{"type":"text","text":"SDLC_PROGRESS {\\\"step\\\":2,\\\"total\\\":6,\\\"label\\\":\\\"Ejecutar la suite relevante\\\"}"}]}}'
 printf '%s\n' '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"agent-1","content":"{\\\"verdict\\\":\\\"PASS\\\"}"}]}}'
 printf '%s\n' '{"type":"assistant","message":{"id":"msg-usage","usage":{"input_tokens":120,"output_tokens":30,"cache_read_input_tokens":400},"content":[{"type":"text","text":"Listo"}]}}'
+mkdir -p ".claude/run/$SDLC_STORY_ID"
+printf '%s\n' '%PDF-1.4' 'reporte de prueba' '%%EOF' > ".claude/run/$SDLC_STORY_ID/report.pdf"
 printf '%s\n' '{"type":"result","is_error":false,"result":"Turno terminado","num_turns":1,"total_cost_usd":0}'
 `, { mode: 0o755 });
   git(repo, 'init', '-q');
@@ -86,6 +88,7 @@ printf '%s\n' '{"type":"result","is_error":false,"result":"Turno terminado","num
     assert.doesNotMatch(home, /async function open\(/);
     assert.match(home, /Proyecto existente/);
     assert.match(home, /Proyecto nuevo/);
+    assert.match(home, /Informes de corridas/);
     assert.match(home, /Crear y asociar/);
     const plugin = await fetch(`${baseUrl}/api/plugin`).then(r => r.json());
     assert.equal(plugin.targetRepo, path.resolve(repo));
@@ -178,6 +181,31 @@ printf '%s\n' '{"type":"result","is_error":false,"result":"Turno terminado","num
     assert.match(stream, /--forward-subagent-text/);
     assert.match(stream, /"tokenUsage":\{"input":120,"output":30,"cacheRead":400,"cacheWrite":0\}/);
     assert.match(stream, /"usagePlan":\{"kind":"subscription","label":"Crédito mensual SDK"\}/);
+
+    const reportBytes = Buffer.from('%PDF-1.4\nreporte de prueba\n%%EOF\n');
+    const report = await fetch(`${baseUrl}/api/run/${run.runId}/report`);
+    assert.equal(report.status, 200);
+    assert.equal(report.headers.get('content-type'), 'application/pdf');
+    assert.match(report.headers.get('content-disposition'), /LOCAL-1-sdlc-report\.pdf/);
+    assert.deepEqual(Buffer.from(await report.arrayBuffer()), reportBytes);
+    const archivedDir = path.join(repo, 'apps/web/.claude/run/LOCAL-1/reports');
+    assert.equal(fs.readdirSync(archivedDir).filter(file => file.endsWith('.pdf')).length, 1);
+    const scopedHistory = await fetch(`${baseUrl}/api/reports?${new URLSearchParams({ repoDir: repo, scope: 'apps/web' })}`).then(r => r.json());
+    assert.equal(scopedHistory.reports.filter(item => item.storyId === 'LOCAL-1').length, 1);
+
+    const historyDir = path.join(repo, '.claude/run/HIST-1');
+    fs.mkdirSync(historyDir, { recursive: true });
+    fs.writeFileSync(path.join(historyDir, 'story.json'), JSON.stringify({ id: 'HIST-1', title: 'Informe histórico', tracker: 'manual' }));
+    fs.writeFileSync(path.join(historyDir, 'report.pdf'), reportBytes);
+    const history = await fetch(`${baseUrl}/api/reports?repoDir=${encodeURIComponent(repo)}`).then(r => r.json());
+    const saved = history.reports.find(item => item.storyId === 'HIST-1');
+    assert.ok(saved);
+    assert.equal(saved.title, 'Informe histórico');
+    const savedReport = await fetch(`${baseUrl}/api/reports/download?${new URLSearchParams({
+      repoDir: repo, storyId: 'HIST-1', file: 'report.pdf',
+    })}`);
+    assert.equal(savedReport.status, 200);
+    assert.deepEqual(Buffer.from(await savedReport.arrayBuffer()), reportBytes);
   } finally {
     const closed = new Promise(resolve => server.once('close', resolve));
     server.kill('SIGTERM');

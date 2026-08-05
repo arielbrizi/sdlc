@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "sdlc",
-  "version": "0.4.10",
+  "version": "0.4.11",
   "displayName": "SDLC",
   "description": "Ciclo de desarrollo automatizado a partir del ID de una historia de usuario: refinamiento, arquitectura, diseno de interfaz, implementacion, QA, seguridad y PR.",
   "author": {

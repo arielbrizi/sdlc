@@ -196,9 +196,14 @@ Cada run deja rastro en `.claude/run/<ID>/`:
 ├── qa.json         veredicto de QA
 ├── security.json   veredicto de seguridad
 ├── review.json     revisión adversarial
+├── report.pdf      reporte final de decisiones y retroalimentación por agente
 ├── hook-events.jsonl activaciones reales de cada hook
 └── timeline.log    cierre de cada agente
 ```
+
+`report.pdf` se genera sin invocar otro modelo: consolida las decisiones y la
+evidencia que cada agente ya dejó en sus artefactos, junto con señales
+determinísticas para ajustar sus instrucciones, límites y presupuesto.
 
 Agregá `.claude/run/` al `.gitignore` del repo, salvo que quieras la evidencia
 versionada — que para auditorías de compliance puede ser deseable.

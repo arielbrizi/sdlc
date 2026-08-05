@@ -390,6 +390,11 @@ table.cat tbody tr[data-open="1"]{background:color-mix(in srgb,var(--accent) 9%,
 .cat-desc{font-size:12.5px;color:var(--muted);line-height:1.5;max-width:62ch}
 .cat-meta{display:flex;gap:5px;flex-wrap:wrap;margin-top:7px}
 .cat-empty{padding:38px 16px;text-align:center;color:var(--subtle);font-size:13px}
+.report-title{display:flex;flex-direction:column;gap:3px}
+.report-title strong{font-size:13px;color:var(--text)}
+.report-title small{font-size:11.5px;color:var(--subtle)}
+.report-date{white-space:nowrap;color:var(--muted);font-size:12.5px}
+.report-size{white-space:nowrap;color:var(--subtle);font-family:var(--mono);font-size:11.5px}
 @media (max-width:900px){
   table.cat thead{display:none}
   table.cat tr{display:block;border-bottom:1px solid var(--border)}
@@ -832,6 +837,13 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
       </svg>
       <span>Historia</span>
     </button>
+    <button class="nav-item" data-view="informes">
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M4 4h5l2 2h9v14H4z"/><path d="M8 11h8M8 15h6"/>
+      </svg>
+      <span>Informes</span><span class="count" id="reportCount"></span>
+    </button>
     <button class="nav-item" data-view="config">
       <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -862,6 +874,7 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
         <p>El recorrido que hace una historia de punta a punta: a la izquierda el orden
            de las fases, y colgando de cada una los componentes que intervienen ahí.
            Clickeá cualquiera para ver su detalle.</p>
+        <a class="btn sm" id="btnReport" hidden>Descargar reporte PDF</a>
         <button class="btn sm ghost" id="btnResetHome">Reiniciar Studio</button>
       </div>
       <div class="page-body">
@@ -976,6 +989,26 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
             <span class="sub">Se crea automáticamente al ejecutar.</span>
             <span class="grow"></span>
             <button class="btn primary" id="btnRunManual">Ejecutar esta historia</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================= informes -->
+    <section class="view" id="viewInformes" aria-labelledby="tInformes">
+      <div class="page-head">
+        <h1 id="tInformes">Informes de corridas</h1>
+        <p>Historial persistente de los PDFs generados para el proyecto asociado, del más reciente al más antiguo.</p>
+        <button class="btn sm" id="btnRefreshReports">Actualizar</button>
+      </div>
+      <div class="page-body">
+        <div class="card">
+          <div class="card-body flush">
+            <table class="cat">
+              <thead><tr><th scope="col">Historia</th><th scope="col">Generado</th><th scope="col">Tamaño</th><th scope="col">Archivo</th></tr></thead>
+              <tbody id="reportRows"></tbody>
+            </table>
+            <div class="cat-empty" id="reportEmpty">Asociá un proyecto para ver sus informes.</div>
           </div>
         </div>
       </div>
@@ -1351,7 +1384,7 @@ $('btnTheme').addEventListener('click', () =>
 /* ------------------------------------------------------------ navegación */
 // Una sección por vez y siempre en el mismo lugar: la navegación no cambia de
 // forma según lo que estés haciendo.
-const VIEWS = { ciclo: 'viewCiclo', catalogo: 'viewCatalogo', historia: 'viewHistoria', config: 'viewConfig' };
+const VIEWS = { ciclo: 'viewCiclo', catalogo: 'viewCatalogo', historia: 'viewHistoria', informes: 'viewInformes', config: 'viewConfig' };
 let vistaActual = 'ciclo';
 
 function showView(v) {
@@ -1363,6 +1396,7 @@ function showView(v) {
     else b.removeAttribute('aria-current');
   });
   $(VIEWS[v]).scrollTop = 0;
+  if (v === 'informes') loadReports();
 }
 document.querySelectorAll('.nav-item[data-view]').forEach(b =>
   b.addEventListener('click', () => showView(b.dataset.view)));
@@ -1375,6 +1409,47 @@ function openDesignConfig() {
   });
 }
 $('btnCycleDesign').addEventListener('click', openDesignConfig);
+
+function formatBytes(bytes) {
+  const value = Number(bytes) || 0;
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+async function loadReports({ quiet = false } = {}) {
+  const repoDir = $('repoDir').value.trim();
+  const scope = $('repoScope').value || '.';
+  if (!repoDir) {
+    $('reportRows').innerHTML = '';
+    $('reportEmpty').hidden = false;
+    $('reportEmpty').textContent = 'Asociá un proyecto para ver sus informes.';
+    $('reportCount').textContent = '';
+    return;
+  }
+  try {
+    const params = new URLSearchParams({ repoDir, scope });
+    const { reports = [] } = await api('/api/reports?' + params.toString());
+    $('reportCount').textContent = reports.length || '';
+    $('reportRows').innerHTML = reports.map(report => {
+      const query = new URLSearchParams({ repoDir, scope, storyId: report.storyId, file: report.file });
+      const when = new Date(report.generatedAt);
+      const date = Number.isNaN(when.getTime()) ? report.generatedAt : when.toLocaleString('es-AR');
+      return `<tr>
+        <td><span class="report-title"><strong>${esc(report.storyId)}${report.title ? ` · ${esc(report.title)}` : ''}</strong><small>${esc(report.tracker || 'sin tracker informado')}</small></span></td>
+        <td class="report-date">${esc(date)}</td>
+        <td class="report-size">${esc(formatBytes(report.size))}</td>
+        <td><a class="btn sm" href="/api/reports/download?${query.toString()}">Descargar PDF</a></td>
+      </tr>`;
+    }).join('');
+    $('reportEmpty').hidden = reports.length > 0;
+    $('reportEmpty').textContent = 'Todavía no hay informes PDF para este proyecto.';
+  } catch (e) {
+    if (!quiet) banner('err', e.message);
+  }
+}
+$('btnRefreshReports').addEventListener('click', () => loadReports());
+$('repoScope').addEventListener('change', () => loadReports({ quiet: true }));
 
 /* ---------------------------------------------------------------- avisos */
 // Un toast avisa sin mover el contenido de lugar. Lo que salió bien se va solo;
@@ -1637,6 +1712,7 @@ async function load() {
     renderGraph();
     renderCatalog();
   }
+  await loadReports({ quiet: true });
 
   if (plugin.problems.length) {
     $('catProblems').innerHTML = `<div class="notice err"><div>
@@ -1905,6 +1981,7 @@ $('btnSaveDesign').addEventListener('click', async () => {
 });
 
 $('repoDir').addEventListener('change', loadConfig);
+$('repoDir').addEventListener('change', () => loadReports({ quiet: true }));
 
 const catFiltros = new Set();
 
@@ -2395,6 +2472,8 @@ async function start() {
   showView('ciclo');
   resetPhases();
   $('log').innerHTML = '';
+  $('btnReport').hidden = true;
+  $('btnReport').removeAttribute('href');
   RUN_MODEL = {
     status: 'running', phase: null, blocked: null, complete: false,
     currentAgent: null,
@@ -2588,8 +2667,13 @@ function onEvent(ev) {
     if (action?.agent) NODE_STATE[`agent:${action.agent}`] = 'idle';
     if ($('dlgAction').open) $('dlgAction').close();
   }
-  if (ev.t === 'artifact' && !RUN_MODEL.blocked && !PHASE_STATE[ev.phase]) {
-    PHASE_STATE[ev.phase] = 'done';
+  if (ev.t === 'artifact') {
+    if (!RUN_MODEL.blocked && !PHASE_STATE[ev.phase]) PHASE_STATE[ev.phase] = 'done';
+    if (ev.file === 'report.pdf' && run) {
+      $('btnReport').href = `/api/run/${encodeURIComponent(run)}/report`;
+      $('btnReport').hidden = false;
+      loadReports({ quiet: true });
+    }
   }
   // El grafo se alimenta del mismo stream: cada salida queda pegada al nodo
   // que la produjo, que es lo que se ve al clickearlo.
@@ -3703,6 +3787,10 @@ async function resetStudio() {
   $('repoScope').disabled = true;
   $('isolateRepo').checked = true;
   $('cmdHint').textContent = 'Todavía no se ejecutó ningún run en esta sesión del studio.';
+  $('reportRows').innerHTML = '';
+  $('reportEmpty').hidden = false;
+  $('reportEmpty').textContent = 'Asociá un proyecto para ver sus informes.';
+  $('reportCount').textContent = '';
   $('cfgStatus').textContent = '';
   $('log').innerHTML = '';
   if ($('dlgAction').open) $('dlgAction').close();
@@ -3768,6 +3856,7 @@ async function restaurar() {
   try { info = await api(`/api/run/${datos.run}`); } catch { return guardar(run = null); }
 
   run = datos.run;
+  $('btnReport').hidden = true;
   RUN_MODEL = {
     status: info.status || 'none', phase: info.phase ?? null,
     blocked: info.blocked || null, complete: !!info.cycleComplete,

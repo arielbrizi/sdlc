@@ -122,6 +122,13 @@ resuelto en el sistema. El diseno propio no es un hallazgo.
     "figma_url": "https://www.figma.com/design/...?...node-id=...",
     "repo": "usado"
   },
+  "decision_summary": {
+    "reuse": ["componente o patrón existente y uso, máximo 5"],
+    "new_components": ["componente nuevo justificado, máximo 5"],
+    "tokens": ["token relevante y rol, máximo 5"],
+    "interactions": ["decisión de interacción, máximo 5"],
+    "accessibility": ["decisión verificable, máximo 5"]
+  },
   "blocking_questions": ["..."],
   "design_md": "<contenido completo de design.md, en markdown>"
 }
@@ -132,6 +139,9 @@ run y que `desarrollador` lee como especificacion. Es el único lugar donde van
 componentes, tokens, estados, accesibilidad, responsive y criterios visuales:
 no dupliques esas listas como campos JSON. Para `blast_radius: low` no supera
 120 líneas; para `medium`, 240.
+
+`decision_summary` alimenta el reporte final y contiene solo las decisiones que
+cambian cómo se implementa. No es un segundo `design_md`.
 
 Incluí una sección `## Criterios visuales` en `design_md`; QA los traza igual
 que los de la historia. Escribilos verificables o no los escribas. No repitas

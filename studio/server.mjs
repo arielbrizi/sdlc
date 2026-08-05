@@ -442,6 +442,88 @@ function runDirFor(repoDir, storyId) {
   return abs;
 }
 
+async function readJsonFile(file, fallback = {}) {
+  try { return JSON.parse(await fsp.readFile(file, 'utf8')); }
+  catch { return fallback; }
+}
+
+/**
+ * Conserva cada PDF producido por el Studio en el repo asociado. El run puede
+ * estar ejecutándose en un worktree aislado y desaparecer del mapa en memoria;
+ * este archivo es el historial durable que usa la sección Informes.
+ */
+async function archiveRunReport(run, sourceFile, sourceStat) {
+  const targetRunDir = runDirFor(run.sourceScope || run.sourceRepo || run.cwd, run.storyId);
+  const reportsDir = path.join(targetRunDir, 'reports');
+  const stamp = new Date(run.startedAt).toISOString().replace(/[:.]/g, '-');
+  const reportFile = path.join(reportsDir, `${stamp}.pdf`);
+  const metadataFile = path.join(reportsDir, `${stamp}.json`);
+  await fsp.mkdir(reportsDir, { recursive: true });
+  if (path.resolve(sourceFile) !== path.resolve(reportFile)) await fsp.copyFile(sourceFile, reportFile);
+  const story = await readJsonFile(path.join(path.dirname(sourceFile), 'story.json'));
+  await fsp.writeFile(metadataFile, `${JSON.stringify({
+    storyId: run.storyId.replace(/^#/, ''),
+    title: story.title || '',
+    tracker: story.tracker || '',
+    runId: run.id,
+    startedAt: new Date(run.startedAt).toISOString(),
+    generatedAt: new Date(sourceStat.mtimeMs).toISOString(),
+    sourceMtimeMs: sourceStat.mtimeMs,
+  }, null, 2)}\n`, 'utf8');
+}
+
+async function listRunReports(repoDir) {
+  const base = path.join(path.resolve(repoDir), '.claude', 'run');
+  let dirs = [];
+  try {
+    dirs = (await fsp.readdir(base, { withFileTypes: true })).filter(entry => entry.isDirectory());
+  } catch { return []; }
+
+  const reports = [];
+  for (const entry of dirs) {
+    if (!STORY_ID_RE.test(entry.name)) continue;
+    const runDir = runDirFor(repoDir, entry.name);
+    const story = await readJsonFile(path.join(runDir, 'story.json'));
+    const archiveDir = path.join(runDir, 'reports');
+    let archived = [];
+    try {
+      archived = (await fsp.readdir(archiveDir, { withFileTypes: true }))
+        .filter(file => file.isFile() && /^[A-Za-z0-9_.-]+\.pdf$/.test(file.name));
+    } catch { /* todavía no hay archivo histórico */ }
+
+    const archivedSourceTimes = [];
+    for (const file of archived) {
+      const pdf = path.join(archiveDir, file.name);
+      const stat = await fsp.stat(pdf);
+      const metadata = await readJsonFile(path.join(archiveDir, file.name.replace(/\.pdf$/, '.json')));
+      if (Number.isFinite(metadata.sourceMtimeMs)) archivedSourceTimes.push(metadata.sourceMtimeMs);
+      reports.push({
+        storyId: entry.name,
+        title: metadata.title || story.title || '',
+        tracker: metadata.tracker || story.tracker || '',
+        generatedAt: metadata.generatedAt || stat.mtime.toISOString(),
+        size: stat.size,
+        file: file.name,
+      });
+    }
+
+    const current = path.join(runDir, 'report.pdf');
+    const stat = await fsp.stat(current).catch(() => null);
+    const alreadyArchived = stat && archivedSourceTimes.some(time => Math.abs(time - stat.mtimeMs) < 1);
+    if (stat && !alreadyArchived) {
+      reports.push({
+        storyId: entry.name,
+        title: story.title || '',
+        tracker: story.tracker || '',
+        generatedAt: stat.mtime.toISOString(),
+        size: stat.size,
+        file: 'report.pdf',
+      });
+    }
+  }
+  return reports.sort((a, b) => String(b.generatedAt).localeCompare(String(a.generatedAt)));
+}
+
 /** `Título de la historia` → `titulo-de-la-historia`, para derivar un ID legible. */
 function slugify(s, max = 30) {
   const clean = String(s || '')
@@ -1382,6 +1464,7 @@ async function pollArtifacts(run) {
     ['refinement.json', 1], ['architecture.json', 2], ['plan.md', 2],
     ['design.json', 3], ['design.md', 3], ['implementation.json', 4],
     ['qa.json', 5], ['security.json', 5], ['review.json', 6],
+    ['report.pdf', 7],
   ];
   for (const [file, phase] of map) {
     if (run.artifacts[file]) continue;
@@ -1393,6 +1476,12 @@ async function pollArtifacts(run) {
       // que el studio deja en disco justo antes de arrancar el proceso.
       if (st.mtimeMs < run.startedAt - 5000) continue;
       run.artifacts[file] = true;
+      if (file === 'report.pdf') {
+        try { await archiveRunReport(run, path.join(dir, file), st); }
+        catch (error) {
+          emit(run, { t: 'stderr', text: `No se pudo archivar el reporte: ${error.message}`, at: Date.now() });
+        }
+      }
       emit(run, { t: 'artifact', file, phase, at: Date.now() });
     } catch { /* todavía no existe */ }
   }
@@ -1453,7 +1542,7 @@ function markRunActive(run) {
   emit(run, { t: 'activity', phase: run.phase, at: Date.now() });
 }
 
-function startRun({ storyId, repoDir, sourceRepo, manual, baseBranch, permissionMode, allowedTools, extraFlags, workspaceInfo, branchStrategy, accountUsagePlan }) {
+function startRun({ storyId, repoDir, sourceRepo, sourceScope, manual, baseBranch, permissionMode, allowedTools, extraFlags, workspaceInfo, branchStrategy, accountUsagePlan }) {
   const id = randomUUID();
   // El tracker va explícito: story.json ya dice `manual`, pero decirlo también en
   // la invocación evita que el resolver tenga que adivinar por la forma del ID.
@@ -1482,7 +1571,7 @@ function startRun({ storyId, repoDir, sourceRepo, manual, baseBranch, permission
 
   const startedAt = Date.now();
   const run = {
-    id, storyId, prompt, args, cwd: repoDir, sourceRepo, workspaceInfo,
+    id, storyId, prompt, args, cwd: repoDir, sourceRepo, sourceScope, workspaceInfo,
     startedAt, status: 'running', elapsedMs: 0,
     activeStartedAt: prompt ? startedAt : null,
     phase: null, phaseHistory: [], blocked: null, pendingBlock: null, cycleComplete: false,
@@ -1869,6 +1958,36 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { path: file, ...(await readProjectConfig(repoDir)) });
     }
 
+    if (p === '/api/reports' && req.method === 'GET') {
+      const repoDir = path.resolve(url.searchParams.get('repoDir') || TARGET_REPO);
+      if (!fs.existsSync(repoDir)) return json(res, 400, { error: `El directorio no existe: ${repoDir}` });
+      const scopedDir = safeScope(repoDir, url.searchParams.get('scope') || '.');
+      return json(res, 200, { reports: await listRunReports(scopedDir) });
+    }
+
+    if (p === '/api/reports/download' && req.method === 'GET') {
+      const repoDir = path.resolve(url.searchParams.get('repoDir') || TARGET_REPO);
+      const scopedDir = safeScope(repoDir, url.searchParams.get('scope') || '.');
+      const storyId = String(url.searchParams.get('storyId') || '');
+      const file = String(url.searchParams.get('file') || '');
+      if (!STORY_ID_RE.test(storyId) || !/^[A-Za-z0-9_.-]+\.pdf$/.test(file)) {
+        return json(res, 400, { error: 'reporte inválido' });
+      }
+      const runDir = runDirFor(scopedDir, storyId);
+      const report = file === 'report.pdf' ? path.join(runDir, file) : path.join(runDir, 'reports', file);
+      const body = await fsp.readFile(report).catch(() => null);
+      if (!body) return json(res, 404, { error: 'reporte no encontrado' });
+      const filename = `${storyId.replace(/[^\w.-]+/g, '-')}-${file === 'report.pdf' ? 'sdlc-report' : file.replace(/\.pdf$/, '')}.pdf`;
+      res.writeHead(200, {
+        'content-type': 'application/pdf',
+        'content-length': body.length,
+        'content-disposition': `attachment; filename="${filename}"`,
+        'cache-control': 'no-store',
+      });
+      res.end(body);
+      return;
+    }
+
     if (p === '/api/run' && req.method === 'POST') {
       const body = JSON.parse(await readBody(req));
       const selectedRepo = path.resolve(body.repoDir || TARGET_REPO);
@@ -1939,6 +2058,7 @@ const server = http.createServer(async (req, res) => {
         storyId,
         repoDir,
         sourceRepo: preflight?.repoDir || selectedRepo,
+        sourceScope: preflight?.scopedDir || selectedRepo,
         manual,
         baseBranch: String(body.baseBranch || '').trim(),
         permissionMode: body.permissionMode || null,
@@ -1978,6 +2098,24 @@ const server = http.createServer(async (req, res) => {
         cwd: run.cwd, sourceRepo: run.sourceRepo, workspaceInfo: run.workspaceInfo,
         prompt: run.prompt, vivo: !!run.child,
       });
+    }
+
+    m = p.match(/^\/api\/run\/([\w-]+)\/report$/);
+    if (m && req.method === 'GET') {
+      const run = runs.get(m[1]);
+      if (!run || !run.storyId) return json(res, 404, { error: 'reporte no encontrado' });
+      const report = path.join(runDirFor(run.cwd, run.storyId), 'report.pdf');
+      const body = await fsp.readFile(report).catch(() => null);
+      if (!body) return json(res, 404, { error: 'reporte no encontrado' });
+      const filename = `${run.storyId.replace(/[^\w.-]+/g, '-')}-sdlc-report.pdf`;
+      res.writeHead(200, {
+        'content-type': 'application/pdf',
+        'content-length': body.length,
+        'content-disposition': `attachment; filename="${filename}"`,
+        'cache-control': 'no-store',
+      });
+      res.end(body);
+      return;
     }
 
     m = p.match(/^\/api\/run\/([\w-]+)\/stream$/);

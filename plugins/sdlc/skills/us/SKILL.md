@@ -269,8 +269,14 @@ global de 3 rondas.
 
 ## Fase 7 — Pull Request
 
-Si se invocó con `--no-pr`, terminá acá reportando las verificaciones y la
-branch local. No hagas push ni escrituras remotas.
+Si se invocó con `--no-pr`, generá primero el reporte final con:
+
+```bash
+"${CLAUDE_PLUGIN_ROOT}"/scripts/generate-run-report.mjs <ID>
+```
+
+Después terminá reportando las verificaciones, la branch local y la ruta
+`.claude/run/<ID>/report.pdf`. No hagas push ni escrituras remotas.
 
 Abrí el PR **en draft**, con esta descripción:
 
@@ -310,8 +316,17 @@ este PR requiere revisión humana antes del merge.
 ```
 
 Comentá en el ticket con el link al PR y movelo a "Code Review". Recién después
-de confirmar ambas operaciones reportá `ciclo completo` y el link del PR; el
-Studio usa esa salida como evidencia de cierre.
+de confirmar ambas operaciones generá el reporte final con:
+
+```bash
+"${CLAUDE_PLUGIN_ROOT}"/scripts/generate-run-report.mjs <ID> --pr-url "<URL del PR>"
+```
+
+El script compone el PDF desde los artefactos ya existentes: no delegues otro
+agente ni vuelvas a resumirlos con el modelo. Si falla, reportá el error técnico
+y no declares el ciclo completo hasta obtener el archivo. Después reportá
+`ciclo completo`, el link del PR y `.claude/run/<ID>/report.pdf`; el Studio usa
+esa salida como evidencia de cierre.
 
 Con tracker `manual` no hay ticket: salteá ese paso. El PR queda como único
 registro de la historia, así que la descripción tiene que sostenerse sola —

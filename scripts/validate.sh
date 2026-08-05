@@ -20,9 +20,13 @@ for f in plugins/*/scripts/*.sh scripts/*.sh; do
   fi
   echo "  ok $f"
 done
+for f in plugins/*/scripts/*.mjs; do
+  node --check "$f"
+  echo "  ok $f"
+done
 
 echo "==> Permisos de ejecucion"
-for f in plugins/*/scripts/*.sh; do
+for f in plugins/*/scripts/*.sh plugins/*/scripts/*.mjs; do
   [[ -x "$f" ]] || { echo "  FALTA chmod +x: $f" >&2; exit 1; }
 done
 
