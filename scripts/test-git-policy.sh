@@ -131,9 +131,12 @@ assert_blocked 'Read .env' '{"tool_input":{"file_path":"/repo/.env"}}' "$SECRET_
 assert_blocked 'Bash cat .env' '{"tool_input":{"command":"cat /repo/.env"}}' "$SECRET_GUARD"
 assert_blocked 'Bash git show .env' '{"tool_input":{"command":"git show HEAD:.env"}}' "$SECRET_GUARD"
 assert_blocked 'credentials.json' '{"tool_input":{"file_path":"/repo/credentials.json"}}' "$SECRET_GUARD"
+assert_blocked 'terraform.tfstate' '{"tool_input":{"path":"/repo/terraform.tfstate"}}' "$SECRET_GUARD"
+assert_blocked 'certificado PEM' '{"tool_input":{"command":"openssl x509 -in /repo/cert.pem"}}' "$SECRET_GUARD"
 assert_allowed '.env.example' '{"tool_input":{"file_path":"/repo/.env.example"}}' "$SECRET_GUARD"
 assert_allowed 'credentials service' '{"tool_input":{"file_path":"/repo/src/auth/credentials_service.ts"}}' "$SECRET_GUARD"
 assert_allowed 'credentials test' '{"tool_input":{"file_path":"/repo/tests/test_credentials.py"}}' "$SECRET_GUARD"
+assert_allowed 'payload inválido' 'no es json' "$SECRET_GUARD"
 
 # El resolver acepta la sintaxis que documenta el skill y rechaza traversal.
 mkdir -p "$TMP_REPO/.claude/run/LOCAL-MANUAL"
