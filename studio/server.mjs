@@ -2010,8 +2010,14 @@ function startRun({ storyId, repoDir, sourceRepo, sourceScope, manual, baseBranc
     emit(run, { t: 'stderr', text: chunk.toString('utf8').slice(0, 800), at: Date.now() });
   });
 
-  child.on('close', (code) => {
+  child.on('close', async (code) => {
     pauseRunWork(run);
+    // Última pasada sobre artefactos y log de hooks ANTES de soltar `child`:
+    // el poll normal corre al llegar stdout, así que lo que un hook escribe
+    // cerca del final quedaría sin emitir. Y tiene que ser antes porque `vivo`
+    // es `!!run.child` — quien espera el fin del run lee el stream apenas se
+    // apaga, y ese stream debe incluir lo que dejó el cierre.
+    try { await pollArtifacts(run); } catch { /* best-effort */ }
     run.child = null;
     if (run.status !== 'stopped') run.status = code === 0 ? 'done' : 'error';
     emit(run, { t: 'end', code, status: run.status, elapsedMs: run.elapsedMs, at: Date.now() });
