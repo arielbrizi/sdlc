@@ -516,6 +516,24 @@ async function scanClaudeRepo(rootDir, onStep = null) {
     } catch { /* opcional */ }
   }
 
+  // Relaciones: qué subagentes y scripts nombra cada skill en su prosa. Es lo
+  // que permite dibujar el mapa de un skill sin gastar tokens. Se exige una
+  // mención inequívoca —@nombre, `nombre` o su archivo— porque un nombre corto
+  // suelto ("qa", "feature") aparece en prosa sin ser una referencia.
+  onStep?.(96, 'Trazando relaciones entre componentes');
+  const escRe = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const scriptNames = [...new Set(out.hooks.map(h => h.script).filter(Boolean))];
+  for (const sk of out.skills) {
+    sk.uses = { agents: [], scripts: [] };
+    const body = await readIf(path.join(rootDir, sk.path));
+    if (body === null) continue;
+    sk.uses.agents = out.agents
+      .filter(a => (a.source === sk.source || a.source === 'proyecto')
+        && new RegExp(`@${escRe(a.name)}\\b|\`${escRe(a.name)}\`|agents/${escRe(a.name)}\\.md`).test(body))
+      .map(a => a.name);
+    sk.uses.scripts = scriptNames.filter(s => body.includes(s));
+  }
+
   const total = out.memory.length + out.skills.length + out.commands.length
     + out.agents.length + out.hooks.length + out.mcp.length;
   if (!total) {
@@ -1772,15 +1790,17 @@ function markRunActive(run) {
   emit(run, { t: 'activity', phase: run.phase, at: Date.now() });
 }
 
-function startRun({ storyId, repoDir, sourceRepo, sourceScope, manual, baseBranch, permissionMode, allowedTools, extraFlags, workspaceInfo, branchStrategy, accountUsagePlan }) {
+function startRun({ storyId, repoDir, sourceRepo, sourceScope, manual, baseBranch, permissionMode, allowedTools, extraFlags, workspaceInfo, branchStrategy, accountUsagePlan, importRun = null }) {
   const id = randomUUID();
   // El tracker va explícito: story.json ya dice `manual`, pero decirlo también en
   // la invocación evita que el resolver tenga que adivinar por la forma del ID.
   // Sin storyId es una sesión de consola: se abre vacía y la maneja el dev.
+  // Un run importado trae su propio primer mensaje: el /skill del repo ajeno.
   const skill = `/${qualify('us')}`;
-  const prompt = storyId
-    ? (manual ? `${skill} ${storyId} --tracker manual` : `${skill} ${storyId}`)
-    : null;
+  const prompt = importRun ? importRun.prompt
+    : storyId
+      ? (manual ? `${skill} ${storyId} --tracker manual` : `${skill} ${storyId}`)
+      : null;
 
   const args = [
     '-p',
@@ -1788,11 +1808,17 @@ function startRun({ storyId, repoDir, sourceRepo, sourceScope, manual, baseBranc
     '--output-format', 'stream-json',
     '--forward-subagent-text',
     '--verbose',
-    // Sin esto la sesión corre en el repo objetivo sin el plugin cargado, y
-    // `/sdlc:us` no existe. Además hace que corra lo que hay en disco,
-    // que es lo que el studio deja editar.
-    '--plugin-dir', PLUGIN_DIR,
   ];
+  // Sin esto la sesión corre en el repo objetivo sin el plugin cargado, y
+  // `/sdlc:us` no existe. Además hace que corra lo que hay en disco,
+  // que es lo que el studio deja editar. Un run importado carga el plugin del
+  // repo importado — o ninguno, si el skill vive en su .claude/skills y Claude
+  // lo levanta solo del cwd.
+  if (importRun) {
+    if (importRun.pluginDir) args.push('--plugin-dir', importRun.pluginDir);
+  } else {
+    args.push('--plugin-dir', PLUGIN_DIR);
+  }
   if (permissionMode) args.push('--permission-mode', permissionMode);
   // Autorización quirúrgica: con `-p` no hay dónde aceptar un permiso, así que
   // lo que el run vaya a necesitar tiene que estar habilitado de antemano.
@@ -2112,6 +2138,67 @@ const server = http.createServer(async (req, res) => {
       })();
 
       return json(res, 200, { importId: id });
+    }
+
+    // Ejecutar un entrypoint del repo importado: el skill elegido (o el del
+    // plugin elegido) corre con el runner de siempre, contra el propio repo
+    // importado y con su plugin cargado. No pasa por el preflight del ciclo
+    // `us` porque la historia y el worktree son del contrato de ese skill, no
+    // de este: acá el primer mensaje es exactamente lo que el dev pidió.
+    if (p === '/api/import/run' && req.method === 'POST') {
+      const body = JSON.parse(await readBody(req));
+      const dir = path.resolve(String(body.dir || ''));
+      if (!importedDirs.has(dir)) {
+        return json(res, 403, { error: 'ese directorio no fue importado en esta sesión del studio' });
+      }
+      const scan = await scanClaudeRepo(dir);
+      const scope = String(body.scope || '');
+      let sk = null;
+      if (scope.startsWith('skill:')) {
+        sk = scan.skills[Number(scope.slice(6))] || null;
+        if (!sk) return json(res, 400, { error: 'skill desconocido en el repo importado' });
+      } else if (scope.startsWith('plugin:')) {
+        const name = scope.slice(7);
+        const delPlugin = scan.skills.filter(s => s.source === name);
+        if (!delPlugin.length) {
+          return json(res, 400, { error: `el plugin ${name} no tiene skills: no hay entrypoint que ejecutar` });
+        }
+        sk = delPlugin.find(s => s.name === String(body.skillName || '')) || null;
+        if (!sk && delPlugin.length === 1) sk = delPlugin[0];
+        if (!sk) {
+          return json(res, 409, {
+            error: `el plugin ${name} tiene ${delPlugin.length} skills: elegí en el selector cuál ejecutar`,
+          });
+        }
+      } else {
+        return json(res, 400, { error: 'elegí un plugin o un skill del selector para ejecutar' });
+      }
+
+      // Skill de plugin: se invoca calificado y con el plugin cargado. Skill de
+      // proyecto (.claude/skills): Claude lo levanta solo del cwd.
+      let pluginDir = null, command = sk.name;
+      if (sk.source !== 'proyecto') {
+        const plug = scan.plugins.find(x => x.name === sk.source);
+        if (plug) pluginDir = path.dirname(path.dirname(path.join(dir, plug.path)));
+        command = `${sk.source}:${sk.name}`;
+      }
+      const argsTxt = String(body.args || '').trim();
+      const prompt = `/${command}${argsTxt ? ` ${argsTxt}` : ''}`;
+
+      const account = await authStatus();
+      const run = startRun({
+        storyId: null, repoDir: dir, sourceRepo: dir, sourceScope: dir,
+        manual: false, baseBranch: '',
+        permissionMode: body.permissionMode || null,
+        allowedTools: String(body.allowedTools || '').trim(), extraFlags: '',
+        workspaceInfo: { cwd: dir, isolated: false, worktree: null },
+        branchStrategy: 'resume', accountUsagePlan: account.usagePlan,
+        importRun: { prompt, pluginDir },
+      });
+      return json(res, 200, {
+        runId: run.id, cmd: `claude ${run.args.join(' ')}`,
+        prompt: run.prompt, cwd: dir, command,
+      });
     }
 
     if (p === '/api/import/events' && req.method === 'GET') {

@@ -471,6 +471,7 @@ table.cat tbody tr[data-open="1"]{background:color-mix(in srgb,var(--accent) 9%,
 .gnode[data-kind="skill"] rect{fill:color-mix(in srgb,var(--k-skill) 11%,var(--surface))}
 .gnode[data-kind="command"] rect{fill:color-mix(in srgb,var(--k-command) 11%,var(--surface))}
 .gnode[data-kind="memory"] rect{fill:color-mix(in srgb,var(--k-memory) 11%,var(--surface))}
+.gnode[data-kind="plugin"] rect{fill:color-mix(in srgb,var(--k-plugin) 11%,var(--surface))}
 .gnode[data-kind="main"] rect{fill:var(--surface);stroke-dasharray:5 3}
 /* Deshabilitado en este repo: se ve que está y que no va a correr. Sacarlo del
    diagrama sería peor — el ciclo tiene esa fase, y no verla se lee como que el
@@ -813,8 +814,10 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
     <button class="btn sm" id="authChip" data-s="none" title="Sesión de Claude Code">
       <span class="dot"></span><span id="authText">sesión…</span>
     </button>
+    <button class="btn sm ghost" id="btnImportBack" hidden
+            title="Volver a la detección completa: todos los plugins y skills del repo importado">← Detección</button>
     <select class="field" id="importScope" hidden style="max-width:220px"
-            title="Con más de un plugin o más de un skill en el repo importado, elegís cuál ciclo mirar"></select>
+            title="Elegí qué plugin o skill del repo importado mirar y ejecutar"></select>
     <button class="btn sm ghost" id="btnImportToggle" hidden></button>
     <button class="btn sm" id="btnImport"
             title="Escanear otro repo y redibujar el mapa con lo que hay ahí">Importar LLM</button>
@@ -2525,7 +2528,69 @@ function confirmPreflight(pf, storyLabel) {
   });
 }
 
+// Ejecutar el entrypoint importado seleccionado: el skill corre contra su
+// propio repo, con su plugin cargado, y el campo de historia son sus
+// parámetros. No pasa por el preflight del ciclo `us`: la historia, la branch
+// y el worktree son contrato de ese skill, no de este.
+async function startImportado() {
+  const argsTxt = $('story').value.trim();
+  showView('ciclo');
+  resetPhases();
+  $('log').innerHTML = '';
+  $('btnReport').hidden = true;
+  $('btnReport').removeAttribute('href');
+  RUN_MODEL = {
+    status: 'running', phase: null, blocked: null, complete: false,
+    currentAgent: null,
+    connection: 'starting', sessionReady: false,
+    cost: 0, costReported: false, turns: null,
+    usagePlan: RUN_MODEL.usagePlan || { kind: 'unknown', label: 'Cuenta no identificada' },
+    tokenUsage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    elapsedMs: 0, activeSince: Date.now(), actions: {},
+    correctionRound: 0, maxCorrectionRounds: 3,
+    correctionCounts: { verification: 0, reviewer: 0 },
+    correctionSource: null,
+  };
+  renderRunSurfaces();
+  NODE_OUT = {}; NODE_STATE = {}; HOOK_COUNTS = {}; AGENT_PROGRESS = {}; renderGraph();
+
+  try {
+    const r = await api('/api/import/run', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        dir: IMPORTED.repo.dir,
+        scope: importScope,
+        skillName: scopedSkill()?.name || '',
+        args: argsTxt,
+        permissionMode: $('permMode').value,
+        allowedTools: $('allowedTools').value.trim(),
+      }),
+    });
+    run = r.runId;
+    guardar();
+    $('cmdHint').textContent = `${r.cmd}\n\nprimer mensaje: ${r.prompt}\ncwd: ${r.cwd}`;
+    setSession('running', `Ejecutando /${r.command} del repo importado…`);
+
+    es?.close();
+    isReplaying = true;
+    es = new EventSource(`/api/run/${run}/stream`);
+    es.onmessage = e => onEvent(JSON.parse(e.data));
+    es.onerror = () => {
+      es.close();
+      if (RUN_MODEL.status === 'running' || RUN_MODEL.status === 'idle') finish('error');
+    };
+  } catch (e) {
+    banner('err', e.message);
+    run = null;
+    finish('error');
+  }
+}
+
 async function start() {
+  // Con un entrypoint importado seleccionado, Ejecutar corre ese skill.
+  if (importView && IMPORTED && importScope !== 'all') return startImportado();
+
   const manual = manualMode(), consola = consoleMode();
   const storyId = manual ? '' : $('story').value.trim();
 
@@ -3563,6 +3628,8 @@ function renderNodeDetail() {
 const IMPORT_GROUPS = [
   { key: 'memory',   label: 'Memoria',     kind: 'memory',
     help: 'Lo primero que Claude lee al abrir una sesión en ese repo: CLAUDE.md y sus reglas.' },
+  { key: 'plugins',  label: 'Plugins',     kind: 'plugin',
+    help: 'Paquetes completos: cada uno trae sus propios skills, subagentes y hooks. Seleccioná uno para ver su mapa de relaciones y ejecutarlo.' },
   { key: 'skills',   label: 'Skills',      kind: 'skill',
     help: 'Los instructivos que Claude carga cuando la tarea lo amerita o cuando se los invoca con /nombre.' },
   { key: 'commands', label: 'Comandos',    kind: 'command',
@@ -3634,6 +3701,8 @@ function layoutImport() {
   // Con un ciclo interpretado por Claude para el skill elegido, se dibuja ese.
   const sk = scopedSkill();
   if (sk && IMP_CYCLES[sk.path]) return layoutImportCycle(sk, IMP_CYCLES[sk.path]);
+  // Con un plugin o un skill elegido, el mapa son sus relaciones reales.
+  if (importScope !== 'all') return layoutImportRelations();
 
   const TOP = 40, PX = 54, PW = 226, CX = 328, CW = 194, GAP = 18, PER_ROW = 3, RH = 56;
   const nodes = [], edges = [];
@@ -3680,6 +3749,110 @@ function layoutImport() {
   }
 
   return { nodes, edges, width: maxX + 40, height: Math.max(y, TOP + 120) + 24 };
+}
+
+/**
+ * El mapa de relaciones de un plugin o skill elegido: la vía son sus
+ * entrypoints —el manifest del plugin y sus skills, o el skill solo— y de cada
+ * skill cuelgan los subagentes y scripts que su SKILL.md realmente nombra
+ * (`uses`, calculado por el escaneo sin gastar tokens). Las bandas laterales
+ * llevan lo que corre alrededor de cualquier entrypoint: memoria, hooks, MCP.
+ */
+function layoutImportRelations() {
+  const ROW = 92, TOP = 40, PX = 54, PW = 226, CX = 328, CW = 194, GAP = 18;
+  const nodes = [], edges = [];
+  IMP_ITEMS = {};
+  const s = scopedScan();
+  const plugName = importScope.startsWith('plugin:') ? importScope.slice(7) : null;
+
+  let fila = 0, prev = null, maxX = CX + CW;
+  const spineNode = (id, kind, label, sub) => {
+    const y = TOP + fila * ROW;
+    nodes.push({ id, kind, label, sub, x: PX, y, w: PW, h: 52 });
+    if (prev) edges.push({ a: prev, b: id, kind: 'spine' });
+    prev = id;
+    return y;
+  };
+  const colgar = (spineId, y, items) => {
+    items.forEach((c, k) => {
+      const x = CX + k * (CW + GAP);
+      maxX = Math.max(maxX, x + CW);
+      IMP_ITEMS[c.id] = c.it;
+      nodes.push({ id: c.id, kind: c.it.kind, label: impLabel(c.it),
+                   sub: c.sub || impSub(c.it), x, y: y + 2, w: CW, h: 48 });
+      edges.push({ a: spineId, b: c.id, kind: 'branch' });
+    });
+    fila++;
+  };
+
+  if (plugName) {
+    const plug = IMPORTED.scan.plugins.find(x => x.name === plugName);
+    if (plug) {
+      IMP_ITEMS['impp:plugin'] = plug;
+      spineNode('impp:plugin', 'plugin', plugName, 'plugin · entrypoint ejecutable');
+      fila++;
+    }
+  }
+
+  // Cada skill es una fila de la vía, con lo que su prosa nombra colgando.
+  const usados = new Set();
+  for (const sk of s.skills) {
+    const i = IMPORTED.scan.skills.indexOf(sk);
+    const id = `imp:skills:${i}`;
+    IMP_ITEMS[id] = sk;
+    const y = spineNode(id, 'skill', `/${sk.name}`, 'skill · entrypoint ejecutable');
+    const refs = [];
+    for (const an of sk.uses?.agents || []) {
+      const found = s.agents.find(a => a.name === an) || IMPORTED.scan.agents.find(a => a.name === an);
+      if (!found) continue;
+      usados.add(found.name);
+      refs.push({ id: `impr:${i}:a${refs.length}`, it: found });
+    }
+    for (const sc of sk.uses?.scripts || []) {
+      refs.push({ id: `impr:${i}:s${refs.length}`,
+                  it: { kind: 'script', name: sc, path: '' }, sub: 'lo nombra el skill' });
+    }
+    colgar(id, y, refs.slice(0, IMP_MAX));
+  }
+
+  // Lo que el scope trae pero ningún skill nombra también existe: ocultarlo
+  // haría creer que el mapa de relaciones es el inventario completo.
+  const sueltos = s.agents.filter(a => !usados.has(a.name));
+  if (sueltos.length) {
+    const y = spineNode('impg:agents', 'phase', 'Subagentes sin referencia',
+      'no los nombra ningún skill del scope');
+    colgar('impg:agents', y, sueltos.slice(0, IMP_MAX).map(it => (
+      { id: `imp:agents:${IMPORTED.scan.agents.indexOf(it)}`, it }
+    )));
+  }
+  if (s.commands.length) {
+    const y = spineNode('impg:commands', 'phase', 'Comandos', `${s.commands.length} slash commands`);
+    colgar('impg:commands', y, s.commands.slice(0, IMP_MAX).map(it => (
+      { id: `imp:commands:${IMPORTED.scan.commands.indexOf(it)}`, it }
+    )));
+  }
+
+  // banda lateral, como en los otros mapas importados
+  const hx = maxX + 58;
+  let by = TOP;
+  const banda = (titulo, key, list) => {
+    if (!list.length) return;
+    nodes.push({ id: `titulo:${titulo}`, kind: 'titulo', label: titulo, x: hx, y: by, w: 206, h: 0 });
+    by += 24;
+    list.slice(0, IMP_MAX).forEach(it => {
+      const id = `imp:${key}:${IMPORTED.scan[key].indexOf(it)}`;
+      IMP_ITEMS[id] = it;
+      nodes.push({ id, kind: it.kind, label: impLabel(it), sub: impSub(it), x: hx, y: by, w: 206, h: 48 });
+      by += 56;
+    });
+    by += 20;
+  };
+  banda('memoria', 'memory', s.memory);
+  banda('sobre cualquier fase', 'hooks', s.hooks);
+  banda('mcp servers', 'mcp', s.mcp);
+
+  const height = Math.max(TOP + fila * ROW, by) + 24;
+  return { nodes, edges, width: hx + 206 + 24, height, hx };
 }
 
 /**
@@ -3825,12 +3998,22 @@ function renderImportDetail(id) {
         <p class="prose">Claude lo nombró al interpretar el skill, pero el escaneo no lo encontró en el repo importado.</p>
       </div>`;
     } else {
-      // A un skill se le puede pedir el ciclo: eso usa Claude, así que primero
-      // se pregunta y recién con el sí del dev se ejecuta.
-      const conCiclo = it.kind === 'skill' && IMP_CYCLES[it.path];
-      const extra = it.kind === 'skill'
-        ? `<button class="btn sm primary" id="ndInterpret">${conCiclo ? 'Reinterpretar con Claude' : 'Interpretar ciclo con Claude'}</button>`
-        : '';
+      // Un plugin o un skill se puede seleccionar: eso dibuja su mapa de
+      // relaciones y lo deja como el entrypoint que corre Ejecutar. A un skill
+      // además se le puede pedir el ciclo a Claude — eso gasta tokens, así que
+      // primero se pregunta y recién con el sí del dev se ejecuta.
+      let extra = '';
+      if (it.kind === 'plugin' && importScope !== `plugin:${it.name}`) {
+        extra += `<button class="btn sm primary" id="ndScope" data-scope="plugin:${esc(it.name)}">Ver relaciones y ejecutar</button>`;
+      }
+      if (it.kind === 'skill') {
+        const idx = IMPORTED.scan.skills.findIndex(x => x.path === it.path);
+        if (idx >= 0 && importScope !== `skill:${idx}`) {
+          extra += `<button class="btn sm primary" id="ndScope" data-scope="skill:${idx}">Ver relaciones y ejecutar</button>`;
+        }
+        const conCiclo = IMP_CYCLES[it.path];
+        extra += `<button class="btn sm" id="ndInterpret">${conCiclo ? 'Reinterpretar con Claude' : 'Interpretar ciclo con Claude'}</button>`;
+      }
       html = impItemHtml(it, extra);
     }
   }
@@ -3841,6 +4024,13 @@ function renderImportDetail(id) {
   if (abrir && it) abrir.addEventListener('click', () => openImported(it.path));
   const interp = $('ndInterpret');
   if (interp && it) interp.addEventListener('click', () => interpretarSkill(it, true));
+  const scopeBtn = $('ndScope');
+  if (scopeBtn) scopeBtn.addEventListener('click', () => {
+    importScope = scopeBtn.dataset.scope;
+    selectedNode = null;
+    guardarImport(); syncImportUi(); renderGraph();
+    banner('ok', `${scopeLabel()} seleccionado: el mapa muestra sus relaciones y Ejecutar corre ese entrypoint. ← Detección vuelve a la vista completa.`);
+  });
 }
 
 /**
@@ -3923,34 +4113,33 @@ function syncImportUi() {
   $('btnImportToggle').textContent = importView ? 'Ver plugin' : 'Ver importado';
   $('btnImportRemove').hidden = !IMPORTED;
 
-  // Selector de ciclo: con más de un plugin o más de un skill en el repo
-  // importado, se elige cuál mirar y el mapa se arma solo con lo de ese.
+  // Selector de scope: todos los plugins y skills del repo importado son
+  // seleccionables — elegir uno dibuja su mapa de relaciones y lo deja como
+  // entrypoint a ejecutar. "todo el repo" es la detección completa.
   const sel = $('importScope');
   if (IMPORTED) {
     const s = IMPORTED.scan;
     const ops = [{ v: 'all', t: 'todo el repo' }];
-    if (s.plugins.length > 1) {
-      for (const p of s.plugins) ops.push({ v: `plugin:${p.name}`, t: `plugin · ${p.name}` });
-    }
-    if (s.skills.length > 1) {
-      s.skills.forEach((sk, i) => ops.push({
-        v: `skill:${i}`,
-        t: `skill · /${sk.name}${sk.source !== 'proyecto' ? ` (${sk.source})` : ''}`,
-      }));
-    }
-    // La validez del scope no depende de qué opciones muestra el selector: con
-    // un solo skill el selector se oculta, pero `skill:0` sigue siendo un scope
-    // legítimo — es el que deja Interpretar ciclo con Claude.
-    const validos = new Set(['all',
-      ...s.plugins.map(p => `plugin:${p.name}`),
-      ...s.skills.map((sk, i) => `skill:${i}`)]);
-    if (!validos.has(importScope)) importScope = 'all';
+    for (const p of s.plugins) ops.push({ v: `plugin:${p.name}`, t: `plugin · ${p.name}` });
+    s.skills.forEach((sk, i) => ops.push({
+      v: `skill:${i}`,
+      t: `skill · /${sk.name}${sk.source !== 'proyecto' ? ` (${sk.source})` : ''}`,
+    }));
+    if (!ops.some(o => o.v === importScope)) importScope = 'all';
     sel.innerHTML = ops.map(o =>
       `<option value="${esc(o.v)}"${o.v === importScope ? ' selected' : ''}>${esc(o.t)}</option>`).join('');
     sel.hidden = !importView || ops.length === 1;
   } else {
     sel.hidden = true;
   }
+  $('btnImportBack').hidden = !(importView && IMPORTED && importScope !== 'all');
+
+  // Con un entrypoint elegido, Ejecutar corre ese skill: el campo de historia
+  // pasa a ser sus parámetros — una historia, un ID o lo que ese skill pida.
+  const ejecutable = importView && IMPORTED && importScope !== 'all';
+  $('story').placeholder = ejecutable
+    ? `Parámetros para ${scopeLabel()} — historia, ID o lo que pida`
+    : 'ID de historia — PROJ-1234, 8891, #245';
 
   // La barra de contexto y el subtítulo del ciclo dicen qué mapa se mira.
   if (importView && IMPORTED) {
@@ -4073,13 +4262,21 @@ $('btnImportToggle').addEventListener('click', () => {
   guardarImport(); syncImportUi(); renderGraph();
 });
 
+// Volver de un mapa de relaciones a la detección completa del repo importado.
+$('btnImportBack').addEventListener('click', () => {
+  importScope = 'all'; selectedNode = null;
+  guardarImport(); syncImportUi(); renderGraph();
+});
+
 $('importScope').addEventListener('change', () => {
   importScope = $('importScope').value;
   selectedNode = null;
   guardarImport(); syncImportUi(); renderGraph();
-  // Si el scope es un skill sin ciclo interpretado, el panel ofrece pedirlo.
+  // Con un skill elegido se abre su panel: ahí viven Interpretar y Ver archivo.
+  // El id del nodo depende del layout — con ciclo interpretado es la cabecera
+  // del ciclo, sin ciclo es la fila del skill en el mapa de relaciones.
   const sk = scopedSkill();
-  if (sk) { IMP_ITEMS['impc:skill'] = sk; selectNode('impc:skill'); }
+  if (sk) selectNode(IMP_CYCLES[sk.path] ? 'impc:skill' : `imp:skills:${Number(importScope.slice(6))}`);
 });
 
 // Al recargar, la importación se rehace desde la URL guardada: el clon ya está

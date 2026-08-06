@@ -406,10 +406,27 @@ reemplaza por el orden en que Claude Code carga lo que hay en ese repo al armar
 una sesión: memoria primero, después los entrypoints, después lo que corre por
 abajo. Solo aparecen los grupos que tienen algo.
 
-**Con más de un plugin o más de un skill**, el rail muestra un selector de
-ciclo: elegís cuál mirar y el mapa se arma solo con los componentes de esa
-fuente. La memoria del proyecto queda siempre, porque Claude la carga se corra
-lo que se corra.
+**Todo plugin y todo skill detectado es seleccionable**, desde el selector de
+la barra global o clickeando su nodo (*Ver relaciones y ejecutar*). Al
+seleccionarlo, el mapa deja la detección y pasa a mostrar **sus relaciones
+reales**: el plugin arriba, sus skills como entrypoints, y de cada skill los
+subagentes y scripts que su SKILL.md realmente nombra —lo calcula el escaneo
+exigiendo una mención inequívoca (`@nombre`, `` `nombre` `` o su archivo),
+porque un nombre corto suelto aparece en prosa sin ser una referencia. Lo que
+ningún skill nombra se muestra aparte como *Subagentes sin referencia*:
+ocultarlo haría creer que el mapa es el inventario completo. **← Detección**
+vuelve a la vista inicial con todos los plugins y skills. La memoria del
+proyecto queda siempre, porque Claude la carga se corra lo que se corra.
+
+**Con un entrypoint seleccionado, Ejecutar corre ese skill** contra su propio
+repo: el campo de historia pasa a ser sus parámetros (una historia, un ID o lo
+que ese skill pida) y la sesión se abre con `/plugin:skill parámetros` como
+primer mensaje, con el plugin importado cargado vía `--plugin-dir` — o sin
+plugin si el skill vive en `.claude/skills`, que Claude levanta solo del cwd.
+No pasa por el preflight del ciclo `us`: la historia, la branch y el worktree
+son contrato de ese skill, no de este. La consola muestra la conversación como
+en cualquier run; lo que no hay es telemetría de fases, porque los hooks que la
+emiten son de este plugin.
 
 **Interpretar el ciclo de un skill usa Claude, y siempre pregunta antes.** El
 escaneo lista componentes pero no puede saber en qué orden los orquesta un
