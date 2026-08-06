@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * globant-sdlc studio — servidor local.
+ * sdlc studio — servidor local.
  *
  * Sin dependencias npm: solo built-ins de Node. En un entorno corporativo eso
  * significa que no hay supply chain que revisar antes de que el equipo lo use.
@@ -19,6 +19,32 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import os from 'node:os';
+import {
+  MAX_CORRECTION_ROUNDS,
+  RECOVERY_PROMPT,
+  EMPTY_TOKEN_USAGE,
+  addTokenUsage,
+  auditCorrection,
+  correctionRoundForTransition,
+  correctionSourceForTransition,
+  finalCycleCompletion,
+  humanInputRequest,
+  prCommand,
+  prTool,
+  technicalToolInterruption,
+  usagePlan,
+} from './run-signals.mjs';
+import {
+  discoverWorkspaces,
+  discoverProjectProfile,
+  isolatedWorktreePath,
+  repoHintVerdict,
+  repoNames,
+  safeScope,
+} from './repository.mjs';
+import { hookEventsSince } from './hook-events.mjs';
+import { toolActivity } from './tool-activity.mjs';
+import { mcpLoginCommand, parseMcpStatus, pluginMcpName } from './mcp-auth.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..');
@@ -30,14 +56,16 @@ function arg(name, fallback) {
   return i !== -1 && process.argv[i + 1] ? process.argv[i + 1] : fallback;
 }
 
-const PLUGIN_DIR = path.resolve(arg('plugin', path.join(REPO_ROOT, 'plugins/globant-sdlc')));
-const TARGET_REPO = path.resolve(arg('repo', process.env.GLOBANT_TARGET_REPO || process.cwd()));
+const PLUGIN_DIR = path.resolve(arg('plugin', path.join(REPO_ROOT, 'plugins/sdlc')));
+const TARGET_REPO_INPUT = arg('repo', process.env.SDLC_TARGET_REPO || '');
+const TARGET_REPO_EXPLICIT = !!TARGET_REPO_INPUT;
+const TARGET_REPO = path.resolve(TARGET_REPO_INPUT || process.cwd());
 const PORT = Number(arg('port', 4477));
 const PUBLIC_DIR = path.join(HERE, 'public');
 // Dónde se clonan los repos que se piden por URL. Fuera del repo del plugin a
 // propósito: son repos de trabajo, no parte de este proyecto.
 const WORKSPACE = path.resolve(
-  arg('workspace', process.env.GLOBANT_WORKSPACE || path.join(os.homedir(), 'globant-sdlc-repos')),
+  arg('workspace', process.env.SDLC_WORKSPACE || path.join(os.homedir(), 'sdlc-repos')),
 );
 
 // Extensiones editables. Todo lo demás es de solo lectura desde el studio.
@@ -47,7 +75,7 @@ const EDITABLE = new Set(['.md', '.json', '.sh', '.yml', '.yaml']);
  * Nombre del plugin, leído del manifest.
  *
  * Hace falta porque las skills y los subagentes de un plugin se invocan
- * calificados con él: `/globant-sdlc:us`, no `/us`. Sin el prefijo, Claude
+ * calificados con él: `/sdlc:us`, no `/us`. Sin el prefijo, Claude
  * responde "Unknown command".
  */
 const PLUGIN_NAME = (() => {
@@ -59,10 +87,10 @@ const PLUGIN_NAME = (() => {
   }
 })();
 
-/** `us` → `globant-sdlc:us`. Sin manifest legible cae al nombre suelto. */
+/** `us` → `sdlc:us`. Sin manifest legible cae al nombre suelto. */
 const qualify = name => (PLUGIN_NAME ? `${PLUGIN_NAME}:${name}` : name);
 
-/** `globant-sdlc:refinamiento` → `refinamiento`, para mapear contra AGENT_PHASE. */
+/** `sdlc:refinamiento` → `refinamiento`, para mapear contra AGENT_PHASE. */
 const unqualify = name => String(name).slice(String(name).indexOf(':') + 1);
 
 // ------------------------------------------------------------------ helpers
@@ -133,6 +161,20 @@ function parseFrontmatter(text) {
   return { data, raw, body, flat };
 }
 
+/**
+ * Los checkpoints viven en el prompt del agente para que Studio no mantenga
+ * una segunda lista que pueda desincronizarse. Solo se acepta una lista
+ * numerada simple bajo `## Progreso observable`.
+ */
+function agentProgressSteps(body) {
+  const section = String(body || '').match(
+    /^## Progreso observable\s*\n([\s\S]*?)(?=^##\s|(?![\s\S]))/m,
+  )?.[1] || '';
+  return [...section.matchAll(/^\s*\d+\.\s+(.+)$/gm)]
+    .map(([, label]) => label.replace(/`/g, '').trim())
+    .filter(Boolean);
+}
+
 /** Corre un subcomando de `claude` y junta su salida. Para comandos cortos. */
 const runClaude = (args, opts = {}) => runClaudeLike('claude', args, opts);
 
@@ -152,6 +194,7 @@ async function scanPlugin() {
   const out = {
     pluginDir: PLUGIN_DIR,
     targetRepo: TARGET_REPO,
+    targetRepoExplicit: TARGET_REPO_EXPLICIT,
     manifest: null,
     skills: [],
     agents: [],
@@ -223,6 +266,7 @@ async function scanPlugin() {
         model: d.model || '(heredado)',
         effort: d.effort || null,
         maxTurns: d.maxTurns || null,
+        progressSteps: agentProgressSteps(fm.body),
         readOnly: denied.includes('Write') && denied.includes('Edit'),
         disallowedTools: denied,
       });
@@ -476,6 +520,99 @@ async function scanClaudeRepo(rootDir) {
 
 // Mismo patrón que valida el endpoint de run: sin puntos ni barras, así que no
 // hay traversal posible por el ID. La verificación de contención igual está.
+// ------------------------------------------- config del repo objetivo
+
+/**
+ * Qué agentes e integraciones tiene habilitados un repo.
+ *
+ * La resuelve el mismo `config.sh` que usa el ciclo, en vez de reimplementar los
+ * defaults acá. Dos implementaciones del mismo default terminan divergiendo, y
+ * el studio mostraría habilitado algo que el hook bloquea.
+ */
+function readProjectConfig(repoDir) {
+  return new Promise((resolve, reject) => {
+    const script = path.join(PLUGIN_DIR, 'scripts/config.sh');
+    const child = spawn('bash', [script, 'json'], {
+      cwd: repoDir,
+      env: { ...process.env, CLAUDE_PROJECT_DIR: repoDir, CLAUDE_PLUGIN_ROOT: PLUGIN_DIR },
+    });
+    let out = '', err = '';
+    child.stdout.on('data', d => { out += d; });
+    child.stderr.on('data', d => { err += d; });
+    child.on('error', reject);
+    child.on('close', code => {
+      if (code !== 0) return reject(new Error(err.trim() || `config.sh salió con ${code}`));
+      try { resolve(JSON.parse(out)); }
+      catch (e) { reject(new Error(`config.sh no devolvió JSON: ${e.message}`)); }
+    });
+  });
+}
+
+/**
+ * Escribe `.claude/sdlc.json` en el repo objetivo.
+ *
+ * Se normaliza contra los agentes que existen en el plugin: un nombre que no
+ * corresponde a ningún agente no se guarda. Sin eso, el archivo acumula claves
+ * de agentes renombrados que nadie va a volver a mirar y que hacen creer que
+ * algo está apagado cuando no existe.
+ */
+async function writeProjectConfig(repoDir, body) {
+  const plugin = await scanPlugin();
+  const conocidos = new Set(plugin.agents.map(a => a.name));
+  const texto = (v, def = '') => (typeof v === 'string' ? v.trim() : def);
+
+  const agents = {};
+  for (const [nombre, valor] of Object.entries(body.agents || {})) {
+    if (conocidos.has(nombre)) agents[nombre] = !!valor;
+  }
+
+  const figmaUrl = texto(body.figma?.url);
+  let figmaFileKey = texto(body.figma?.file_key);
+  let figmaNodeId = texto(body.figma?.node_id);
+  if (figmaUrl) {
+    let parsed;
+    try { parsed = new URL(figmaUrl); }
+    catch {
+      throw Object.assign(new Error('El link de Figma no es válido. Copiá el link del frame seleccionado y pegalo completo.'), { code: 400 });
+    }
+    if (!/(^|\.)figma\.com$/i.test(parsed.hostname)) {
+      throw Object.assign(new Error('El link debe ser de figma.com.'), { code: 400 });
+    }
+    const match = parsed.pathname.match(/^\/(?:design|file|proto)\/([^/]+)/i);
+    if (!match) {
+      throw Object.assign(new Error('No pude encontrar el archivo en ese link de Figma.'), { code: 400 });
+    }
+    figmaFileKey = match[1];
+    figmaNodeId = texto(parsed.searchParams.get('node-id')).replace(/-/g, ':');
+    if (!figmaNodeId) {
+      throw Object.assign(new Error('El link no apunta a un frame. En Figma seleccioná la pantalla, elegí “Copy link to selection” y pegá ese link.'), { code: 400 });
+    }
+  }
+
+  const cfg = {
+    agents,
+    figma: {
+      enabled: !!figmaUrl || !!body.figma?.enabled,
+      url: figmaUrl,
+      file_key: figmaFileKey,
+      node_id: figmaNodeId,
+    },
+    storybook: {
+      enabled: !!body.storybook?.enabled,
+      dir: texto(body.storybook?.dir, '.storybook') || '.storybook',
+      url: texto(body.storybook?.url),
+    },
+  };
+
+  const dir = path.join(path.resolve(repoDir), '.claude');
+  await fsp.mkdir(dir, { recursive: true });
+  const file = path.join(dir, 'sdlc.json');
+  await fsp.writeFile(file, `${JSON.stringify(cfg, null, 2)}\n`, 'utf8');
+  return file;
+}
+
+// ------------------------------------------------------- historia manual
+
 const STORY_ID_RE = /^#?[A-Za-z0-9-]{1,40}$/;
 
 /** Resuelve `.claude/run/<ID>` dentro del repo objetivo y verifica que no se escape. */
@@ -490,6 +627,88 @@ function runDirFor(repoDir, storyId) {
     throw Object.assign(new Error('ruta de run fuera del repo'), { code: 403 });
   }
   return abs;
+}
+
+async function readJsonFile(file, fallback = {}) {
+  try { return JSON.parse(await fsp.readFile(file, 'utf8')); }
+  catch { return fallback; }
+}
+
+/**
+ * Conserva cada PDF producido por el Studio en el repo asociado. El run puede
+ * estar ejecutándose en un worktree aislado y desaparecer del mapa en memoria;
+ * este archivo es el historial durable que usa la sección Informes.
+ */
+async function archiveRunReport(run, sourceFile, sourceStat) {
+  const targetRunDir = runDirFor(run.sourceScope || run.sourceRepo || run.cwd, run.storyId);
+  const reportsDir = path.join(targetRunDir, 'reports');
+  const stamp = new Date(run.startedAt).toISOString().replace(/[:.]/g, '-');
+  const reportFile = path.join(reportsDir, `${stamp}.pdf`);
+  const metadataFile = path.join(reportsDir, `${stamp}.json`);
+  await fsp.mkdir(reportsDir, { recursive: true });
+  if (path.resolve(sourceFile) !== path.resolve(reportFile)) await fsp.copyFile(sourceFile, reportFile);
+  const story = await readJsonFile(path.join(path.dirname(sourceFile), 'story.json'));
+  await fsp.writeFile(metadataFile, `${JSON.stringify({
+    storyId: run.storyId.replace(/^#/, ''),
+    title: story.title || '',
+    tracker: story.tracker || '',
+    runId: run.id,
+    startedAt: new Date(run.startedAt).toISOString(),
+    generatedAt: new Date(sourceStat.mtimeMs).toISOString(),
+    sourceMtimeMs: sourceStat.mtimeMs,
+  }, null, 2)}\n`, 'utf8');
+}
+
+async function listRunReports(repoDir) {
+  const base = path.join(path.resolve(repoDir), '.claude', 'run');
+  let dirs = [];
+  try {
+    dirs = (await fsp.readdir(base, { withFileTypes: true })).filter(entry => entry.isDirectory());
+  } catch { return []; }
+
+  const reports = [];
+  for (const entry of dirs) {
+    if (!STORY_ID_RE.test(entry.name)) continue;
+    const runDir = runDirFor(repoDir, entry.name);
+    const story = await readJsonFile(path.join(runDir, 'story.json'));
+    const archiveDir = path.join(runDir, 'reports');
+    let archived = [];
+    try {
+      archived = (await fsp.readdir(archiveDir, { withFileTypes: true }))
+        .filter(file => file.isFile() && /^[A-Za-z0-9_.-]+\.pdf$/.test(file.name));
+    } catch { /* todavía no hay archivo histórico */ }
+
+    const archivedSourceTimes = [];
+    for (const file of archived) {
+      const pdf = path.join(archiveDir, file.name);
+      const stat = await fsp.stat(pdf);
+      const metadata = await readJsonFile(path.join(archiveDir, file.name.replace(/\.pdf$/, '.json')));
+      if (Number.isFinite(metadata.sourceMtimeMs)) archivedSourceTimes.push(metadata.sourceMtimeMs);
+      reports.push({
+        storyId: entry.name,
+        title: metadata.title || story.title || '',
+        tracker: metadata.tracker || story.tracker || '',
+        generatedAt: metadata.generatedAt || stat.mtime.toISOString(),
+        size: stat.size,
+        file: file.name,
+      });
+    }
+
+    const current = path.join(runDir, 'report.pdf');
+    const stat = await fsp.stat(current).catch(() => null);
+    const alreadyArchived = stat && archivedSourceTimes.some(time => Math.abs(time - stat.mtimeMs) < 1);
+    if (stat && !alreadyArchived) {
+      reports.push({
+        storyId: entry.name,
+        title: story.title || '',
+        tracker: story.tracker || '',
+        generatedAt: stat.mtime.toISOString(),
+        size: stat.size,
+        file: 'report.pdf',
+      });
+    }
+  }
+  return reports.sort((a, b) => String(b.generatedAt).localeCompare(String(a.generatedAt)));
 }
 
 /** `Título de la historia` → `titulo-de-la-historia`, para derivar un ID legible. */
@@ -521,7 +740,7 @@ const toList = (v, sep) => (Array.isArray(v) ? v : String(v || '').split(sep))
  * No valida los criterios de aceptación: eso lo decide `refinamiento`, que es el
  * circuit breaker del flujo. Escribir la historia acá no saltea ese gate.
  */
-async function writeManualStory(repoDir, input) {
+function manualStory(input) {
   const title = String(input.title || '').trim();
   if (!title) {
     throw Object.assign(new Error('La historia necesita un título'), { code: 400 });
@@ -534,7 +753,7 @@ async function writeManualStory(repoDir, input) {
   }
 
   const points = Number(input.storyPoints);
-  const story = {
+  return {
     id,
     tracker: 'manual',
     url: null,
@@ -547,9 +766,14 @@ async function writeManualStory(repoDir, input) {
     labels: toList(input.labels, ','),
     attachments: [],
     linked_issues: [],
-    repo_hint: null,
+    repo_hint: String(input.repoHint || '').trim() || null,
     raw: { source: 'studio', authored_at: new Date().toISOString() },
   };
+}
+
+async function writeManualStory(repoDir, input) {
+  const story = manualStory(input);
+  const { id } = story;
 
   const dir = runDirFor(repoDir, id);
   await fsp.mkdir(dir, { recursive: true });
@@ -633,12 +857,28 @@ async function vcsStatus(provider) {
 /** Igual que runClaude pero con binario arbitrario. */
 function runClaudeLike(bin, args, opts = {}) {
   return new Promise((resolve) => {
+    const { timeoutMs = 0, ...spawnOpts } = opts;
     let stdout = '', stderr = '';
-    const c = spawn(bin, args, { cwd: REPO_ROOT, ...opts });
+    let settled = false, timedOut = false, timer = null;
+    const finish = result => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      resolve(result);
+    };
+    const c = spawn(bin, args, { cwd: REPO_ROOT, ...spawnOpts });
     c.stdout.on('data', d => stdout += d);
     c.stderr.on('data', d => stderr += d);
-    c.on('error', () => resolve({ code: -1, stdout: '', stderr: `no se encontró ${bin}` }));
-    c.on('close', code => resolve({ code, stdout, stderr }));
+    c.on('error', () => finish({ code: -1, stdout: '', stderr: `no se encontró ${bin}` }));
+    c.on('close', code => finish({
+      code: timedOut ? 124 : code,
+      stdout,
+      stderr: timedOut ? `${stderr}\nLa comprobación tardó demasiado.`.trim() : stderr,
+    }));
+    if (timeoutMs > 0) timer = setTimeout(() => {
+      timedOut = true;
+      c.kill('SIGTERM');
+    }, timeoutMs);
   });
 }
 
@@ -695,10 +935,24 @@ function startVcsLogin(provider) {
  * hace fetch después: reclonar en cada run sería lento y perdería el trabajo.
  */
 async function prepararRepo(raw) {
-  // Una carpeta local que ya existe se usa tal cual.
+  // Una carpeta local existente puede ser el root o cualquier directorio de un
+  // monorepo. Se actualiza igual que un clone administrado por Studio: mostrar
+  // branches viejas en el preflight termina creando features desde una base
+  // distinta de la que el usuario eligió.
   const comoPath = path.resolve(String(raw || '').trim());
-  if (fs.existsSync(path.join(comoPath, '.git'))) {
-    return { dir: comoPath, clonado: false, ...(await ramas(comoPath)) };
+  if (fs.existsSync(comoPath)) {
+    const root = await runClaudeLike('git', ['rev-parse', '--show-toplevel'], { cwd: comoPath });
+    if (root.code === 0) {
+      const dir = root.stdout.trim();
+      const remotes = await runClaudeLike('git', ['remote'], { cwd: dir });
+      if (remotes.stdout.trim()) {
+        const fetched = await runClaudeLike('git', ['fetch', '--all', '--prune'], { cwd: dir });
+        if (fetched.code !== 0) {
+          throw Object.assign(new Error(`git fetch falló: ${fetched.stderr.slice(0, 300)}`), { code: 502 });
+        }
+      }
+      return { dir, clonado: false, local: true, ...(await ramas(dir)), workspaces: await discoverWorkspaces(dir) };
+    }
   }
 
   const info = parseRepoUrl(raw);
@@ -711,7 +965,7 @@ async function prepararRepo(raw) {
   if (fs.existsSync(path.join(dir, '.git'))) {
     const r = await runClaudeLike('git', ['fetch', '--all', '--prune'], { cwd: dir });
     if (r.code !== 0) throw Object.assign(new Error(`git fetch falló: ${r.stderr.slice(0, 300)}`), { code: 502 });
-    return { dir, clonado: false, provider: info.provider, ...(await ramas(dir)) };
+    return { dir, clonado: false, provider: info.provider, ...(await ramas(dir)), workspaces: await discoverWorkspaces(dir) };
   }
 
   await fsp.mkdir(WORKSPACE, { recursive: true });
@@ -722,7 +976,49 @@ async function prepararRepo(raw) {
       { code: 502 },
     );
   }
-  return { dir, clonado: true, provider: info.provider, ...(await ramas(dir)) };
+  return { dir, clonado: true, provider: info.provider, ...(await ramas(dir)), workspaces: await discoverWorkspaces(dir) };
+}
+
+/**
+ * Crea un proyecto vacío administrado por Studio. El commit inicial no agrega
+ * archivos: existe solamente para que `main` sea una base válida desde la que
+ * el ciclo pueda abrir su feature branch.
+ */
+async function crearProyecto(nombre) {
+  const clean = String(nombre || '').trim();
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(clean)) {
+    throw Object.assign(
+      new Error('usá un nombre de hasta 64 caracteres: letras, números, punto, guion o guion bajo'),
+      { code: 400 },
+    );
+  }
+
+  const dir = path.join(WORKSPACE, clean);
+  if (fs.existsSync(dir) && (await fsp.readdir(dir)).length) {
+    throw Object.assign(new Error(`ya existe un proyecto llamado ${clean}`), { code: 409 });
+  }
+
+  await fsp.mkdir(dir, { recursive: true });
+  const init = await runClaudeLike('git', ['init', '-q', '-b', 'main'], { cwd: dir });
+  if (init.code !== 0) {
+    throw Object.assign(new Error(`git init falló: ${init.stderr.slice(0, 300)}`), { code: 500 });
+  }
+  const commit = await runClaudeLike('git', [
+    '-c', 'user.name=SDLC Studio',
+    '-c', 'user.email=studio@localhost',
+    'commit', '--allow-empty', '-qm', 'Initialize project',
+  ], { cwd: dir });
+  if (commit.code !== 0) {
+    throw Object.assign(new Error(`no se pudo crear el commit inicial: ${commit.stderr.slice(0, 300)}`), { code: 500 });
+  }
+
+  return {
+    dir,
+    created: true,
+    local: true,
+    ...(await ramas(dir)),
+    workspaces: ['.'],
+  };
 }
 
 /** Branches remotas y la branch por defecto del repo. */
@@ -748,11 +1044,104 @@ async function ramas(dir) {
   }
 
   const head = await runClaudeLike('git', ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], { cwd: dir });
-  const porDefecto = head.code === 0
+  // En clones viejos origin/HEAD puede quedar apuntando a una branch temporal
+  // aunque el repo ya haya vuelto a main. Una base estable conocida gana sobre
+  // ese puntero local; el usuario conserva el selector para repos con otra
+  // convención.
+  const estable = ['main', 'master', 'develop'].find(b => branches.includes(b));
+  const porDefecto = estable || (head.code === 0
     ? head.stdout.trim().replace(/^origin\//, '')
-    : ['main', 'master', 'develop'].find(b => branches.includes(b)) || branches[0] || null;
+    : branches[0] || null);
 
   return { branches, porDefecto };
+}
+
+async function gitValue(dir, args) {
+  const out = await runClaudeLike('git', args, { cwd: dir });
+  return out.code === 0 ? out.stdout.trim() : '';
+}
+
+/** Estado verificable que se muestra antes de autorizar un run. */
+async function repositoryPreflight({ repoDir, baseBranch, scope = '', storyId = '', title = '', repoHint = '' }) {
+  const selected = path.resolve(repoDir || TARGET_REPO);
+  const root = await gitValue(selected, ['rev-parse', '--show-toplevel']);
+  if (!root) throw Object.assign(new Error(`${selected} no es un repositorio Git`), { code: 400 });
+  const scopedDir = safeScope(root, scope);
+  const base = String(baseBranch || '').trim();
+  if (!base) throw Object.assign(new Error('elegí una branch base'), { code: 400 });
+  if (!String(scope || '').trim()) {
+    throw Object.assign(new Error('elegí el alcance del repositorio'), { code: 400 });
+  }
+  if (base.startsWith('feature/')) {
+    throw Object.assign(new Error('una feature no puede ser la base del modo automático'), { code: 400 });
+  }
+  const remote = await gitValue(root, ['remote', 'get-url', 'origin']);
+  if (remote) {
+    const fetched = await runClaudeLike('git', ['fetch', '--quiet', 'origin', base], { cwd: root });
+    if (fetched.code !== 0) {
+      throw Object.assign(new Error(`no se pudo actualizar origin/${base}: ${fetched.stderr.slice(0, 300)}`), { code: 502 });
+    }
+  }
+  const baseRef = remote ? `origin/${base}` : base;
+  if (!await gitValue(root, ['rev-parse', '--verify', `${baseRef}^{commit}`])) {
+    throw Object.assign(new Error(`la branch base no existe: ${baseRef}`), { code: 400 });
+  }
+  const dirtyRaw = await gitValue(root, ['status', '--porcelain', '--untracked-files=all']);
+  const dirty = dirtyRaw.split('\n').filter(Boolean)
+    .filter(line => !/^.. \.claude\/(run\/|sdlc\.json$)/.test(line));
+  const current = await gitValue(root, ['branch', '--show-current']);
+  const counts = (await gitValue(root, ['rev-list', '--left-right', '--count', `${baseRef}...HEAD`]))
+    .split(/\s+/).map(Number);
+  const names = repoNames(root, remote, scope === '.' ? '' : scope);
+  const hint = repoHintVerdict(repoHint, names);
+  const cleanId = String(storyId || (title ? `LOCAL-${slugify(title)}` : '')).replace(/^#/, '');
+  const candidate = cleanId && title
+    ? `feature/${cleanId}-${slugify(title, 48)}`
+    : cleanId ? `feature/${cleanId}` : '';
+  const branches = (await gitValue(root, ['branch', '-a', '--format=%(refname:short)'])).split('\n').filter(Boolean);
+  const related = cleanId
+    ? branches.filter(branch => branch.replace(/^(?:remotes\/)?origin\//, '').startsWith(`feature/${cleanId}`))
+    : [];
+  return {
+    repoDir: root, scopedDir, scope, remote, names, baseBranch: base, baseRef,
+    currentBranch: current || '(detached)', dirty, ahead: counts[1] || 0, behind: counts[0] || 0,
+    hint, candidateBranch: candidate, existingBranches: [...new Set(related)],
+    workspaces: await discoverWorkspaces(root), profile: await discoverProjectProfile(scopedDir),
+  };
+}
+
+async function copyRunConfig(sourceScope, targetScope) {
+  const source = path.join(sourceScope, '.claude', 'sdlc.json');
+  if (!fs.existsSync(source)) return;
+  const targetDir = path.join(targetScope, '.claude');
+  await fsp.mkdir(targetDir, { recursive: true });
+  await fsp.copyFile(source, path.join(targetDir, 'sdlc.json'));
+}
+
+/** Crea o reutiliza un checkout aislado estable para repo + historia. */
+async function prepareRunWorkspace(preflight, storyId, isolate = true, branchStrategy = 'resume') {
+  if (!isolate) return { cwd: preflight.scopedDir, isolated: false, worktree: null };
+  const cleanId = String(storyId).replace(/^#/, '');
+  const workspaceId = branchStrategy === 'new' ? `${cleanId}-new-${Date.now()}` : cleanId;
+  const worktree = isolatedWorktreePath(WORKSPACE, preflight.repoDir, workspaceId, preflight.scope);
+  const scope = preflight.scope === '.' ? '.' : preflight.scope;
+  let reused = false;
+  const existing = await gitValue(worktree, ['rev-parse', '--show-toplevel']);
+  if (existing) {
+    reused = true;
+  } else {
+    if (fs.existsSync(worktree)) {
+      throw Object.assign(new Error(`el destino del worktree existe pero no es Git: ${worktree}`), { code: 409 });
+    }
+    await fsp.mkdir(path.dirname(worktree), { recursive: true });
+    const added = await runClaudeLike('git', ['worktree', 'add', '--detach', worktree, preflight.baseRef], { cwd: preflight.repoDir });
+    if (added.code !== 0) {
+      throw Object.assign(new Error(`no se pudo crear el worktree: ${added.stderr.slice(0, 400)}`), { code: 502 });
+    }
+  }
+  const targetScope = safeScope(worktree, scope);
+  await copyRunConfig(preflight.repoDir, targetScope);
+  return { cwd: targetScope, isolated: true, worktree, reused };
 }
 
 // ------------------------------------------------------------------- auth
@@ -766,24 +1155,111 @@ function push(channel, event, cap = 3000) {
 
 /**
  * El login de `claude` es un flujo OAuth por browser: el proceso imprime una URL
- * y espera. Como el studio ya corre en la máquina del dev y se ve en un browser,
- * alcanza con levantar el proceso, mostrar la URL y poder escribirle a stdin
- * (algunos flujos piden pegar un código de vuelta).
+ * y espera el callback. El CLI abre y completa ese recorrido por sí mismo; el
+ * Studio solo inicia el proceso y comprueba el resultado, sin exponer consola,
+ * URLs de callback ni tokens.
  *
  * Es un proceso único: dos logins en paralelo compiten por las mismas credenciales.
  */
 const login = { child: null, status: 'idle', events: [], clients: new Set() };
 
+const OAUTH_MCP = new Set(['figma', 'jira']);
+const MCP_LOGIN_TIMEOUT_MS = 5 * 60_000;
+const mcpLogin = {
+  child: null, server: null, status: 'idle', events: [], clients: new Set(), timeout: null,
+};
+
+const mcpServerName = server => pluginMcpName(PLUGIN_NAME, server);
+
+async function mcpAuthStatus(server) {
+  if (!OAUTH_MCP.has(server)) {
+    throw Object.assign(new Error(`MCP no soportado para OAuth: ${server}`), { code: 400 });
+  }
+  const qualified = mcpServerName(server);
+  const out = await runClaude([
+    '--plugin-dir', PLUGIN_DIR, 'mcp', 'get', qualified,
+  ], { timeoutMs: 12_000 });
+  return { server, qualified, ...parseMcpStatus(out.stdout, out.stderr, out.code) };
+}
+
+function startMcpLogin(server) {
+  if (!OAUTH_MCP.has(server)) return { error: `MCP no soportado para OAuth: ${server}` };
+  if (mcpLogin.child) return { error: `ya hay un login de ${mcpLogin.server} en curso` };
+
+  const qualified = mcpServerName(server);
+  const args = ['--plugin-dir', PLUGIN_DIR, 'mcp', 'login', qualified];
+  mcpLogin.events = [];
+  mcpLogin.server = server;
+  mcpLogin.status = 'running';
+  push(mcpLogin, { t: 'start', server, at: Date.now() });
+
+  const launch = mcpLoginCommand(args, {
+    platform: process.platform,
+    stdinIsTTY: !!process.stdin.isTTY,
+  });
+  const child = spawn(launch.command, launch.args, {
+    cwd: REPO_ROOT,
+    stdio: [launch.stdin, 'pipe', 'pipe'],
+  });
+  mcpLogin.child = child;
+  mcpLogin.timeout = setTimeout(() => {
+    if (mcpLogin.child !== child) return;
+    mcpLogin.status = 'timeout';
+    push(mcpLogin, { t: 'timeout', server, at: Date.now() });
+    child.kill('SIGTERM');
+  }, MCP_LOGIN_TIMEOUT_MS);
+  mcpLogin.timeout.unref();
+  const scan = (text) => {
+    push(mcpLogin, { t: 'out', text: text.slice(0, 2000), at: Date.now() });
+    for (const raw of text.match(/https?:\/\/[^\s'"<>]+/g) || []) {
+      push(mcpLogin, { t: 'url', url: raw.replace(/[),.;]+$/, ''), at: Date.now() });
+    }
+  };
+  child.stdout.on('data', d => scan(d.toString('utf8')));
+  child.stderr.on('data', d => scan(d.toString('utf8')));
+  child.on('error', e => {
+    mcpLogin.status = 'error';
+    push(mcpLogin, {
+      t: 'error', server,
+      message: e.code === 'ENOENT' ? 'No se encontró el binario `claude` en el PATH.' : e.message,
+      at: Date.now(),
+    });
+  });
+  child.on('close', async (code) => {
+    clearTimeout(mcpLogin.timeout);
+    mcpLogin.timeout = null;
+    const timedOut = mcpLogin.status === 'timeout';
+    mcpLogin.child = null;
+    mcpLogin.status = code === 0 ? 'done' : 'error';
+    let auth;
+    try { auth = await mcpAuthStatus(server); }
+    catch (e) { auth = { server, status: 'unavailable', detail: e.message }; }
+    if (timedOut && auth.status !== 'connected') {
+      auth = {
+        server,
+        status: 'auth_required',
+        detail: 'La autorización venció después de 5 minutos. Volvé a intentarlo.',
+      };
+    }
+    push(mcpLogin, { t: 'end', server, code, status: mcpLogin.status, auth, at: Date.now() });
+    for (const res of mcpLogin.clients) res.end();
+    mcpLogin.clients.clear();
+  });
+  return { ok: true, server };
+}
+
 async function authStatus() {
   const { code, stdout, stderr } = await runClaude(['auth', 'status', '--json']);
   try {
-    return { ok: true, ...JSON.parse(stdout) };
+    const status = JSON.parse(stdout);
+    return { ok: true, ...status, usagePlan: usagePlan(status, process.env) };
   } catch {
-    return {
+    const status = {
       ok: false,
       loggedIn: false,
       error: (stderr || stdout || `exit ${code}`).trim().slice(0, 400),
     };
+    return { ...status, usagePlan: usagePlan(status, process.env) };
   }
 }
 
@@ -836,18 +1312,24 @@ function startLogin(mode) {
 
 /** Fases del skill `us`. El orden es el del SKILL.md. */
 const PHASES = [
-  { id: 0, key: 'resolver',       label: 'Resolver historia', gate: false },
-  { id: 1, key: 'refinamiento',   label: 'Refinamiento',      gate: true  },
-  { id: 2, key: 'arquitectura',   label: 'Arquitectura',      gate: true  },
-  { id: 3, key: 'implementacion', label: 'Implementación',    gate: false },
-  { id: 4, key: 'verificacion',   label: 'Verificación',      gate: false },
-  { id: 5, key: 'revision',       label: 'Revisión',          gate: false },
-  { id: 6, key: 'pr',             label: 'Pull Request',      gate: false },
+  { id: 0, key: 'resolver',       label: 'Resolver historia',  gate: false },
+  { id: 1, key: 'refinamiento',   label: 'Refinamiento',       gate: true  },
+  { id: 2, key: 'arquitectura',   label: 'Arquitectura',       gate: true  },
+  { id: 3, key: 'diseno',         label: 'Diseño de interfaz', gate: false, optional: true },
+  { id: 4, key: 'implementacion', label: 'Implementación',     gate: false },
+  { id: 5, key: 'verificacion',   label: 'Verificación',       gate: false },
+  { id: 6, key: 'revision',       label: 'Revisión',           gate: false },
+  { id: 7, key: 'pr',             label: 'Pull Request',       gate: false },
 ];
 
 const AGENT_PHASE = {
-  refinamiento: 1, arquitectura: 2, desarrollador: 3, qa: 4, seguridad: 4, reviewer: 5,
+  refinamiento: 1, arquitectura: 2, ux: 3, desarrollador: 4, qa: 5, seguridad: 5, reviewer: 6,
 };
+
+// La fase de PR y la primera que escribe código: las usa la inferencia, y sin
+// nombrarlas quedaban como números sueltos que hay que recordar renumerar.
+const PHASE_PR = 7;
+const PHASE_IMPL = 4;
 
 const runs = new Map();
 
@@ -863,11 +1345,18 @@ function emit(run, event) {
  * Resumen corto de una llamada a herramienta, para que el log muestre qué está
  * haciendo el run y no solo en qué fase va.
  */
+const SUBAGENT_TOOLS = new Set(['Task', 'Agent']);
+const isSubagentTool = name => SUBAGENT_TOOLS.has(name);
+const subagentName = input => unqualify(String(
+  input.subagent_type || input.agent || input.name || '',
+).toLowerCase());
+
 function toolSummary(name, input = {}) {
+  const friendly = toolActivity(name, input);
+  if (friendly.summary) return friendly.summary;
   if (name === 'Bash') return String(input.command || '');
-  if (name === 'Task') {
-    const agent = input.subagent_type || input.agent || '?';
-    return `@${agent}${input.description ? ` — ${input.description}` : ''}`;
+  if (isSubagentTool(name)) {
+    return String(input.description || input.prompt || 'Trabajo delegado a un subagente');
   }
   if (['Read', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit'].includes(name)) {
     return String(input.file_path || input.notebook_path || '');
@@ -886,8 +1375,8 @@ function toolSummary(name, input = {}) {
  * cuelga de la fase en la que ocurrió.
  */
 function nodeFor(run, name, input = {}) {
-  if (name === 'Task') {
-    return `agent:${unqualify(String(input.subagent_type || input.agent || '').toLowerCase())}`;
+  if (isSubagentTool(name)) {
+    return `agent:${subagentName(input) || 'desconocido'}`;
   }
   if (name === 'Bash') {
     const script = (String(input.command || '').match(/([A-Za-z0-9._-]+\.sh)/) || [])[1];
@@ -904,10 +1393,114 @@ function blockText(b) {
   return '';
 }
 
+/** Extrae la primera respuesta JSON de un subagente, incluso si vino en un fence. */
+function agentJson(text) {
+  const raw = String(text || '').replace(/```(?:json)?\s*/gi, '').replace(/```/g, '').trim();
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed?.verdict) return parsed;
+  } catch { /* puede venir acompañada de prosa */ }
+  for (let start = raw.indexOf('{'); start !== -1; start = raw.indexOf('{', start + 1)) {
+    let depth = 0, quoted = false, escaped = false;
+    for (let i = start; i < raw.length; i++) {
+      const c = raw[i];
+      if (quoted) {
+        if (escaped) escaped = false;
+        else if (c === '\\') escaped = true;
+        else if (c === '"') quoted = false;
+        continue;
+      }
+      if (c === '"') quoted = true;
+      else if (c === '{') depth++;
+      else if (c === '}' && --depth === 0) {
+        try {
+          const parsed = JSON.parse(raw.slice(start, i + 1));
+          if (parsed?.verdict) return parsed;
+        } catch { /* sigue buscando otro objeto */ }
+        break;
+      }
+    }
+  }
+  return null;
+}
+
+/** Marcadores emitidos por los subagentes y reenviados por Claude Code. */
+function agentProgress(text) {
+  const out = [];
+  const pattern = /SDLC_PROGRESS\s+(\{[^\n]*\})/g;
+  for (const match of String(text || '').matchAll(pattern)) {
+    try {
+      const value = JSON.parse(match[1]);
+      const step = Number(value.step);
+      const total = Number(value.total);
+      if (!Number.isInteger(step) || !Number.isInteger(total) || step < 1 || total < step) continue;
+      out.push({ step, total, label: String(value.label || '').slice(0, 160) });
+    } catch { /* un marcador parcial no debe romper el stream */ }
+  }
+  return out;
+}
+
+const BLOCK_REASON = {
+  refinamiento: 'La historia necesita más definición',
+  arquitectura: 'La arquitectura requiere una decisión humana',
+  ux: 'El diseño de interfaz necesita más definición',
+  desarrollador: 'La implementación necesita una decisión',
+  qa: 'QA encontró problemas que hay que resolver',
+  seguridad: 'Seguridad encontró problemas que hay que resolver',
+  reviewer: 'La revisión pidió cambios',
+};
+
+function blockRun(run, { phase, agent, reason, questions = [], sourceId = null }) {
+  if (run.blocked) return;
+  const action = {
+    id: sourceId ? `action:${sourceId}` : `action:${randomUUID()}`,
+    phase, agent: agent || null, reason,
+    questions: questions.filter(Boolean).map(String),
+    status: 'open', createdAt: Date.now(),
+  };
+  run.actions.set(action.id, action);
+  run.blocked = { phase, agent: agent || null, reason, actionId: action.id };
+  emit(run, { t: 'action', ...action, at: action.createdAt });
+  emit(run, { t: 'blocked', ...run.blocked, questions: action.questions, at: Date.now() });
+}
+
+/**
+ * Un subagente puede declarar BLOCKED mientras el turno principal todavía está
+ * procesando su resultado. La acción humana recién se publica cuando llega el
+ * `result`: antes de eso Claude sigue trabajando y decir "te estamos esperando"
+ * sería falso. Desde este punto sí congelamos la fase para que el mapa no avance.
+ */
+function queueBlock(run, block) {
+  if (!run.pendingBlock && !run.blocked) run.pendingBlock = block;
+}
+
+function completeCycle(run, detail = 'PR listo') {
+  if (run.blocked || run.pendingBlock || run.cycleComplete) return false;
+  setPhase(run, PHASE_PR, detail);
+  run.cycleComplete = true;
+  emit(run, { t: 'cycle_complete', phase: PHASE_PR, at: Date.now() });
+  return true;
+}
+
 /** Deriva la fase actual a partir de un evento del stream. Es inferencia. */
 function inferPhase(run, msg) {
   const blocks = msg?.message?.content;
   if (!Array.isArray(blocks)) return;
+
+  // `--forward-subagent-text` conserva el id de la llamada Task/Agent padre.
+  // Eso permite atribuir checkpoints internos sin confundirlos con la sesión
+  // orquestadora ni inventarlos a partir de la cantidad de tools usadas.
+  const parentId = msg.parent_tool_use_id || msg.message?.parent_tool_use_id;
+  const parent = parentId ? run.pending.get(parentId) : null;
+  if (parent?.agent) {
+    const text = blocks.map(blockText).join('\n');
+    for (const progress of agentProgress(text)) {
+      emit(run, {
+        t: 'agent_progress', agent: parent.agent, phase: parent.phase,
+        ...progress, at: Date.now(),
+      });
+    }
+  }
 
   for (const b of blocks) {
     if (b.type === 'tool_use') {
@@ -916,26 +1509,56 @@ function inferPhase(run, msg) {
 
       // El nodo se recuerda por id para poder colgarle el resultado cuando llegue.
       const node = nodeFor(run, name, input);
-      if (b.id) run.pending.set(b.id, node);
+      const agent = isSubagentTool(name)
+        ? subagentName(input)
+        : null;
+      const pr = name === 'Bash' ? prCommand(input.command) : prTool(name);
+      const activity = toolActivity(name, input);
+      if (b.id) run.pending.set(b.id, {
+        node, name, agent, isPr: pr.creates, touchesPr: pr.touches,
+        phase: agent ? AGENT_PHASE[agent] : run.phase,
+        success: activity.success,
+      });
       emit(run, {
-        t: 'tool', name, node, id: b.id || null,
-        summary: toolSummary(name, input).slice(0, 400), at: Date.now(),
+        t: 'tool', name, node, agent, id: b.id || null,
+        summary: toolSummary(name, input).slice(0, 400),
+        progress: activity.progress, at: Date.now(),
       });
 
-      if (name === 'Task') {
-        // Los subagentes de un plugin llegan calificados: `globant-sdlc:qa`.
-        const agent = unqualify(String(input.subagent_type || input.agent || '').toLowerCase());
+      if (isSubagentTool(name)) {
+        // Los subagentes de un plugin llegan calificados: `sdlc:qa`.
         const phase = AGENT_PHASE[agent];
         if (phase !== undefined) {
-          setPhase(run, phase, `@${agent}`);
-          emit(run, { t: 'agent', agent, phase, at: Date.now() });
+          const nextRound = correctionRoundForTransition(
+            run.phase, run.correctionRound, agent,
+          );
+          if (!run.blocked && !run.pendingBlock && nextRound > run.correctionRound) {
+            const source = correctionSourceForTransition(
+              run.phase, agent, run.correctionSource,
+            );
+            run.correctionRound = nextRound;
+            if (source) run.correctionCounts[source]++;
+            run.correctionSource = null;
+            emit(run, {
+              t: 'correction_round', round: run.correctionRound,
+              max: MAX_CORRECTION_ROUNDS, phase, source,
+              counts: { ...run.correctionCounts }, at: Date.now(),
+            });
+          }
+          if (setPhase(run, phase, `@${agent}`)) {
+            emit(run, { t: 'agent', agent, phase, at: Date.now() });
+          }
         }
         continue;
       }
       if (name === 'Bash') {
         const cmd = String(input.command || '');
         if (cmd.includes('resolve-story.sh')) setPhase(run, 0, 'resolve-story.sh');
-        else if (/\b(gh pr create|az repos pr create|glab mr create)\b/.test(cmd)) setPhase(run, 6, 'abriendo PR');
+        else if (pr.touches) setPhase(run, PHASE_PR, pr.creates ? 'abriendo PR' : 'verificando PR');
+        continue;
+      }
+      if (pr.touches) {
+        setPhase(run, PHASE_PR, pr.creates ? 'abriendo PR por MCP' : 'verificando PR por MCP');
         continue;
       }
       if (['Write', 'Edit', 'MultiEdit', 'NotebookEdit'].includes(name)) {
@@ -946,8 +1569,8 @@ function inferPhase(run, msg) {
         // que acababa de pasar.
         const target = String(input.file_path || input.notebook_path || '');
         const esEvidencia = /[\\/]\.claude[\\/]run[\\/]/.test(target);
-        if (!esEvidencia && run.phase !== null && run.phase < 3) {
-          setPhase(run, 3, 'implementando');
+        if (!esEvidencia && run.phase !== null && run.phase < PHASE_IMPL) {
+          setPhase(run, PHASE_IMPL, 'implementando');
         }
       }
     }
@@ -959,45 +1582,76 @@ function inferPhase(run, msg) {
       // El resultado se le cuelga al nodo que hizo la llamada: es lo que se ve
       // al clickear ese componente en el grafo.
       if (b.type === 'tool_result' && b.tool_use_id) {
-        const node = run.pending.get(b.tool_use_id);
-        if (node) {
+        const pending = run.pending.get(b.tool_use_id);
+        if (pending) {
           run.pending.delete(b.tool_use_id);
           emit(run, {
-            t: 'output', node, id: b.tool_use_id,
-            text: text.slice(0, 6000), at: Date.now(),
+            t: 'output', node: pending.node, agent: pending.agent, name: pending.name,
+            id: b.tool_use_id,
+            text: text.slice(0, 6000), success: pending.success,
+            isError: !!b.is_error, at: Date.now(),
           });
-        }
-      }
 
-      if (/"verdict"\s*:\s*"BLOCKED"/.test(text)) {
-        run.blocked = { phase: 1, reason: 'La historia no pasó refinamiento' };
-        emit(run, { t: 'blocked', ...run.blocked, at: Date.now() });
-      } else if (/blast_radius\s*:?\s*"?high/i.test(text)) {
-        run.blocked = { phase: 2, reason: 'blast_radius alto — requiere revisión humana' };
-        emit(run, { t: 'blocked', ...run.blocked, at: Date.now() });
+          if (pending.touchesPr && !b.is_error) run.prConfirmed = true;
+
+          const answer = pending.agent ? agentJson(text) : null;
+          const audit = auditCorrection(pending.agent, answer?.verdict);
+          if (audit) {
+            if (audit.requested) run.correctionSource = audit.source;
+            else if (run.correctionSource === audit.source) run.correctionSource = null;
+            emit(run, {
+              t: 'audit_verdict', ...audit, agent: pending.agent,
+              detail: audit.requested
+                ? `@${pending.agent} pidió cambios · vuelve a Implementación`
+                : '@reviewer aprobó el diff · avanza a Pull Request',
+              at: Date.now(),
+            });
+          }
+          if (answer?.verdict === 'BLOCKED') {
+            queueBlock(run, {
+              phase: pending.phase ?? 1,
+              agent: pending.agent,
+              reason: BLOCK_REASON[pending.agent] || 'El ciclo necesita una decisión humana',
+              questions: Array.isArray(answer.blocking_questions) ? answer.blocking_questions : [],
+              sourceId: b.tool_use_id,
+            });
+          } else if (pending.agent === 'arquitectura' && /blast_radius\s*:?\s*"?high/i.test(text)) {
+            queueBlock(run, {
+              phase: pending.phase ?? 2,
+              agent: pending.agent,
+              reason: 'El cambio tiene blast radius alto y requiere revisión humana',
+              questions: ['¿Aprobás continuar con el alcance y los riesgos propuestos por arquitectura?'],
+              sourceId: b.tool_use_id,
+            });
+          }
+        }
       }
     }
   }
 }
 
 function setPhase(run, phase, detail) {
-  if (run.phase === phase) return;
   // Un run bloqueado no avanza más. El corte es terminal por diseño (D2), y
   // mostrar la vía progresando después de un bloqueo comunica exactamente lo
   // contrario de lo que hizo el circuit breaker.
-  if (run.blocked) return;
+  if (run.blocked || run.pendingBlock) return false;
+  if (run.phase === phase) return true;
   run.phase = phase;
   run.phaseHistory.push({ phase, detail, at: Date.now() });
   emit(run, { t: 'phase', phase, detail, at: Date.now() });
+  return true;
 }
 
 /** Confirma el avance leyendo los artefactos que el flujo deja en disco. */
 async function pollArtifacts(run) {
   if (!run.storyId) return; // sesión de consola: no hay run de historia que auditar
-  const dir = path.join(TARGET_REPO, '.claude/run', run.storyId);
+  const dir = path.join(run.cwd, '.claude/run', run.storyId.replace(/^#/, ''));
   const map = [
-    ['story.json', 0], ['plan.md', 2], ['qa.json', 4],
-    ['security.json', 4], ['review.json', 5],
+    ['story.json', 0], ['config.json', 0], ['git.json', 0],
+    ['refinement.json', 1], ['architecture.json', 2], ['plan.md', 2],
+    ['design.json', 3], ['design.md', 3], ['implementation.json', 4],
+    ['qa.json', 5], ['security.json', 5], ['review.json', 6],
+    ['report.pdf', 7],
   ];
   for (const [file, phase] of map) {
     if (run.artifacts[file]) continue;
@@ -1009,9 +1663,22 @@ async function pollArtifacts(run) {
       // que el studio deja en disco justo antes de arrancar el proceso.
       if (st.mtimeMs < run.startedAt - 5000) continue;
       run.artifacts[file] = true;
+      if (file === 'report.pdf') {
+        try { await archiveRunReport(run, path.join(dir, file), st); }
+        catch (error) {
+          emit(run, { t: 'stderr', text: `No se pudo archivar el reporte: ${error.message}`, at: Date.now() });
+        }
+      }
       emit(run, { t: 'artifact', file, phase, at: Date.now() });
     } catch { /* todavía no existe */ }
   }
+
+  try {
+    const content = await fsp.readFile(path.join(dir, 'hook-events.jsonl'), 'utf8');
+    const batch = hookEventsSince(content, run.hookEventCursor, run.startedAt, run.id);
+    run.hookEventCursor = batch.cursor;
+    for (const event of batch.events) emit(run, { t: 'hook', ...event });
+  } catch { /* ningún hook se activó todavía */ }
 }
 
 /**
@@ -1022,7 +1689,22 @@ async function pollArtifacts(run) {
  * en una consola — el dev puede seguir la conversación donde el run la dejó, en
  * la misma sesión y con el mismo contexto.
  */
-function sendToRun(run, text) {
+function beginRunWork(run, at = Date.now()) {
+  if (run.activeStartedAt == null) run.activeStartedAt = at;
+  run.status = 'running';
+}
+
+function pauseRunWork(run, at = Date.now()) {
+  if (run.activeStartedAt == null) return;
+  run.elapsedMs += Math.max(0, at - run.activeStartedAt);
+  run.activeStartedAt = null;
+}
+
+const runElapsed = (run, at = Date.now()) => run.elapsedMs + (
+  run.activeStartedAt == null ? 0 : Math.max(0, at - run.activeStartedAt)
+);
+
+function sendToRun(run, text, { event = 'ask', displayText = text } = {}) {
   if (!run.child || run.stdinClosed) {
     throw Object.assign(new Error('la sesión ya está cerrada'), { code: 409 });
   }
@@ -1030,11 +1712,24 @@ function sendToRun(run, text) {
     type: 'user',
     message: { role: 'user', content: [{ type: 'text', text }] },
   }) + '\n');
-  run.status = 'running';
-  emit(run, { t: 'ask', text: text.slice(0, 2000), at: Date.now() });
+  beginRunWork(run);
+  emit(run, { t: event, text: String(displayText).slice(0, 2000), at: Date.now() });
 }
 
-function startRun({ storyId, repoDir, manual, baseBranch, permissionMode, allowedTools, extraFlags }) {
+/**
+ * Un `result` cierra un turno y deja la sesión esperando, pero el proceso puede
+ * volver a emitir mensajes (por ejemplo al continuar después de recuperar el
+ * run). La actividad del stream es la señal más confiable de que Claude está
+ * trabajando: cuando aparece, servidor y UI vuelven juntos a `running`.
+ */
+function markRunActive(run) {
+  if (run.blocked || run.cycleComplete) return;
+  if (run.status === 'running' && run.activeStartedAt != null) return;
+  beginRunWork(run);
+  emit(run, { t: 'activity', phase: run.phase, at: Date.now() });
+}
+
+function startRun({ storyId, repoDir, sourceRepo, sourceScope, manual, baseBranch, permissionMode, allowedTools, extraFlags, workspaceInfo, branchStrategy, accountUsagePlan }) {
   const id = randomUUID();
   // El tracker va explícito: story.json ya dice `manual`, pero decirlo también en
   // la invocación evita que el resolver tenga que adivinar por la forma del ID.
@@ -1048,9 +1743,10 @@ function startRun({ storyId, repoDir, manual, baseBranch, permissionMode, allowe
     '-p',
     '--input-format', 'stream-json',
     '--output-format', 'stream-json',
+    '--forward-subagent-text',
     '--verbose',
     // Sin esto la sesión corre en el repo objetivo sin el plugin cargado, y
-    // `/globant-sdlc:us` no existe. Además hace que corra lo que hay en disco,
+    // `/sdlc:us` no existe. Además hace que corra lo que hay en disco,
     // que es lo que el studio deja editar.
     '--plugin-dir', PLUGIN_DIR,
   ];
@@ -1060,12 +1756,19 @@ function startRun({ storyId, repoDir, manual, baseBranch, permissionMode, allowe
   if (allowedTools) args.push('--allowedTools', allowedTools);
   if (extraFlags) args.push(...extraFlags.split(/\s+/).filter(Boolean));
 
+  const startedAt = Date.now();
   const run = {
-    id, storyId, prompt, args, cwd: repoDir,
-    startedAt: Date.now(), status: 'running',
-    phase: null, phaseHistory: [], blocked: null,
+    id, storyId, prompt, args, cwd: repoDir, sourceRepo, sourceScope, baseBranch, workspaceInfo,
+    startedAt, status: 'running', elapsedMs: 0,
+    activeStartedAt: prompt ? startedAt : null,
+    phase: null, phaseHistory: [], blocked: null, pendingBlock: null, cycleComplete: false,
+    cost: 0, costReports: 0, accountUsagePlan,
+    tokenUsage: { ...EMPTY_TOKEN_USAGE }, seenMessageIds: new Set(), turnSawUsage: false,
     artifacts: {}, events: [], clients: new Set(), child: null, stdinClosed: false,
-    pending: new Map(), // tool_use_id -> nodo del grafo, para atribuir resultados
+    pending: new Map(), // tool_use_id -> herramienta/agente/nodo, para atribuir resultados
+    actions: new Map(), autoRecoveryCount: 0, prConfirmed: false,
+    correctionRound: 0, correctionSource: null,
+    correctionCounts: { verification: 0, reviewer: 0 }, hookEventCursor: 0,
   };
   runs.set(id, run);
 
@@ -1074,9 +1777,15 @@ function startRun({ storyId, repoDir, manual, baseBranch, permissionMode, allowe
     // `resolve-story.sh` ya lee esta variable para dejarla en run.json, así que
     // elegir la branch base en el panel alcanza para que el ciclo la respete.
     const env = { ...process.env };
+    env.SDLC_STUDIO_RUN_ID = id;
     if (baseBranch) env.CLAUDE_PLUGIN_OPTION_BASE_BRANCH = baseBranch;
+    if (storyId) env.SDLC_STORY_ID = storyId.replace(/^#/, '');
+    if (sourceRepo) env.SDLC_SOURCE_REPO = sourceRepo;
+    if (workspaceInfo?.isolated) env.SDLC_ISOLATED_WORKTREE = '1';
+    if (branchStrategy === 'new') env.SDLC_FORCE_NEW_BRANCH = '1';
     child = spawn('claude', args, { cwd: repoDir, env, stdio: ['pipe', 'pipe', 'pipe'] });
   } catch (e) {
+    pauseRunWork(run);
     run.status = 'error';
     emit(run, { t: 'error', message: `No se pudo ejecutar \`claude\`: ${e.message}`, at: Date.now() });
     return run;
@@ -1084,7 +1793,10 @@ function startRun({ storyId, repoDir, manual, baseBranch, permissionMode, allowe
   run.child = child;
   child.stdin.on('error', () => { /* la sesión se cerró del otro lado */ });
 
-  emit(run, { t: 'start', storyId, cwd: repoDir, cmd: `claude ${args.join(' ')}`, at: Date.now() });
+  emit(run, {
+    t: 'start', storyId, cwd: repoDir, cmd: `claude ${args.join(' ')}`,
+    usagePlan: run.accountUsagePlan, at: Date.now(),
+  });
 
   if (prompt) sendToRun(run, prompt);
   else {
@@ -1093,6 +1805,7 @@ function startRun({ storyId, repoDir, manual, baseBranch, permissionMode, allowe
   }
 
   child.on('error', (e) => {
+    pauseRunWork(run);
     run.status = 'error';
     emit(run, {
       t: 'error',
@@ -1117,31 +1830,108 @@ function startRun({ storyId, repoDir, manual, baseBranch, permissionMode, allowe
         run.sessionId = msg.session_id || null;
         emit(run, { t: 'init', sessionId: run.sessionId, at: Date.now() });
       } else if (msg.type === 'assistant') {
+        markRunActive(run);
+        const messageId = msg.message?.id;
+        if (messageId && !run.seenMessageIds.has(messageId)) {
+          run.seenMessageIds.add(messageId);
+          run.tokenUsage = addTokenUsage(run.tokenUsage, msg.message?.usage);
+          run.turnSawUsage = true;
+        }
         inferPhase(run, msg);
         const text = (msg.message?.content || [])
           .filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
-        if (text) {
+        // El texto reenviado de un subagente se usa para sus checkpoints. Su
+        // salida completa llegará además como tool_result; publicarlo acá la
+        // duplicaría y la atribuiría erróneamente a la fase principal.
+        const forwarded = msg.parent_tool_use_id || msg.message?.parent_tool_use_id;
+        if (text && !forwarded) {
           emit(run, {
             t: 'say', node: `phase:${run.phase ?? 0}`,
             text: text.slice(0, 4000), at: Date.now(),
           });
         }
       } else if (msg.type === 'user') {
+        // En el stream de Claude, los resultados de herramientas llegan como
+        // mensajes `user`: también prueban que el turno sigue ejecutándose.
+        markRunActive(run);
         inferPhase(run, msg);
       } else if (msg.type === 'result') {
-        run.cost = msg.total_cost_usd ?? run.cost ?? null;
+        // Versiones del CLI que no adjuntan usage a los mensajes lo dejan en
+        // result. Es fallback por turno: nunca se suma junto con ambos.
+        if (!run.turnSawUsage && msg.usage) {
+          run.tokenUsage = addTokenUsage(run.tokenUsage, msg.usage);
+        }
+        run.turnSawUsage = false;
+        // Claude informa una estimación local por consulta. Solo se conserva
+        // para cuentas API por uso; suscripciones y proveedores muestran tokens.
+        const turnCost = Number(msg.total_cost_usd);
+        if (Number.isFinite(turnCost) && turnCost >= 0) {
+          run.cost += turnCost;
+          run.costReports++;
+        }
         run.turns = msg.num_turns ?? null;
-        // Terminó el turno, no la sesión: queda esperando el próximo mensaje.
+        // Terminó el turno, no la sesión: el reloj se pausa mientras queda
+        // esperando el próximo mensaje.
+        pauseRunWork(run);
         run.status = run.stdinClosed ? 'done' : 'idle';
+        const resultText = typeof msg.result === 'string' ? msg.result.trim() : '';
+        const interrupted = technicalToolInterruption(resultText);
+        if (!msg.is_error && finalCycleCompletion(resultText, run.prConfirmed)) {
+          completeCycle(run, 'PR listo para revisión');
+        }
+        if (!interrupted) run.autoRecoveryCount = 0;
+        if (!msg.is_error && !interrupted && !run.pendingBlock && !run.blocked && !run.cycleComplete) {
+          const request = humanInputRequest(resultText);
+          if (request) queueBlock(run, {
+            phase: run.phase ?? 0,
+            agent: null,
+            reason: request.reason,
+            questions: request.questions,
+          });
+        }
+        if (run.pendingBlock) {
+          const pendingBlock = run.pendingBlock;
+          run.pendingBlock = null;
+          blockRun(run, pendingBlock);
+        }
         emit(run, {
           t: 'result',
           ok: !msg.is_error,
           status: run.status,
           cost: run.cost,
+          costReported: Number.isFinite(turnCost) && turnCost >= 0,
+          costReports: run.costReports,
+          usagePlan: run.accountUsagePlan,
+          tokenUsage: run.tokenUsage,
+          elapsedMs: run.elapsedMs,
+          turnCost: Number.isFinite(turnCost) ? turnCost : null,
           turns: run.turns,
-          text: typeof msg.result === 'string' ? msg.result.slice(0, 4000) : null,
+          text: resultText ? resultText.slice(0, 4000) : null,
+          recovering: interrupted && run.autoRecoveryCount < 3,
           at: Date.now(),
         });
+        if (interrupted && !run.blocked && !run.cycleComplete && !run.stdinClosed) {
+          if (run.autoRecoveryCount < 3) {
+            run.autoRecoveryCount++;
+            // El tool_use anterior no va a recibir tool_result después de un
+            // `result`; olvidarlo evita que quede como trabajo fantasma.
+            run.pending.clear();
+            sendToRun(run,
+              RECOVERY_PROMPT,
+              {
+                event: 'recovery',
+                displayText: `Interrupción técnica detectada · reintentando automáticamente (${run.autoRecoveryCount}/3)`,
+              },
+            );
+          } else {
+            blockRun(run, {
+              phase: run.phase ?? 0,
+              agent: null,
+              reason: 'Claude Code interrumpió tres veces seguidas una herramienta y no pudo recuperarse solo',
+              questions: ['Revisá el detalle técnico y reiniciá la ejecución.'],
+            });
+          }
+        }
       }
     }
     await pollArtifacts(run);
@@ -1152,8 +1942,10 @@ function startRun({ storyId, repoDir, manual, baseBranch, permissionMode, allowe
   });
 
   child.on('close', (code) => {
+    pauseRunWork(run);
+    run.child = null;
     if (run.status !== 'stopped') run.status = code === 0 ? 'done' : 'error';
-    emit(run, { t: 'end', code, status: run.status, at: Date.now() });
+    emit(run, { t: 'end', code, status: run.status, elapsedMs: run.elapsedMs, at: Date.now() });
     for (const res of run.clients) res.end();
     run.clients.clear();
   });
@@ -1221,8 +2013,14 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (p === '/api/repo/prepare' && req.method === 'POST') {
-      const { url: repoUrl } = JSON.parse(await readBody(req));
-      const out = await prepararRepo(repoUrl);
+      const { url: repoUrl, mode = 'existing' } = JSON.parse(await readBody(req));
+      const out = mode === 'new' ? await crearProyecto(repoUrl) : await prepararRepo(repoUrl);
+      return json(res, 200, out);
+    }
+
+    if (p === '/api/repo/preflight' && req.method === 'POST') {
+      const body = JSON.parse(await readBody(req));
+      const out = await repositoryPreflight(body);
       return json(res, 200, out);
     }
 
@@ -1378,34 +2176,94 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    if (p === '/api/story' && req.method === 'POST') {
+    if (p === '/api/mcp/status' && req.method === 'GET') {
+      const server = String(url.searchParams.get('server') || '');
+      try { return json(res, 200, await mcpAuthStatus(server)); }
+      catch (e) { return json(res, e.code || 500, { error: e.message }); }
+    }
+
+    if (p === '/api/mcp/login' && req.method === 'POST') {
+      const { server } = JSON.parse(await readBody(req) || '{}');
+      const out = startMcpLogin(String(server || ''));
+      return json(res, out.error ? 409 : 200, out.error ? { error: out.error } : out);
+    }
+
+    if (p === '/api/mcp/cancel' && req.method === 'POST') {
+      mcpLogin.child?.kill('SIGTERM');
+      return json(res, 200, { ok: true });
+    }
+
+    if (p === '/api/mcp/stream' && req.method === 'GET') {
+      res.writeHead(200, {
+        'content-type': 'text/event-stream; charset=utf-8',
+        'cache-control': 'no-cache',
+        connection: 'keep-alive',
+      });
+      for (const ev of mcpLogin.events) res.write(`data: ${JSON.stringify(ev)}\n\n`);
+      if (mcpLogin.child) {
+        mcpLogin.clients.add(res);
+        req.on('close', () => mcpLogin.clients.delete(res));
+      } else {
+        res.end();
+      }
+      return;
+    }
+
+    if (p === '/api/config' && req.method === 'GET') {
+      const repoDir = path.resolve(url.searchParams.get('repoDir') || TARGET_REPO);
+      if (!fs.existsSync(repoDir)) {
+        return json(res, 400, { error: `El directorio no existe: ${repoDir}` });
+      }
+      return json(res, 200, await readProjectConfig(repoDir));
+    }
+
+    if (p === '/api/config' && req.method === 'PUT') {
       const body = JSON.parse(await readBody(req));
       const repoDir = path.resolve(body.repoDir || TARGET_REPO);
       if (!fs.existsSync(repoDir)) {
         return json(res, 400, { error: `El directorio no existe: ${repoDir}` });
       }
-      const { id, file, story } = await writeManualStory(repoDir, body);
-      return json(res, 200, { id, path: file, story });
+      const file = await writeProjectConfig(repoDir, body);
+      // Se devuelve lo efectivo, no lo que mandó el cliente: es lo que va a leer
+      // el ciclo, y si un default pisó algo tiene que verse en el acto.
+      return json(res, 200, { path: file, ...(await readProjectConfig(repoDir)) });
     }
 
-    if (p === '/api/story' && req.method === 'GET') {
+    if (p === '/api/reports' && req.method === 'GET') {
       const repoDir = path.resolve(url.searchParams.get('repoDir') || TARGET_REPO);
-      const file = path.join(
-        runDirFor(repoDir, String(url.searchParams.get('storyId') || '').trim()),
-        'story.json',
-      );
-      try {
-        return json(res, 200, { path: file, story: JSON.parse(await fsp.readFile(file, 'utf8')) });
-      } catch {
-        return json(res, 404, { error: 'No hay historia escrita para ese ID' });
+      if (!fs.existsSync(repoDir)) return json(res, 400, { error: `El directorio no existe: ${repoDir}` });
+      const scopedDir = safeScope(repoDir, url.searchParams.get('scope') || '.');
+      return json(res, 200, { reports: await listRunReports(scopedDir) });
+    }
+
+    if (p === '/api/reports/download' && req.method === 'GET') {
+      const repoDir = path.resolve(url.searchParams.get('repoDir') || TARGET_REPO);
+      const scopedDir = safeScope(repoDir, url.searchParams.get('scope') || '.');
+      const storyId = String(url.searchParams.get('storyId') || '');
+      const file = String(url.searchParams.get('file') || '');
+      if (!STORY_ID_RE.test(storyId) || !/^[A-Za-z0-9_.-]+\.pdf$/.test(file)) {
+        return json(res, 400, { error: 'reporte inválido' });
       }
+      const runDir = runDirFor(scopedDir, storyId);
+      const report = file === 'report.pdf' ? path.join(runDir, file) : path.join(runDir, 'reports', file);
+      const body = await fsp.readFile(report).catch(() => null);
+      if (!body) return json(res, 404, { error: 'reporte no encontrado' });
+      const filename = `${storyId.replace(/[^\w.-]+/g, '-')}-${file === 'report.pdf' ? 'sdlc-report' : file.replace(/\.pdf$/, '')}.pdf`;
+      res.writeHead(200, {
+        'content-type': 'application/pdf',
+        'content-length': body.length,
+        'content-disposition': `attachment; filename="${filename}"`,
+        'cache-control': 'no-store',
+      });
+      res.end(body);
+      return;
     }
 
     if (p === '/api/run' && req.method === 'POST') {
       const body = JSON.parse(await readBody(req));
-      const repoDir = path.resolve(body.repoDir || TARGET_REPO);
-      if (!fs.existsSync(repoDir)) {
-        return json(res, 400, { error: `El directorio no existe: ${repoDir}` });
+      const selectedRepo = path.resolve(body.repoDir || TARGET_REPO);
+      if (!fs.existsSync(selectedRepo)) {
+        return json(res, 400, { error: `El directorio no existe: ${selectedRepo}` });
       }
 
       // Sin historia es una sesión de consola: se abre vacía, sin invocar /us.
@@ -1416,8 +2274,8 @@ const server = http.createServer(async (req, res) => {
       let storyId = String(body.storyId || '').trim();
       const manual = !consoleMode && !!(body.story && typeof body.story === 'object');
       if (manual) {
-        const story = { ...body.story, id: body.story.id || storyId };
-        storyId = (await writeManualStory(repoDir, story)).id;
+        const story = manualStory({ ...body.story, id: body.story.id || storyId });
+        storyId = story.id;
       }
       if (consoleMode) {
         storyId = null;
@@ -1425,14 +2283,61 @@ const server = http.createServer(async (req, res) => {
         return json(res, 400, { error: 'ID de historia inválido' });
       }
 
+      let repoDir = selectedRepo;
+      let workspaceInfo = { cwd: selectedRepo, isolated: false, worktree: null };
+      let preflight = null;
+      if (!consoleMode) {
+        preflight = await repositoryPreflight({
+          repoDir: selectedRepo,
+          baseBranch: String(body.baseBranch || '').trim(),
+          scope: String(body.scope || '.'),
+          storyId,
+          title: manual ? body.story.title : '',
+          repoHint: manual ? body.story.repoHint : '',
+        });
+        if (preflight.hint.status === 'mismatch') {
+          return json(res, 409, { error: `La historia indica el repo '${preflight.hint.hints[0]}', pero seleccionaste ${preflight.names.join(', ')}.` });
+        }
+        if (preflight.hint.status === 'multi-repo') {
+          return json(res, 409, { error: `La historia indica varios repos (${preflight.hint.hints.join(', ')}). Dividí el alcance por repositorio antes de ejecutar: un run produce una branch y un PR.` });
+        }
+        const isolate = body.isolate !== false;
+        if (!isolate && preflight.dirty.length) {
+          return json(res, 409, { error: `El working tree tiene ${preflight.dirty.length} cambio(s). Activá el worktree aislado o guardá esos cambios.` });
+        }
+        workspaceInfo = await prepareRunWorkspace(preflight, storyId, isolate, body.branchStrategy || 'resume');
+        repoDir = workspaceInfo.cwd;
+
+        if (manual) await writeManualStory(repoDir, { ...body.story, id: storyId });
+        const contextDir = runDirFor(repoDir, storyId);
+        await fsp.mkdir(contextDir, { recursive: true });
+        await fsp.writeFile(path.join(contextDir, 'repo-context.json'), `${JSON.stringify({
+          source_repo: preflight.repoDir,
+          working_repo: workspaceInfo.worktree || preflight.repoDir,
+          scope: preflight.scope,
+          names: preflight.names,
+          remote: preflight.remote || null,
+          base_branch: preflight.baseBranch,
+          isolated: workspaceInfo.isolated,
+          reused: !!workspaceInfo.reused,
+          profile: preflight.profile,
+        }, null, 2)}\n`, 'utf8');
+      }
+
+      const account = await authStatus();
       const run = startRun({
         storyId,
         repoDir,
+        sourceRepo: preflight?.repoDir || selectedRepo,
+        sourceScope: preflight?.scopedDir || selectedRepo,
         manual,
         baseBranch: String(body.baseBranch || '').trim(),
         permissionMode: body.permissionMode || null,
         allowedTools: String(body.allowedTools || '').trim(),
         extraFlags: body.extraFlags || '',
+        workspaceInfo,
+        branchStrategy: body.branchStrategy || 'resume',
+        accountUsagePlan: account.usagePlan,
       });
       return json(res, 200, {
         runId: run.id,
@@ -1440,6 +2345,9 @@ const server = http.createServer(async (req, res) => {
         cmd: `claude ${run.args.join(' ')}`,
         prompt: run.prompt, // va por stdin, no en la línea de comandos
         cwd: repoDir,
+        sourceRepo: preflight?.repoDir || selectedRepo,
+        isolated: workspaceInfo.isolated,
+        worktree: workspaceInfo.worktree,
       });
     }
 
@@ -1451,9 +2359,36 @@ const server = http.createServer(async (req, res) => {
       if (!run) return json(res, 404, { error: 'run no encontrado' });
       return json(res, 200, {
         id: run.id, storyId: run.storyId, status: run.status, phase: run.phase,
-        blocked: run.blocked, cost: run.cost ?? null, turns: run.turns ?? null,
-        cwd: run.cwd, prompt: run.prompt, vivo: !!run.child,
+        blocked: run.blocked, cost: run.cost ?? null, costReports: run.costReports ?? 0,
+        elapsedMs: runElapsed(run),
+        turns: run.turns ?? null,
+        actions: [...run.actions.values()], cycleComplete: run.cycleComplete,
+        correctionRound: run.correctionRound, maxCorrectionRounds: MAX_CORRECTION_ROUNDS,
+        correctionCounts: run.correctionCounts,
+        usagePlan: run.accountUsagePlan, tokenUsage: run.tokenUsage,
+        cwd: run.cwd, sourceRepo: run.sourceRepo, sourceScope: run.sourceScope,
+        scope: path.relative(run.sourceRepo || run.sourceScope, run.sourceScope || run.sourceRepo) || '.',
+        baseBranch: run.baseBranch, workspaceInfo: run.workspaceInfo,
+        prompt: run.prompt, vivo: !!run.child,
       });
+    }
+
+    m = p.match(/^\/api\/run\/([\w-]+)\/report$/);
+    if (m && req.method === 'GET') {
+      const run = runs.get(m[1]);
+      if (!run || !run.storyId) return json(res, 404, { error: 'reporte no encontrado' });
+      const report = path.join(runDirFor(run.cwd, run.storyId), 'report.pdf');
+      const body = await fsp.readFile(report).catch(() => null);
+      if (!body) return json(res, 404, { error: 'reporte no encontrado' });
+      const filename = `${run.storyId.replace(/[^\w.-]+/g, '-')}-sdlc-report.pdf`;
+      res.writeHead(200, {
+        'content-type': 'application/pdf',
+        'content-length': body.length,
+        'content-disposition': `attachment; filename="${filename}"`,
+        'cache-control': 'no-store',
+      });
+      res.end(body);
+      return;
     }
 
     m = p.match(/^\/api\/run\/([\w-]+)\/stream$/);
@@ -1466,6 +2401,16 @@ const server = http.createServer(async (req, res) => {
         connection: 'keep-alive',
       });
       for (const ev of run.events) res.write(`data: ${JSON.stringify(ev)}\n\n`);
+      // Marca el fin del replay para que el front no abra diálogos una vez por
+      // cada evento histórico; el estado ya quedó reconstruido en ese punto.
+      res.write(`data: ${JSON.stringify({
+        t: 'snapshot', status: run.status, elapsedMs: runElapsed(run),
+        connection: run.sessionId && run.child ? 'connected' : (run.child ? 'starting' : 'closed'),
+        correctionRound: run.correctionRound, maxCorrectionRounds: MAX_CORRECTION_ROUNDS,
+        correctionCounts: run.correctionCounts,
+        usagePlan: run.accountUsagePlan, tokenUsage: run.tokenUsage,
+        at: Date.now(),
+      })}\n\n`);
       // Mientras el proceso viva la sesión sigue: `idle` es esperando input, no fin.
       if (run.child) {
         run.clients.add(res);
@@ -1486,6 +2431,31 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { ok: true });
     }
 
+    m = p.match(/^\/api\/run\/([\w-]+)\/action$/);
+    if (m && req.method === 'POST') {
+      const run = runs.get(m[1]);
+      if (!run) return json(res, 404, { error: 'run no encontrado' });
+      const { actionId, text } = JSON.parse(await readBody(req));
+      const action = run.actions.get(String(actionId || ''));
+      if (!action || action.status !== 'open') {
+        return json(res, 409, { error: 'la acción ya no está pendiente' });
+      }
+      if (!String(text || '').trim()) return json(res, 400, { error: 'escribí una respuesta' });
+      if (!run.child || run.stdinClosed) {
+        return json(res, 409, { error: 'la sesión ya está cerrada; iniciá un nuevo ciclo con esta decisión en la historia' });
+      }
+
+      action.status = 'resolved';
+      action.resolvedAt = Date.now();
+      run.blocked = null;
+      emit(run, { t: 'action_resolved', id: action.id, phase: action.phase, at: action.resolvedAt });
+      sendToRun(run,
+        `Respuesta humana para resolver el bloqueo de ${action.agent ? `@${action.agent}` : `la fase ${action.phase}`}\n\n` +
+        `${String(text).trim()}\n\nRetomá el ciclo desde esa fase usando esta decisión.`,
+      );
+      return json(res, 200, { ok: true });
+    }
+
     m = p.match(/^\/api\/run\/([\w-]+)\/close$/);
     if (m && req.method === 'POST') {
       const run = runs.get(m[1]);
@@ -1500,8 +2470,9 @@ const server = http.createServer(async (req, res) => {
       const run = runs.get(m[1]);
       if (!run) return json(res, 404, { error: 'run no encontrado' });
       run.child?.kill('SIGTERM');
+      pauseRunWork(run);
       run.status = 'stopped';
-      emit(run, { t: 'end', code: null, status: 'stopped', at: Date.now() });
+      emit(run, { t: 'end', code: null, status: 'stopped', elapsedMs: run.elapsedMs, at: Date.now() });
       return json(res, 200, { ok: true });
     }
 
@@ -1520,7 +2491,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, '127.0.0.1', () => {
-  console.log(`\n  globant-sdlc studio`);
+  console.log(`\n  sdlc studio`);
   console.log(`  ───────────────────────────────────────────`);
   console.log(`  plugin : ${PLUGIN_DIR}`);
   console.log(`  repo   : ${TARGET_REPO}`);

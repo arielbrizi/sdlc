@@ -3,15 +3,15 @@
 Marketplace interno de herramientas SDLC. Contiene `sdlc`, el plugin que corre el
 ciclo de una historia de usuario de punta a punta hasta el PR.
 
-Este repo se desarrolla con Claude Code. Lo que sigue es contexto vinculante
+Este repo se desarrolla con Codex. Lo que sigue es contexto vinculante
 para trabajar sobre él.
 
 ## Estructura
 
 ```
-.claude-plugin/marketplace.json   catálogo — registra cada plugin
+.Codex-plugin/marketplace.json   catálogo — registra cada plugin
 plugins/<nombre>/                 un plugin por directorio
-  .claude-plugin/plugin.json      manifest
+  .Codex-plugin/plugin.json      manifest
   skills/<skill>/SKILL.md         entrypoints que corre el dev
   agents/*.md                     subagentes especializados
   hooks/hooks.json                política determinística
@@ -31,7 +31,7 @@ perdió. El validador lo chequea porque es el error más frecuente y el más
 silencioso: el hook simplemente no dispara.
 
 **Bumpear `version` en `plugin.json` en todo cambio que el equipo deba recibir.**
-El campo es obligatorio: `claude plugin validate --strict` falla sin él. Y una
+El campo es obligatorio: `Codex plugin validate --strict` falla sin él. Y una
 vez presente manda ese número, no el SHA del commit — sin bump, quien ya tiene el
 plugin instalado no ve el cambio aunque esté mergeado en `main`. Va en `0.x`
 mientras el plugin no se estabilice.
@@ -81,7 +81,7 @@ o el panel queda desincronizado del plugin real:
 
 Si agregás un **tipo** de componente nuevo (no un componente, un tipo), va
 también en `KINDS` de `studio/public/index.html`: es lo que le pone la etiqueta
-—Skill, Subagente, Hook— y alimenta el glosario. Usá el nombre que le da Claude
+—Skill, Subagente, Hook— y alimenta el glosario. Usá el nombre que le da Codex
 Code, no uno inventado: el studio enseña el vocabulario real. Lo que se escribe
 en criollo es la explicación, nunca el término.
 
@@ -94,13 +94,13 @@ de un skill orquestador, ese mapeo se mueve al SKILL.md y el studio lo lee.
 ```bash
 # Cargar el plugin sin instalarlo, contra un repo de prueba
 cd ~/repos/sandbox
-claude --plugin-dir ~/repos/sdlc/plugins/sdlc
+Codex --plugin-dir ~/repos/sdlc/plugins/sdlc
 
 # Ver qué componentes aporta y cuánto contexto cuesta
-claude plugin details sdlc
+Codex plugin details sdlc
 
 # Diagnóstico de carga
-claude --debug
+Codex --debug
 ```
 
 Los cambios en un `SKILL.md` toman efecto en la sesión activa. Los cambios en

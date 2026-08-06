@@ -18,28 +18,35 @@ final conserva la autonomía sin eliminar la supervisión. El draft y la secció
 foco existen para evitar el rubber-stamp: un PR que declara dónde tiene menos
 confianza se revisa mejor que uno que se presenta terminado.
 
-## D2 — Dos abortos automáticos
+## D2 — Condiciones de aborto automático
 
 **Contexto.** Sin gates intermedios, el flujo necesita poder frenarse solo.
 
-**Decisión.** Dos condiciones abortan el run:
+**Decisión.** El run aborta automáticamente cuando:
 1. `refinamiento` devuelve `BLOCKED` — la historia no es implementable
 2. `arquitectura` declara `blast_radius: high` — auth, pagos, PII, migración
    destructiva o contrato público
+3. una salida de agente no cumple su contrato JSON
+4. después de tres rondas siguen abiertos hallazgos críticos/altos, criterios
+   sin cubrir o cambios bloqueantes del reviewer
 
 **Por qué.** El costo del modo automático no es el bug detectado tarde: es gastar
 el ciclo completo sobre supuestos equivocados, o aplicar autonomía donde
 equivocarse es caro. Full auto para el 80% de las historias; el 20% restante
 pide humano por diseño.
 
-## D3 — Quien audita no escribe
+## D3 — Quien audita no corrige
 
-**Decisión.** `refinamiento`, `arquitectura`, `qa`, `seguridad` y `reviewer`
-tienen `disallowedTools: Write, Edit`.
+**Decisión.** Todos los auditores tienen `Write` y `Edit` deshabilitados. La
+sesión principal persiste sus JSON y sólo `desarrollador` corrige código.
+Arquitectura, UX y reviewer tampoco tienen Bash. QA y seguridad lo necesitan
+para correr suites y scanners, de modo que en ellos la prohibición de usar Bash
+para escribir es contractual y está acotada por los hooks de secretos y Git.
 
-**Por qué.** Un agente que puede corregir lo que audita se aprueba solo. La
-separación tiene que ser estructural — a nivel de herramientas disponibles — y no
-una instrucción en el prompt, que el modelo puede racionalizar.
+**Por qué.** Un agente que corrige lo que audita se aprueba solo. Donde el
+runtime permite separar herramientas de lectura y escritura, la separación es
+estructural; donde Bash es indispensable para verificar, la limitación se
+declara con precisión en vez de prometer una garantía inexistente.
 
 ## D4 — Adaptación de trackers en el borde
 
@@ -49,7 +56,7 @@ una instrucción en el prompt, que el modelo puede racionalizar.
 canónico. Los agentes solo conocen ese esquema.
 
 **Por qué.** Si los agentes conocieran a Jira, sumar un tracker obligaría a tocar
-los cinco. Con la adaptación en el borde, sumar uno es agregar un mapeo.
+todo el ciclo. Con la adaptación en el borde, sumar uno es agregar un mapeo.
 
 **Evidencia.** El modo `manual` (D8) se sumó sin tocar un solo agente.
 
@@ -62,14 +69,16 @@ que requiera juicio es agente.
 prompt es una sugerencia fuerte. Las reglas que nunca deberían poder saltearse
 no pueden depender de que el modelo las recuerde en el turno 40.
 
-## D6 — Marketplace propio, no `.claude/` suelto
+## D6 — Distribución como plugin, no `.claude/` suelto
 
-**Decisión.** Distribuir como plugin desde un marketplace interno, en vez de
-copiar un `.claude/` en cada repo.
+**Decisión.** Distribuir como plugin desde este repositorio, usando el mecanismo
+que Claude Code denomina `marketplace`, en vez de copiar un `.claude/` en cada
+repo. En este contexto `marketplace` es solamente el índice técnico que permite
+instalar el plugin: no existe ni se consulta un catálogo corporativo.
 
 **Por qué.** Versionado, actualización centralizada y un solo lugar donde
 corregir un agente. El costo es el namespacing de las skills
-(`/globant-sdlc:us`) y un paso de instalación. A escala de varios squads, el
+(`/sdlc:us`) y un paso de instalación. A escala de varios squads, el
 costo de mantener copias divergentes es mucho mayor.
 
 ## Pendientes de decidir
@@ -184,7 +193,7 @@ instructivo propio: la calidad de la implementación dependía del prompt del
 skill orquestador, mezclado con la lógica de encadenar fases.
 
 **Decisión.** Un sexto agente, `desarrollador`, con perfil de developer senior
-fullstack. Es el único del ciclo que escribe: implementa la fase 3 y recibe las
+fullstack. Es el único agente que corrige código: implementa la fase 4 y recibe las
 correcciones de `qa`, `seguridad` y `reviewer`. La sesión principal pasa a
 orquestar y nada más.
 
@@ -192,7 +201,7 @@ orquestar y nada más.
 
 1. **Calibrarlo.** Modelo, esfuerzo y turnos de la implementación ahora se
    ajustan solos, sin tocar el skill. Es lo mismo que ya valía para los otros
-   cinco.
+   demás auditores.
 2. **Auditarlo.** Su salida es JSON con `verdict`, así que un run bloqueado en
    implementación se ve igual que uno bloqueado en refinamiento, con sus
    `blocking_questions`.
@@ -200,9 +209,9 @@ orquestar y nada más.
    principal improvisaba —tenía todo el contexto y ninguna instrucción de
    parar—. El agente tiene criterio explícito de cuándo devolver BLOCKED.
 
-**Lo que no cambia.** D3 sigue en pie y se refuerza: quien audita no escribe, y
-ahora hay exactamente un agente que escribe. Los otros cinco conservan
-`disallowedTools: Write, Edit`.
+**Lo que no cambia.** D3 sigue en pie: quien audita no corrige su propio
+hallazgo. La sesión principal sólo persiste artefactos del run y el desarrollador
+es el único agente que modifica código de producto.
 
 **Costo.** El contexto ya no es gratis. La sesión principal tenía el plan y el
 código que acababa de escribir; el subagente arranca limpio en cada ciclo de
@@ -212,3 +221,62 @@ seguidas le hace releer el mismo código para nada.
 
 Si en el piloto los ciclos de corrección resultan caros, la salida no es volver
 atrás sino que el agente reciba el diff en vez del repo entero.
+
+## D12 — Cualquier agente se puede apagar, y apagarlo es un hook
+
+**Contexto.** El ciclo asumía que todos sus agentes corren siempre. La primera
+vez que eso no alcanzó fue con diseño: un agente de UX es indispensable en un
+repo de frontend e inútil en uno de backend, donde produce hallazgos genéricos
+que nadie puede accionar. Y esos hallazgos son peores que no tener el agente,
+porque entrenan al equipo a ignorar la salida del ciclo.
+
+El caso se generaliza: un equipo sin design system, uno que ya corre su propio
+security scanner en CI, uno que hace code review humano y no quiere el reviewer
+adversarial. Todos necesitan lo mismo.
+
+**Decisión.** Cualquier agente se habilita o deshabilita por proyecto, en
+`<repo>/.claude/sdlc.json`. `@ux` y las dos integraciones de diseño
+—Figma y Storybook— vienen apagadas; el resto, encendido.
+
+La config vive en el repo objetivo y no en el `userConfig` del plugin porque es
+una propiedad del proyecto, no de la persona: que un repo tenga interfaz que
+revisar no cambia según quién corra el ciclo. Además se versiona, así que el que
+clona hereda la misma configuración sin enterarse por Slack.
+
+**El gate es un hook, no una instrucción del skill.** `guard-agents.sh` corre en
+`PreToolUse` sobre `Task` y deniega la invocación de un agente apagado. Un prompt
+que dice "no lo invoques" es una sugerencia fuerte; deshabilitar tiene que
+significar que no corre. Es la misma regla de D5.
+
+**Costo y modos de falla.** El parser de la config es `sed` y `grep` —cero
+dependencias, igual que el resto— así que soporta un solo nivel de anidamiento y
+booleanos en su propia línea. Un archivo con otro formato no rompe: cae a los
+defaults. Los defaults están elegidos para que ese camino sea el seguro —los
+agentes que auditan quedan encendidos, y los que dependen de una integración
+externa, apagados—, así que una config ilegible nunca resulta en menos control.
+
+Deshabilitar `desarrollador` deja el ciclo sin nadie que escriba: el skill lo
+detecta y termina en vez de implementar la historia por su cuenta. Deshabilitar
+`refinamiento` apaga el circuit breaker de D2; se permite, pero el PR lo dice.
+
+## D13 — El diseño entra antes de implementar, no después
+
+**Contexto.** Un agente de UX y Visual Design puede correr en dos lugares: antes
+de implementar, produciendo el contrato de UI, o después, auditando la pantalla
+construida.
+
+**Decisión.** Antes, como fase 3, entre arquitectura e implementación.
+
+El costo caro de no tener diseño en el ciclo no es una pantalla fea: es un
+componente nuevo escrito desde cero cuando ya existía uno equivalente en el
+design system. Eso se evita antes de escribir el código; después ya es un
+refactor que compite con el resto del backlog.
+
+**Cómo se audita entonces el resultado.** El agente emite `visual_acceptance`,
+criterios verificables que van a `design.md`, y `qa` los traza igual que a los
+de la historia. No hizo falta un segundo agente: alcanzó con que el contrato sea
+verificable.
+
+**Costo.** Con diseño habilitado el ciclo tiene una invocación más antes de
+implementar. En una historia sin interfaz el agente devuelve `N_A` y no cuesta
+más que ese turno, que es el caso esperado en un repo mixto.
