@@ -90,7 +90,9 @@ printf '%s\n' '{"type":"result","is_error":false,"result":"Turno terminado","num
     assert.match(home, /Proyecto nuevo/);
     assert.match(home, /Informes de corridas/);
     assert.match(home, /const CAMPOS = \['source', 'story', 'repoDir', 'baseBranch', 'repoScope'/);
-    assert.match(home, /Ciclos correctivos/);
+    assert.match(home, /Ciclos de desarrollo/);
+    assert.match(home, /Flujo normal: \$\{initial\}/);
+    assert.match(home, /Correctivos: \$\{round\} de \$\{max\}/);
     assert.match(home, /deshabilitado · no participa/);
     assert.doesNotMatch(home, /gloop-source/);
     assert.match(home, /Crear y asociar/);

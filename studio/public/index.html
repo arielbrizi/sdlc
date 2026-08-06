@@ -3217,23 +3217,27 @@ function renderGraph() {
     (() => {
       const round = Math.max(0, Number(RUN_MODEL.correctionRound) || 0);
       const max = Math.max(1, Number(RUN_MODEL.maxCorrectionRounds) || 3);
+      const initial = (Number(RUN_MODEL.phase) >= 4
+        || ['active', 'paused', 'done', 'blocked', 'error'].includes(PHASE_STATE[4])) ? 1 : 0;
+      const total = initial + round;
       const verification = Math.max(0, Number(RUN_MODEL.correctionCounts?.verification) || 0);
       const reviewer = Math.max(0, Number(RUN_MODEL.correctionCounts?.reviewer) || 0);
       const middle = g.TOP + 4.5 * g.ROW;
-      const x = 14, y = middle - 61, w = 142, h = 122;
+      const x = 14, y = middle - 70, w = 142, h = 140;
       return `<g class="gcorrection" data-over="${round > max ? 1 : 0}">
-        <title>Una corrección se cuenta cuando @desarrollador retoma el trabajo por un rechazo. QA + Seguridad: ${verification}. @reviewer: ${reviewer}.</title>
+        <title>El flujo normal cuenta una pasada por Implementación. Cada regreso por un rechazo suma una correctiva. QA + Seguridad: ${verification}. @reviewer: ${reviewer}.</title>
         <rect class="panel" x="${x}" y="${y}" width="${w}" height="${h}"/>
-        <text class="title" x="${x + 12}" y="${y + 18}">Ciclos correctivos</text>
-        <text class="total" x="${x + 12}" y="${y + 39}">${round} de ${max} usados</text>
-        <text class="hint" x="${x + 12}" y="${y + 53}">Retornos a Implementación</text>
-        <line class="divider" x1="${x + 12}" y1="${y + 63}" x2="${x + w - 12}" y2="${y + 63}"/>
-        <text class="source" x="${x + 12}" y="${y + 82}">QA + Seguridad</text>
-        <rect class="count-bg" x="${x + w - 31}" y="${y + 70}" width="20" height="16" rx="8"/>
-        <text class="count" x="${x + w - 21}" y="${y + 81}">${verification}</text>
-        <text class="source" x="${x + 12}" y="${y + 105}">@reviewer</text>
-        <rect class="count-bg" x="${x + w - 31}" y="${y + 93}" width="20" height="16" rx="8"/>
-        <text class="count" x="${x + w - 21}" y="${y + 104}">${reviewer}</text>
+        <text class="title" x="${x + 12}" y="${y + 18}">Ciclos de desarrollo</text>
+        <text class="total" x="${x + 12}" y="${y + 39}">${total} pasada${total === 1 ? '' : 's'} total${total === 1 ? '' : 'es'}</text>
+        <text class="hint" x="${x + 12}" y="${y + 54}">Flujo normal: ${initial}</text>
+        <text class="hint" x="${x + 12}" y="${y + 67}">Correctivos: ${round} de ${max}</text>
+        <line class="divider" x1="${x + 12}" y1="${y + 77}" x2="${x + w - 12}" y2="${y + 77}"/>
+        <text class="source" x="${x + 12}" y="${y + 97}">QA + Seguridad</text>
+        <rect class="count-bg" x="${x + w - 31}" y="${y + 85}" width="20" height="16" rx="8"/>
+        <text class="count" x="${x + w - 21}" y="${y + 96}">${verification}</text>
+        <text class="source" x="${x + 12}" y="${y + 120}">@reviewer</text>
+        <rect class="count-bg" x="${x + w - 31}" y="${y + 108}" width="20" height="16" rx="8"/>
+        <text class="count" x="${x + w - 21}" y="${y + 119}">${reviewer}</text>
       </g>`;
     })(),
     // Los hooks no se conectan a una fase: se marca con una línea punteada.
