@@ -383,6 +383,14 @@ componentes del plugin salen de la vista. `Ver plugin` / `Ver importado`
 alterna entre los dos mapas sin perder nada, y `Quitar importación` vuelve al
 estado original.
 
+Mientras importa, el diálogo muestra una barra con porcentaje y el paso en
+curso. No es un spinner adornado: el porcentaje del clon es el que reporta git
+(`--progress`), así que con un repo grande se distingue "avanza lento" de "se
+colgó". La importación corre como job en el server —el POST devuelve un id y el
+avance llega por SSE, igual que el stream de un run— y la barra nunca
+retrocede: los mensajes de git no llegan estrictamente ordenados y una barra
+que vuelve para atrás es peor que no tenerla.
+
 El escaneo es determinístico y de solo lectura. Cubre las dos formas en que un
 repo aporta componentes:
 

@@ -344,6 +344,10 @@ async function scanPlugin() {
  */
 const importedDirs = new Set();
 
+// Jobs de importación en curso o recién terminados, para el SSE de progreso.
+const importJobs = new Map();
+let importSeq = 0;
+
 const readIf = async f => { try { return await fsp.readFile(f, 'utf8'); } catch { return null; } };
 
 async function scanSkillsInto(skillsDir, source, rel, out) {
@@ -434,7 +438,7 @@ function collectMcpInto(data, relPath, source, out) {
  * trae consigo (`.claude-plugin/` en el root o bajo `plugins/`). Cada
  * componente lleva `source` para distinguir de dónde salió.
  */
-async function scanClaudeRepo(rootDir) {
+async function scanClaudeRepo(rootDir, onStep = null) {
   const rel = p => path.relative(rootDir, p).split(path.sep).join('/');
   const out = {
     dir: rootDir, memory: [], skills: [], commands: [], agents: [],
@@ -442,6 +446,7 @@ async function scanClaudeRepo(rootDir) {
   };
 
   // memoria: CLAUDE.md y las reglas que importa
+  onStep?.(0, 'Leyendo la memoria del repo');
   for (const f of ['CLAUDE.md', '.claude/CLAUDE.md']) {
     const text = await readIf(path.join(rootDir, f));
     if (text !== null) {
@@ -454,6 +459,7 @@ async function scanClaudeRepo(rootDir) {
   }
 
   // configuración de proyecto
+  onStep?.(25, 'Buscando skills, comandos y subagentes');
   const dot = path.join(rootDir, '.claude');
   await scanSkillsInto(path.join(dot, 'skills'), 'proyecto', rel, out);
   await scanAgentsInto(path.join(dot, 'agents'), 'proyecto', rel, out);
@@ -483,8 +489,10 @@ async function scanClaudeRepo(rootDir) {
     }
   } catch { /* sin plugins/ */ }
 
+  let plugN = 0;
   for (const pdir of pluginDirs) {
     let name = path.basename(pdir);
+    onStep?.(55 + (45 * plugN++ / pluginDirs.length), `Escaneando el plugin ${path.basename(pdir)}`);
     try {
       name = JSON.parse(await fsp.readFile(path.join(pdir, '.claude-plugin/plugin.json'), 'utf8')).name || name;
     } catch (e) {
@@ -857,7 +865,7 @@ async function vcsStatus(provider) {
 /** Igual que runClaude pero con binario arbitrario. */
 function runClaudeLike(bin, args, opts = {}) {
   return new Promise((resolve) => {
-    const { timeoutMs = 0, ...spawnOpts } = opts;
+    const { timeoutMs = 0, onStderr = null, ...spawnOpts } = opts;
     let stdout = '', stderr = '';
     let settled = false, timedOut = false, timer = null;
     const finish = result => {
@@ -868,7 +876,7 @@ function runClaudeLike(bin, args, opts = {}) {
     };
     const c = spawn(bin, args, { cwd: REPO_ROOT, ...spawnOpts });
     c.stdout.on('data', d => stdout += d);
-    c.stderr.on('data', d => stderr += d);
+    c.stderr.on('data', d => { stderr += d; onStderr?.(String(d)); });
     c.on('error', () => finish({ code: -1, stdout: '', stderr: `no se encontró ${bin}` }));
     c.on('close', code => finish({
       code: timedOut ? 124 : code,
@@ -931,10 +939,39 @@ function startVcsLogin(provider) {
 }
 
 /**
+ * Traduce las líneas de progreso de git (`--progress` en stderr) a un
+ * porcentaje 0–100 de la etapa git completa. Los pesos reflejan dónde se va el
+ * tiempo real de un clone: la descarga de objetos domina.
+ */
+function gitProgress(line) {
+  let m;
+  if ((m = line.match(/Receiving objects:\s+(\d+)%/))) return { pct: 20 + Number(m[1]) * 0.6, step: 'Descargando objetos' };
+  if ((m = line.match(/Resolving deltas:\s+(\d+)%/))) return { pct: 80 + Number(m[1]) * 0.18, step: 'Resolviendo deltas' };
+  if ((m = line.match(/Compressing objects:\s+(\d+)%/))) return { pct: 8 + Number(m[1]) * 0.12, step: 'Comprimiendo objetos' };
+  if (/Counting objects|Enumerating objects/.test(line)) return { pct: 4, step: 'Contando objetos' };
+  if (/Updating files:\s+(\d+)%/.test(line)) return { pct: 98, step: 'Escribiendo archivos' };
+  return null;
+}
+
+/** Convierte un chunk de stderr de git en llamadas a onProgress. */
+const gitProgressSink = onProgress => {
+  // git reescribe la misma línea con \r: cada fragmento puede traer varias.
+  let last = -1;
+  return chunk => {
+    for (const line of String(chunk).split(/[\r\n]+/)) {
+      const p = gitProgress(line);
+      // Nunca retroceder: los mensajes de git no llegan estrictamente ordenados.
+      if (p && p.pct > last) { last = p.pct; onProgress?.(p.pct, p.step); }
+    }
+  };
+};
+
+/**
  * Deja el repo listo en disco y devuelve sus branches. Clona la primera vez y
  * hace fetch después: reclonar en cada run sería lento y perdería el trabajo.
+ * `onProgress(pct, step)` es opcional y reporta el avance de la etapa git.
  */
-async function prepararRepo(raw) {
+async function prepararRepo(raw, onProgress = null) {
   // Una carpeta local existente puede ser el root o cualquier directorio de un
   // monorepo. Se actualiza igual que un clone administrado por Studio: mostrar
   // branches viejas en el preflight termina creando features desde una base
@@ -946,7 +983,9 @@ async function prepararRepo(raw) {
       const dir = root.stdout.trim();
       const remotes = await runClaudeLike('git', ['remote'], { cwd: dir });
       if (remotes.stdout.trim()) {
-        const fetched = await runClaudeLike('git', ['fetch', '--all', '--prune'], { cwd: dir });
+        onProgress?.(2, 'Actualizando el repositorio');
+        const fetched = await runClaudeLike('git', ['fetch', '--all', '--prune', '--progress'],
+          { cwd: dir, onStderr: gitProgressSink(onProgress) });
         if (fetched.code !== 0) {
           throw Object.assign(new Error(`git fetch falló: ${fetched.stderr.slice(0, 300)}`), { code: 502 });
         }
@@ -963,13 +1002,17 @@ async function prepararRepo(raw) {
   const dir = path.join(WORKSPACE, slug);
 
   if (fs.existsSync(path.join(dir, '.git'))) {
-    const r = await runClaudeLike('git', ['fetch', '--all', '--prune'], { cwd: dir });
+    onProgress?.(2, 'Actualizando el repositorio');
+    const r = await runClaudeLike('git', ['fetch', '--all', '--prune', '--progress'],
+      { cwd: dir, onStderr: gitProgressSink(onProgress) });
     if (r.code !== 0) throw Object.assign(new Error(`git fetch falló: ${r.stderr.slice(0, 300)}`), { code: 502 });
     return { dir, clonado: false, provider: info.provider, ...(await ramas(dir)), workspaces: await discoverWorkspaces(dir) };
   }
 
   await fsp.mkdir(WORKSPACE, { recursive: true });
-  const r = await runClaudeLike('git', ['clone', info.url, dir], { cwd: WORKSPACE });
+  onProgress?.(2, 'Clonando el repositorio');
+  const r = await runClaudeLike('git', ['clone', '--progress', info.url, dir],
+    { cwd: WORKSPACE, onStderr: gitProgressSink(onProgress) });
   if (r.code !== 0) {
     throw Object.assign(
       new Error(`git clone falló. ${r.stderr.slice(0, 400)}`),
@@ -2025,12 +2068,65 @@ const server = http.createServer(async (req, res) => {
     }
 
     // --- Importar LLM: escanear otro repo y redibujar el mapa con lo que hay ---
+    // El clon puede tardar, así que la importación es un job: el POST lo abre y
+    // devuelve un id, y el avance —con el % real que reporta git— sale por SSE.
     if (p === '/api/import' && req.method === 'POST') {
       const { url: repoUrl } = JSON.parse(await readBody(req));
-      const repo = await prepararRepo(repoUrl);
-      importedDirs.add(repo.dir);
-      const scan = await scanClaudeRepo(repo.dir);
-      return json(res, 200, { repo, scan });
+      const id = `imp_${++importSeq}_${Math.random().toString(36).slice(2, 8)}`;
+      const job = { events: [], clients: new Set(), done: false };
+      importJobs.set(id, job);
+
+      const emit = ev => {
+        job.events.push(ev);
+        for (const c of job.clients) c.write(`data: ${JSON.stringify(ev)}\n\n`);
+        if (ev.t !== 'progress') {
+          job.done = true;
+          for (const c of job.clients) c.end();
+          job.clients.clear();
+          // El resultado queda un rato por si el SSE se conecta tarde.
+          setTimeout(() => importJobs.delete(id), 5 * 60_000).unref?.();
+        }
+      };
+      // Nunca retroceder ni llegar a 100 antes del final: la barra es una
+      // promesa y una barra que vuelve para atrás es peor que no tenerla.
+      let last = 0;
+      const progress = (pct, step) => {
+        const v = Math.max(last, Math.min(99, Math.round(pct)));
+        if (v === last && job.events.length && job.events[job.events.length - 1].step === step) return;
+        last = v;
+        emit({ t: 'progress', pct: v, step });
+      };
+
+      (async () => {
+        try {
+          progress(1, 'Preparando el repositorio');
+          // 0–80: git (domina el tiempo con un repo remoto) · 80–99: escaneo.
+          const repo = await prepararRepo(repoUrl, (pct, step) => progress(1 + pct * 0.79, step));
+          importedDirs.add(repo.dir);
+          progress(80, 'Escaneando el repo');
+          const scan = await scanClaudeRepo(repo.dir, (pct, step) => progress(80 + pct * 0.19, step));
+          emit({ t: 'done', pct: 100, result: { repo, scan } });
+        } catch (e) {
+          emit({ t: 'error', error: e.message });
+        }
+      })();
+
+      return json(res, 200, { importId: id });
+    }
+
+    if (p === '/api/import/events' && req.method === 'GET') {
+      const job = importJobs.get(String(url.searchParams.get('id') || ''));
+      if (!job) return json(res, 404, { error: 'importación desconocida o expirada' });
+      res.writeHead(200, {
+        'content-type': 'text/event-stream; charset=utf-8',
+        'cache-control': 'no-cache',
+        connection: 'keep-alive',
+      });
+      for (const ev of job.events) res.write(`data: ${JSON.stringify(ev)}\n\n`);
+      if (job.done) return res.end();
+      job.clients.add(res);
+      req.on('close', () => job.clients.delete(res));
+      return;
     }
 
     // Lectura de un archivo del repo importado. Solo lectura y solo dentro de

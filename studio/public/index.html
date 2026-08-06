@@ -667,6 +667,17 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
   padding:10px 12px;font-family:var(--mono);font-size:11.5px;
   white-space:pre-wrap;word-break:break-word;max-height:200px;overflow-y:auto;
 }
+
+/* Progreso de la importación: el % que reporta git durante el clon más los
+   pasos del escaneo. Una barra, no un spinner: un clon grande tarda y el dev
+   tiene que poder distinguir "avanza lento" de "se colgó". */
+.imp-progress{margin-top:12px;display:flex;flex-direction:column;gap:7px}
+.imp-bar{height:8px;border-radius:999px;background:var(--surface-3);
+  border:1px solid var(--border);overflow:hidden}
+.imp-bar i{display:block;height:100%;width:0;background:var(--accent);
+  border-radius:999px;transition:width .3s ease}
+.imp-meta{display:flex;gap:10px;align-items:baseline;font-size:12.5px;color:var(--muted)}
+.imp-meta b{color:var(--text);font-variant-numeric:tabular-nums;min-width:38px}
 .mcp-connect{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:11px 12px;
   border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface-2)}
 .mcp-connect .mcp-copy{display:flex;flex-direction:column;gap:2px;flex:1;min-width:220px}
@@ -1355,6 +1366,11 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
     </p>
     <input class="field" id="importUrl" style="width:100%;margin-top:12px"
            placeholder="https://github.com/org/repo — o una carpeta local" autocomplete="off">
+    <div class="imp-progress" id="importProgress" hidden
+         role="progressbar" aria-valuemin="0" aria-valuemax="100">
+      <div class="imp-bar"><i id="importBarFill"></i></div>
+      <div class="imp-meta"><b id="importPct">0%</b><span id="importStep">Preparando…</span></div>
+    </div>
     <div class="auth-out" id="importOut" hidden></div>
   </div>
   <div class="dlg-foot">
@@ -3956,11 +3972,25 @@ const resumenImport = s => [
  .map(x => `${x.n} ${x.t}`)
  .join(' · ') || 'nada de Claude Code';
 
-async function doImport(url, silencioso) {
-  const r = await api('/api/import', {
+// La importación es un job en el server: el POST devuelve un id y el avance
+// llega por SSE con el % real de git durante el clon. `onProgress` es opcional
+// — la restauración tras un F5 importa sin diálogo abierto.
+async function doImport(url, silencioso, onProgress = null) {
+  const { importId } = await api('/api/import', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ url }),
+  });
+  const r = await new Promise((resolve, reject) => {
+    const src = new EventSource(`/api/import/events?id=${encodeURIComponent(importId)}`);
+    src.onmessage = e => {
+      const d = JSON.parse(e.data);
+      if (d.t === 'progress') return onProgress?.(d.pct, d.step);
+      src.close();
+      if (d.t === 'done') { onProgress?.(100, 'Listo'); resolve(d.result); }
+      else reject(new Error(d.error || 'la importación falló'));
+    };
+    src.onerror = () => { src.close(); reject(new Error('Se cortó la conexión durante la importación')); };
   });
   IMPORTED = { ...r, url };
   selectedNode = null;
@@ -3996,6 +4026,7 @@ async function doImport(url, silencioso) {
 
 $('btnImport').addEventListener('click', () => {
   $('importOut').hidden = true;
+  $('importProgress').hidden = true;
   if (IMPORTED) $('importUrl').value = IMPORTED.url;
   $('dlgImport').showModal();
   $('importUrl').focus();
@@ -4006,16 +4037,25 @@ $('importUrl').addEventListener('keydown', e => e.key === 'Enter' && $('btnImpor
 $('btnImportGo').addEventListener('click', async () => {
   const url = $('importUrl').value.trim();
   if (!url) return $('importUrl').focus();
-  $('importOut').hidden = false;
-  $('importOut').textContent = 'Clonando y escaneando…';
+  $('importOut').hidden = true;
+  $('importProgress').hidden = false;
+  const pintar = (pct, step) => {
+    $('importBarFill').style.width = `${pct}%`;
+    $('importPct').textContent = `${pct}%`;
+    $('importStep').textContent = step;
+    $('importProgress').setAttribute('aria-valuenow', pct);
+  };
+  pintar(0, 'Preparando…');
   $('btnImportGo').disabled = true;
   try {
     importScope = 'all'; IMP_CYCLES = {};
-    await doImport(url, false);
+    await doImport(url, false, pintar);
     $('dlgImport').close();
   } catch (e) {
+    $('importOut').hidden = false;
     $('importOut').textContent = e.message;
   } finally {
+    $('importProgress').hidden = true;
     $('btnImportGo').disabled = false;
   }
 });
