@@ -205,6 +205,8 @@ textarea.field{resize:vertical;line-height:1.6}
 .kind[data-k="hook"]{color:var(--caution)}
 .kind[data-k="script"]{color:#8fd0c0}
 .kind[data-k="mcp"]{color:#e8a0b8}
+.kind[data-k="command"]{color:#9fd08f}
+.kind[data-k="memory"]{color:#d0c08f}
 .kind[data-k="reference"]{color:var(--dim)}
 .kind[data-k="manifest"]{color:var(--dim)}
 .chip[aria-pressed="true"] .kind{color:#4a525f}
@@ -269,6 +271,9 @@ dialog::backdrop{background:rgba(0,0,0,.62)}
 .gnode[data-kind="hook"] rect{fill:#241f14}
 .gnode[data-kind="script"] rect{fill:#16211f}
 .gnode[data-kind="mcp"] rect{fill:#241a1f}
+.gnode[data-kind="skill"] rect{fill:#151d28}
+.gnode[data-kind="command"] rect{fill:#18221a}
+.gnode[data-kind="memory"] rect{fill:#242015}
 .gnode[data-kind="main"] rect{fill:#1a2028;stroke-dasharray:4 3}
 .gedge.loop{stroke:var(--caution)}
 .gedge{stroke:var(--edge);stroke-width:1.5;fill:none}
@@ -351,6 +356,10 @@ dialog::backdrop{background:rgba(0,0,0,.62)}
     <button class="auth" id="authChip" title="Sesión de Claude Code">
       <span class="dot"></span><span id="authText">sesión…</span>
     </button>
+    <select class="field" id="importScope" hidden style="max-width:220px"
+            title="Con más de un plugin o más de un skill en el repo importado, elegís cuál ciclo mirar"></select>
+    <button class="btn ghost" id="btnImportToggle" hidden></button>
+    <button class="btn" id="btnImport" title="Escanear otro repo y redibujar el mapa con lo que hay ahí">Importar LLM</button>
     <button class="btn" id="btnGlosario" title="Qué es cada componente">Glosario</button>
     <button class="btn" id="btnValidate">Validar</button>
     <button class="btn" id="btnReload">Recargar</button>
@@ -380,6 +389,31 @@ dialog::backdrop{background:rgba(0,0,0,.62)}
     <button class="btn" id="btnAuthLogout">Cerrar sesión</button>
     <button class="btn lit" id="btnAuthLogin">Iniciar sesión</button>
     <button class="btn" id="btnAuthClose">Salir</button>
+  </div>
+</dialog>
+
+<!-- Importar LLM: un solo campo a propósito. Pegar el link es todo lo que se
+     pide; clonar, escanear y redibujar el mapa lo hace el studio. -->
+<dialog id="dlgImport">
+  <div class="dlg-head">
+    <h2>Importar LLM</h2>
+  </div>
+  <div class="dlg-body">
+    <p class="what">
+      Pegá el link del repositorio. El studio lo clona, busca todo lo que Claude
+      Code cargaría ahí —memoria, skills, comandos, subagentes, hooks, MCP
+      servers, plugins— y redibuja el mapa del ciclo solo con eso: los
+      componentes del plugin salen de la vista. No modifica el repo importado.
+    </p>
+    <input class="field" id="importUrl" style="width:100%"
+           placeholder="https://github.com/org/repo — o una carpeta local" autocomplete="off">
+    <div class="auth-out" id="importOut" hidden></div>
+  </div>
+  <div class="dlg-foot">
+    <button class="btn" id="btnImportRemove" hidden>Quitar importación</button>
+    <span class="grow"></span>
+    <button class="btn" id="btnImportClose">Cerrar</button>
+    <button class="btn lit" id="btnImportGo">Importar</button>
   </div>
 </dialog>
 
@@ -626,6 +660,14 @@ const KINDS = {
     label: 'MCP server',
     what: 'Model Context Protocol: la conexión a un sistema externo —Jira, Azure DevOps, GitHub— que le agrega herramientas nuevas a Claude para leer y escribir ahí.',
   },
+  command: {
+    label: 'Comando',
+    what: 'Un slash command: un archivo .md en .claude/commands/ que se invoca escribiendo /nombre. Es un prompt guardado, más liviano que un skill: no trae referencias ni estructura propia.',
+  },
+  memory: {
+    label: 'Memoria',
+    what: 'CLAUDE.md y las reglas que importa. Claude lo lee al arrancar cada sesión en ese repo: es el contexto que no hay que repetirle — convenciones, estructura, qué no tocar.',
+  },
   reference: {
     label: 'Referencia',
     what: 'Un archivo que el skill trae consigo y abre solo cuando lo necesita. No ocupa contexto hasta que se lee.',
@@ -671,6 +713,8 @@ const kindBadge = k => (KINDS[k] ? `<span class="kind" data-k="${k}">${esc(KINDS
 
 let PLUGIN = null, PHASES = [], current = null, original = '', run = null, es = null;
 let runHasStory = false, runBlocked = false, authES = null;
+// Importar LLM: el escaneo del repo importado y qué mapa se está mirando.
+let IMPORTED = null, importView = false, IMP_ITEMS = {};
 
 /* ------------------------------------------------------ carga del plugin */
 
@@ -682,6 +726,7 @@ async function load() {
   if (!$('repoDir').value) $('repoDir').value = plugin.targetRepo;
 
   renderGraph();
+  syncImportUi();
 
   if (plugin.problems.length) {
     banner('err', plugin.problems.join(' · '));
@@ -981,6 +1026,13 @@ async function start() {
   if (manual && !requireTitle()) return;
   if (!manual && !consola && !storyId) return $('story').focus();
 
+  // El run corre el ciclo del plugin, así que durante el run se muestra ese
+  // mapa aunque haya una importación activa. "Ver importado" la devuelve.
+  if (importView) {
+    importView = false;
+    guardarImport(); syncImportUi();
+  }
+
   resetPhases();
   $('log').innerHTML = '';
   runHasStory = !consola;
@@ -1270,7 +1322,10 @@ const TOP_Y = 40, ROW_Y = 96; // mismos valores que layout(), para las etiquetas
 
 function renderGraph() {
   if (!PLUGIN || !PHASES.length) return;
-  const g = layout();
+  // Con una importación activa el mapa default se elimina de la vista: lo que
+  // se dibuja es SOLO lo que se encontró en el repo importado.
+  const importMode = !!(importView && IMPORTED);
+  const g = importMode ? layoutImport() : layout();
   const byId = Object.fromEntries(g.nodes.map(n => [n.id, n]));
 
   const edgePath = e => {
@@ -1291,13 +1346,20 @@ function renderGraph() {
 
   const done = id => nodeState(id) === 'done';
   const svg = [
-    `<text class="glabel" x="16" y="18">ciclo · ${esc(PLUGIN.skills[0]?.command || 'us')}</text>`,
+    importMode
+      ? `<text class="glabel" x="16" y="18">importado · ${esc((IMPORTED.repo.dir || '').split('/').pop())}${
+          importScope !== 'all' ? ` · ${esc(scopeLabel())}` : ''}</text>`
+      : `<text class="glabel" x="16" y="18">ciclo · ${esc(PLUGIN.skills[0]?.command || 'us')}</text>`,
     ...g.edges.map(e => `<path class="gedge ${e.kind}${e.kind === 'loop' ? ' dashed' : ''}${
       done(e.b) && e.kind !== 'loop' ? ' done' : ''}" d="${edgePath(e)}"/>`),
-    // Vertical, sobre el lazo: horizontal se montaba encima de las fases.
-    `<text class="glabel gloop" transform="translate(20,${TOP_Y + 3.6 * ROW_Y}) rotate(-90)">corrige · hasta 3 ciclos</text>`,
-    // Los hooks no se conectan a una fase: se marca con una línea punteada.
-    `<path class="gedge dashed" d="M${g.hx - 26} 30 L${g.hx - 26} ${g.height - 30}"/>`,
+    // El lazo de corrección es del ciclo del skill `us`, no del mapa importado.
+    ...(importMode ? [] : [
+      // Vertical, sobre el lazo: horizontal se montaba encima de las fases.
+      `<text class="glabel gloop" transform="translate(20,${TOP_Y + 3.6 * ROW_Y}) rotate(-90)">corrige · hasta 3 ciclos</text>`,
+    ]),
+    // La banda lateral punteada la dibuja todo layout que la declare: la del
+    // plugin (hooks y MCP) y la del ciclo interpretado de un skill importado.
+    ...(g.hx ? [`<path class="gedge dashed" d="M${g.hx - 26} 30 L${g.hx - 26} ${g.height - 30}"/>`] : []),
     ...g.nodes.filter(n => n.kind === 'titulo').map(n =>
       `<text class="glabel" x="${n.x}" y="${n.y + 12}">${esc(n.label)}</text>`),
     ...g.nodes.filter(n => n.kind !== 'titulo').map(n => `
@@ -1347,6 +1409,9 @@ const NODE_KIND = {
 function renderNodeDetail() {
   const id = selectedNode;
   if (!id) return;
+  // Los nodos del mapa importado tienen su propio panel: no hay run ni archivo
+  // editable detrás, hay un repo ajeno que se mira.
+  if (id.startsWith('imp')) return renderImportDetail(id);
   const [kind, name] = id.split(':');
   const entries = NODE_OUT[id] || [];
   const file = nodeFile(id);
@@ -1387,6 +1452,491 @@ function renderNodeDetail() {
   if (file) $('ndOpen').addEventListener('click', () => open(file));
   if (hookScript) $('ndScript').addEventListener('click', () => open(hookScript));
   showPanel('paneDetail');
+}
+
+/* ------------------------------------------------------- Importar LLM */
+
+// La vía deja de ser el ciclo del skill `us` —que es del plugin, no del repo
+// importado— y pasa a ser el orden en que Claude Code carga lo que hay en ese
+// repo al armar una sesión: memoria primero, después los entrypoints, después
+// lo que corre por abajo. Solo aparecen los grupos que tienen algo.
+const IMPORT_GROUPS = [
+  { key: 'memory',   label: 'Memoria',     kind: 'memory',
+    help: 'Lo primero que Claude lee al abrir una sesión en ese repo: CLAUDE.md y sus reglas.' },
+  { key: 'skills',   label: 'Skills',      kind: 'skill',
+    help: 'Los instructivos que Claude carga cuando la tarea lo amerita o cuando se los invoca con /nombre.' },
+  { key: 'commands', label: 'Comandos',    kind: 'command',
+    help: 'Slash commands: prompts guardados que se disparan a mano con /nombre.' },
+  { key: 'agents',   label: 'Subagentes',  kind: 'agent',
+    help: 'Sesiones aparte con instructivo propio. Los invoca la sesión principal cuando la descripción de cada uno lo pide.' },
+  { key: 'hooks',    label: 'Hooks',       kind: 'hook',
+    help: 'Comandos que corren solos antes o después de cada herramienta. Política, no sugerencia.' },
+  { key: 'mcp',      label: 'MCP servers', kind: 'mcp',
+    help: 'Conexiones a sistemas externos que le agregan herramientas a Claude en ese repo.' },
+];
+
+const IMP_MAX = 12; // nodos por grupo; con más, el mapa deja de ser un mapa
+
+// Ciclos interpretados por Claude, por path del SKILL.md. Se pagan una vez.
+let IMP_CYCLES = {}, importScope = 'all';
+
+const impLabel = it => {
+  const raw = it.kind === 'agent' ? `@${it.name}`
+    : it.kind === 'skill' || it.kind === 'command' ? `/${it.name}`
+    : it.kind === 'hook' ? it.event
+    : it.name;
+  return raw.length > 24 ? raw.slice(0, 23) + '…' : raw;
+};
+
+const impSub = it => {
+  const base = it.kind === 'hook' ? (it.script || 'hook')
+    : it.kind === 'memory' ? (it.name.startsWith('rules/') ? 'regla' : 'CLAUDE.md')
+    : (KINDS[it.kind]?.label || it.kind).toLowerCase();
+  return it.source && it.source !== 'proyecto' ? `${base} · ${it.source}` : base;
+};
+
+/** El skill elegido en el selector de ciclo, si el scope es un skill. */
+function scopedSkill() {
+  if (!IMPORTED || !String(importScope).startsWith('skill:')) return null;
+  return IMPORTED.scan.skills[Number(importScope.slice(6))] || null;
+}
+
+function scopeLabel() {
+  if (importScope.startsWith('plugin:')) return `plugin ${importScope.slice(7)}`;
+  const sk = scopedSkill();
+  return sk ? `/${sk.name}` : 'todo el repo';
+}
+
+/**
+ * El escaneo, recortado al scope elegido. Con más de un plugin o más de un
+ * skill se elige cuál mirar, y el mapa se arma solo con los componentes de esa
+ * fuente. La memoria del proyecto queda siempre: Claude la carga se corra lo
+ * que se corra.
+ */
+function scopedScan() {
+  const s = IMPORTED.scan;
+  if (importScope.startsWith('plugin:')) {
+    const name = importScope.slice(7);
+    const f = list => list.filter(x => x.source === name);
+    return { ...s, skills: f(s.skills), commands: f(s.commands),
+             agents: f(s.agents), hooks: f(s.hooks), mcp: f(s.mcp) };
+  }
+  const sk = scopedSkill();
+  if (sk) {
+    const f = list => list.filter(x => x.source === sk.source);
+    return { ...s, skills: [sk], commands: f(s.commands),
+             agents: f(s.agents), hooks: f(s.hooks), mcp: f(s.mcp) };
+  }
+  return s;
+}
+
+function layoutImport() {
+  // Con un ciclo interpretado por Claude para el skill elegido, se dibuja ese.
+  const sk = scopedSkill();
+  if (sk && IMP_CYCLES[sk.path]) return layoutImportCycle(sk, IMP_CYCLES[sk.path]);
+
+  const TOP = 40, PX = 54, PW = 190, CX = 292, CW = 200, GAP = 14, PER_ROW = 3, RH = 52;
+  const nodes = [], edges = [];
+  IMP_ITEMS = {};
+
+  const s = scopedScan();
+  const groups = IMPORT_GROUPS
+    .map(g => ({ ...g, list: s[g.key] || [] }))
+    .filter(g => g.list.length);
+
+  let y = TOP, prev = null, maxX = CX + CW, num = 0;
+  for (const g of groups) {
+    num++;
+    const gid = `impg:${g.key}`;
+    nodes.push({
+      id: gid, kind: 'phase',
+      label: `${String(num).padStart(2, '0')} · ${g.label}`,
+      sub: `${g.list.length} en el repo`,
+      x: PX, y, w: PW, h: 48,
+    });
+    if (prev) edges.push({ a: prev, b: gid, kind: 'spine' });
+    prev = gid;
+
+    const cells = g.list.slice(0, IMP_MAX).map((it, i) => ({ id: `imp:${g.key}:${i}`, it }));
+    if (g.list.length > IMP_MAX) cells.push({ id: `impmore:${g.key}`, it: null });
+    cells.forEach((c, i) => {
+      const col = i % PER_ROW, row = Math.floor(i / PER_ROW);
+      const x = CX + col * (CW + GAP);
+      maxX = Math.max(maxX, x + CW);
+      if (c.it) IMP_ITEMS[c.id] = c.it;
+      nodes.push({
+        id: c.id, kind: c.it ? c.it.kind : g.kind,
+        label: c.it ? impLabel(c.it) : `+${g.list.length - IMP_MAX} más`,
+        sub: c.it ? impSub(c.it) : 'clic para ver la lista',
+        x, y: y + 2 + row * RH, w: CW, h: 42,
+      });
+      // Conector solo a la primera columna: a las demás la línea les pasaría
+      // por encima de las cajas de la misma fila.
+      if (col === 0) edges.push({ a: gid, b: c.id, kind: 'branch' });
+    });
+
+    const rows = Math.max(1, Math.ceil(cells.length / PER_ROW));
+    y += Math.max(78, rows * RH + 26);
+  }
+
+  return { nodes, edges, width: maxX + 40, height: Math.max(y, TOP + 120) + 20 };
+}
+
+/**
+ * El ciclo de un skill importado, con las fases que Claude interpretó de su
+ * SKILL.md. Mismo lenguaje visual que el mapa del plugin: vía de fases a la
+ * izquierda, subagentes y scripts colgando, y la banda lateral con memoria,
+ * hooks y MCP, que no cuelgan de ninguna fase.
+ */
+function layoutImportCycle(sk, cycle) {
+  const ROW = 96, TOP = 40, PX = 54, PW = 190, CX = 292, CW = 176, GAP = 16;
+  const nodes = [], edges = [];
+  IMP_ITEMS = {};
+  const s = scopedScan();
+
+  nodes.push({
+    id: 'impc:skill', kind: 'phase', label: `/${sk.name}`.slice(0, 26),
+    sub: 'skill orquestador', x: PX, y: TOP, w: PW, h: 48,
+  });
+  IMP_ITEMS['impc:skill'] = sk;
+
+  let maxX = CX + CW;
+  cycle.forEach((f, i) => {
+    const id = `impc:${i}`;
+    const y = TOP + (i + 1) * ROW;
+    nodes.push({
+      id, kind: 'phase',
+      label: `${String(i + 1).padStart(2, '0')} · ${f.label}`.slice(0, 30),
+      sub: f.gate ? 'puede abortar el run' : '',
+      x: PX, y, w: PW, h: 48,
+    });
+    edges.push({ a: i ? `impc:${i - 1}` : 'impc:skill', b: id, kind: 'spine' });
+
+    let k = 0;
+    for (const an of f.agents || []) {
+      const found = s.agents.find(a => a.name.toLowerCase() === String(an).toLowerCase());
+      const aid = `impa:${i}:${k}`;
+      // El no encontrado también se guarda: el panel tiene que poder decir
+      // QUÉ nombró Claude que el escaneo no encontró, no solo que faltó algo.
+      IMP_ITEMS[aid] = found || { kind: 'agent', name: String(an), missing: true };
+      const x = CX + k * (CW + GAP);
+      maxX = Math.max(maxX, x + CW);
+      nodes.push({
+        id: aid, kind: 'agent', label: `@${an}`.slice(0, 24),
+        sub: found ? 'subagente' : 'no está en el repo',
+        x, y: y + 2, w: CW, h: 42,
+      });
+      edges.push({ a: id, b: aid, kind: 'branch' });
+      k++;
+    }
+    for (const sc of f.scripts || []) {
+      const x = CX + k * (CW + GAP);
+      maxX = Math.max(maxX, x + CW);
+      const conocido = s.hooks.some(h => h.script === String(sc));
+      IMP_ITEMS[`imps:${i}:${k}`] = { kind: 'script', name: String(sc), missing: !conocido };
+      nodes.push({ id: `imps:${i}:${k}`, kind: 'script', label: String(sc).slice(0, 24), sub: 'script', x, y: y + 2, w: CW, h: 42 });
+      edges.push({ a: id, b: `imps:${i}:${k}`, kind: 'branch' });
+      k++;
+    }
+  });
+
+  // banda lateral, como en el mapa del plugin
+  const hx = maxX + 52;
+  let by = TOP;
+  const banda = (titulo, key, list) => {
+    if (!list.length) return;
+    nodes.push({ id: `titulo:${titulo}`, kind: 'titulo', label: titulo, x: hx, y: by, w: 190, h: 0 });
+    by += 22;
+    list.slice(0, IMP_MAX).forEach((it, i) => {
+      const id = `imp:${key}:${i}`;
+      IMP_ITEMS[id] = it;
+      nodes.push({ id, kind: it.kind, label: impLabel(it), sub: impSub(it), x: hx, y: by, w: 190, h: 44 });
+      by += 52;
+    });
+    by += 18;
+  };
+  banda('memoria', 'memory', s.memory);
+  banda('enclavamiento · sobre cualquier fase', 'hooks', s.hooks);
+  banda('mcp servers', 'mcp', s.mcp);
+
+  const height = Math.max(TOP + (cycle.length + 1) * ROW, by) + 20;
+  return { nodes, edges, width: hx + 190 + 20, height, hx };
+}
+
+/** El detalle de un componente importado: qué es, cuándo se usa, dónde vive. */
+function impItemHtml(it, extra = '') {
+  const filas = [];
+  if (it.description) filas.push(`<div class="nd-out say"><header>cuándo se usa</header>${esc(it.description)}</div>`);
+  if (it.kind === 'hook') {
+    filas.push(`<div class="nd-out"><header>dónde corre</header>${esc(`${it.event} · matcher: ${it.matcher}${it.script ? `\nscript: ${it.script}` : ''}`)}</div>`);
+  }
+  if (it.kind === 'mcp') filas.push(`<div class="nd-out"><header>conexión</header>${esc(`${it.transport} · ${it.target}`)}</div>`);
+  if (it.kind === 'agent') {
+    filas.push(`<div class="nd-out"><header>configuración</header>${esc(`modelo: ${it.model}${it.readOnly ? ' · solo lectura: audita, no escribe' : ''}`)}</div>`);
+  }
+  return `<div class="nd-head">${kindBadge(it.kind)}
+      <h3 class="nd-title">${esc(it.name || it.event)}</h3>
+      ${it.path ? '<button class="btn" id="ndOpenImp">Ver archivo</button>' : ''}
+      ${extra}</div>
+    <p class="what">${esc(KINDS[it.kind]?.what || '')}</p>
+    ${filas.join('')}
+    <p class="what"><code>${esc(it.path || '')}</code>${it.source && it.source !== 'proyecto' ? ` · del plugin ${esc(it.source)}` : ''}</p>`;
+}
+
+function renderImportDetail(id) {
+  if (!IMPORTED) return;
+  const [tag, key] = id.split(':');
+  const s = scopedScan();
+  let html = '';
+
+  if (tag === 'impg' || tag === 'impmore') {
+    const g = IMPORT_GROUPS.find(x => x.key === key);
+    const list = tag === 'impg' ? (s[key] || []) : (s[key] || []).slice(IMP_MAX);
+    html = `<div class="nd-head">${kindBadge(g.kind)}
+        <h3 class="nd-title">${esc(g.label)}${tag === 'impmore' ? ' · el resto' : ''}</h3></div>
+      <p class="what">${esc(tag === 'impmore'
+        ? `El mapa muestra ${IMP_MAX} por grupo para seguir siendo un mapa. Estos son los que no entraron:`
+        : g.help)}</p>
+      ${list.map(it => `<div class="nd-out"><header>${esc(impLabel(it))}</header>${esc(it.path || '')}</div>`).join('')}`;
+  } else if (tag === 'impc' && key !== 'skill') {
+    const sk = scopedSkill();
+    const f = (sk && IMP_CYCLES[sk.path] || [])[Number(key)];
+    if (!f) return;
+    html = `<div class="nd-head">${kindBadge('skill')}<h3 class="nd-title">${esc(f.label)}</h3></div>
+      ${f.help ? `<p class="what">${esc(f.help)}</p>` : ''}
+      ${f.gate ? '<p class="what">Puede abortar el run: es un gate, no un paso más.</p>' : ''}
+      <p class="what">Fase interpretada por Claude a partir del SKILL.md — es lectura de la prosa del skill, no telemetría de un run.</p>`;
+  } else {
+    const it = tag === 'impc' ? IMP_ITEMS['impc:skill'] : IMP_ITEMS[id];
+    if (!it || it.missing) {
+      // Claude nombró algo que el escaneo no encontró: se dice, no se inventa.
+      html = `<div class="nd-head">${kindBadge(it?.kind || 'script')}
+          <h3 class="nd-title">${esc(it?.name || id.split(':').pop())}</h3></div>
+        <p class="what">Claude lo nombró al interpretar el skill, pero el escaneo no lo encontró en el repo importado.</p>`;
+    } else {
+      // A un skill se le puede pedir el ciclo: eso usa Claude, así que primero
+      // se pregunta y recién con el sí del dev se ejecuta.
+      const conCiclo = it.kind === 'skill' && IMP_CYCLES[it.path];
+      const extra = it.kind === 'skill'
+        ? `<button class="btn" id="ndInterpret">${conCiclo ? 'Reinterpretar con Claude' : 'Interpretar ciclo con Claude'}</button>`
+        : '';
+      html = impItemHtml(it, extra);
+    }
+  }
+
+  $('nodeDetail').innerHTML = html;
+  const it = tag === 'impc' ? IMP_ITEMS['impc:skill'] : IMP_ITEMS[id];
+  const abrir = $('ndOpenImp');
+  if (abrir && it) abrir.addEventListener('click', () => openImported(it.path));
+  const interp = $('ndInterpret');
+  if (interp && it) interp.addEventListener('click', () => interpretarSkill(it, true));
+  showPanel('paneDetail');
+}
+
+/**
+ * El archivo importado se mira en el mismo modal del editor, pero en solo
+ * lectura: el studio solo escribe dentro del plugin, y un repo ajeno no se
+ * edita desde acá.
+ */
+async function openImported(relPath) {
+  if (!IMPORTED || !relPath) return;
+  try {
+    const q = new URLSearchParams({ dir: IMPORTED.repo.dir, path: relPath });
+    const f = await api('/api/import/file?' + q);
+    current = null; original = '';
+    $('edEmpty').hidden = true; $('edView').hidden = false;
+    if (!$('dlgEditor').open) $('dlgEditor').showModal();
+    $('edPath').textContent = `${IMPORTED.repo.dir}/${relPath}`;
+    $('edTitle').textContent = relPath.split('/').pop();
+    $('edKind').innerHTML = '';
+    $('edWhat').textContent = 'Archivo del repo importado — solo lectura. El studio solo escribe dentro del plugin.';
+    $('edFm').innerHTML = ''; $('edFm').hidden = true;
+    $('edBodyLabel').textContent = 'Contenido';
+    $('edText').value = f.content; $('edText').readOnly = true;
+    $('btnSave').disabled = true; $('btnRevert').disabled = true;
+    $('edDirty').textContent = '';
+  } catch (e) { banner('err', e.message); }
+}
+
+/**
+ * Interpretar el ciclo de un skill usa Claude: corre el CLI en esta máquina y
+ * gasta tokens de la sesión. Por eso SIEMPRE se pregunta antes — el import en
+ * sí es un escaneo determinístico y nunca invoca al modelo por su cuenta.
+ */
+async function interpretarSkill(sk, forzar) {
+  if (!IMPORTED) return;
+  if (!IMP_CYCLES[sk.path] || forzar) {
+    const ok = confirm(
+      `Para dibujar el ciclo de /${sk.name} hay que interpretar su SKILL.md con Claude.\n` +
+      'Corre el CLI `claude` en tu máquina y gasta tokens de tu sesión. ¿Dale?');
+    if (!ok) return;
+    banner('ok', `Interpretando /${sk.name} con Claude… puede tardar un rato.`);
+    try {
+      const r = await api('/api/import/interpret', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ dir: IMPORTED.repo.dir, skillPath: sk.path }),
+      });
+      IMP_CYCLES[sk.path] = r.phases;
+    } catch (e) {
+      return banner('err', `No se pudo interpretar: ${e.message}`);
+    }
+  }
+  // El mapa pasa al ciclo de ese skill.
+  const i = IMPORTED.scan.skills.findIndex(x => x.path === sk.path);
+  if (i !== -1) importScope = `skill:${i}`;
+  selectedNode = null;
+  guardarImport(); syncImportUi(); renderGraph();
+  banner('ok', `Ciclo de /${sk.name} interpretado. Es la lectura que hizo Claude del SKILL.md: si el skill cambia, reinterpretalo.`);
+}
+
+const LS_IMPORT = 'globant-sdlc-studio-import';
+
+function guardarImport() {
+  try {
+    if (IMPORTED) {
+      localStorage.setItem(LS_IMPORT, JSON.stringify({
+        url: IMPORTED.url, view: importView, scope: importScope, cycles: IMP_CYCLES,
+      }));
+    } else {
+      localStorage.removeItem(LS_IMPORT);
+    }
+  } catch { /* sin storage */ }
+}
+
+function syncImportUi() {
+  $('btnImportToggle').hidden = !IMPORTED;
+  $('btnImportToggle').textContent = importView ? 'Ver plugin' : 'Ver importado';
+  $('btnImportRemove').hidden = !IMPORTED;
+
+  // Selector de ciclo: con más de un plugin o más de un skill en el repo
+  // importado, se elige cuál mirar y el mapa se arma solo con lo de ese.
+  const sel = $('importScope');
+  if (IMPORTED) {
+    const s = IMPORTED.scan;
+    const ops = [{ v: 'all', t: 'todo el repo' }];
+    if (s.plugins.length > 1) {
+      for (const p of s.plugins) ops.push({ v: `plugin:${p.name}`, t: `plugin · ${p.name}` });
+    }
+    if (s.skills.length > 1) {
+      s.skills.forEach((sk, i) => ops.push({
+        v: `skill:${i}`,
+        t: `skill · /${sk.name}${sk.source !== 'proyecto' ? ` (${sk.source})` : ''}`,
+      }));
+    }
+    if (!ops.some(o => o.v === importScope)) importScope = 'all';
+    sel.innerHTML = ops.map(o =>
+      `<option value="${esc(o.v)}"${o.v === importScope ? ' selected' : ''}>${esc(o.t)}</option>`).join('');
+    sel.hidden = !importView || ops.length === 1;
+  } else {
+    sel.hidden = true;
+  }
+
+  $('railMeta').textContent = importView && IMPORTED
+    ? `importado: ${IMPORTED.repo.dir}`
+    : PLUGIN ? `${PLUGIN.pluginDir}  →  ${PLUGIN.targetRepo}` : '';
+}
+
+const resumenImport = s => [
+  ['memory', 'de memoria'], ['skills', 'skills'], ['commands', 'comandos'],
+  ['agents', 'subagentes'], ['hooks', 'hooks'], ['mcp', 'MCP'], ['plugins', 'plugins'],
+].map(([k, t]) => ({ n: (s[k] || []).length, t }))
+ .filter(x => x.n)
+ .map(x => `${x.n} ${x.t}`)
+ .join(' · ') || 'nada de Claude Code';
+
+async function doImport(url, silencioso) {
+  const r = await api('/api/import', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ url }),
+  });
+  IMPORTED = { ...r, url };
+  selectedNode = null;
+
+  // El repo importado pasa a ser también el repo objetivo: si después ejecutás
+  // una historia o abrís la consola, es contra ese repo.
+  $('repoUrl').value = url;
+  $('repoDir').value = r.repo.dir;
+  const sel = $('baseBranch');
+  sel.innerHTML = (r.repo.branches || []).map(b =>
+    `<option value="${esc(b)}"${b === r.repo.porDefecto ? ' selected' : ''}>${esc(b)}</option>`,
+  ).join('') || '<option value="">—</option>';
+  sel.disabled = !(r.repo.branches || []).length;
+
+  if (!silencioso) {
+    importView = true;
+    banner(r.scan.problems.length ? 'err' : 'ok',
+      `Importado: ${resumenImport(r.scan)}${r.scan.problems.length ? ' · ' + r.scan.problems.join(' · ') : ''}`);
+  }
+  guardarImport(); guardar();
+  syncImportUi(); renderGraph();
+  return r;
+}
+
+$('btnImport').addEventListener('click', () => {
+  $('importOut').hidden = true;
+  if (IMPORTED) $('importUrl').value = IMPORTED.url;
+  $('dlgImport').showModal();
+  $('importUrl').focus();
+});
+$('btnImportClose').addEventListener('click', () => $('dlgImport').close());
+$('importUrl').addEventListener('keydown', e => e.key === 'Enter' && $('btnImportGo').click());
+
+$('btnImportGo').addEventListener('click', async () => {
+  const url = $('importUrl').value.trim();
+  if (!url) return $('importUrl').focus();
+  $('importOut').hidden = false;
+  $('importOut').textContent = 'Clonando y escaneando…';
+  $('btnImportGo').disabled = true;
+  try {
+    importScope = 'all'; IMP_CYCLES = {};
+    await doImport(url, false);
+    $('dlgImport').close();
+  } catch (e) {
+    $('importOut').textContent = e.message;
+  } finally {
+    $('btnImportGo').disabled = false;
+  }
+});
+
+$('btnImportRemove').addEventListener('click', () => {
+  IMPORTED = null; importView = false; importScope = 'all'; IMP_CYCLES = {};
+  selectedNode = null;
+  guardarImport(); syncImportUi(); renderGraph();
+  $('dlgImport').close();
+  banner('ok', 'Importación quitada: se vuelve al mapa del plugin.');
+});
+
+$('btnImportToggle').addEventListener('click', () => {
+  importView = !importView; selectedNode = null;
+  guardarImport(); syncImportUi(); renderGraph();
+});
+
+$('importScope').addEventListener('change', () => {
+  importScope = $('importScope').value;
+  selectedNode = null;
+  guardarImport(); syncImportUi(); renderGraph();
+  // Si el scope es un skill sin ciclo interpretado, el panel ofrece pedirlo.
+  const sk = scopedSkill();
+  if (sk) { selectedNode = 'impc:skill'; IMP_ITEMS['impc:skill'] = sk; renderNodeDetail(); }
+});
+
+// Al recargar, la importación se rehace desde la URL guardada: el clon ya está
+// en disco, así que es un fetch más un escaneo, no un clon nuevo.
+async function restaurarImport() {
+  let d;
+  try { d = JSON.parse(localStorage.getItem(LS_IMPORT) || 'null'); } catch { return; }
+  if (!d?.url) return;
+  try {
+    IMP_CYCLES = d.cycles || {};
+    importScope = d.scope || 'all';
+    await doImport(d.url, true);
+    importView = d.view !== false && !run; // con un run vivo manda el ciclo del plugin
+    syncImportUi(); renderGraph();
+  } catch (e) {
+    banner('err', `No se pudo restaurar la importación de ${d.url}: ${e.message}`);
+  }
 }
 
 /* --------------------------------------------------- repositorio y VCS */
@@ -1646,7 +2196,7 @@ async function restaurar() {
 
 setSession('none', 'Sin sesión abierta');
 syncSource();
-load().then(restaurar).catch(e => banner('err', e.message));
+load().then(restaurar).then(restaurarImport).catch(e => banner('err', e.message));
 refreshAuth();
 </script>
 </body>

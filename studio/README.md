@@ -75,9 +75,9 @@ arranca limpio en vez de quedarse esperando un stream que no va a llegar.
 ## Cada componente dice qué es
 
 Todo lo que el panel muestra lleva su tipo: **Skill**, **Subagente**, **Hook**,
-**Script**, **MCP server**, **Referencia**, **Manifiesto**. Al abrir un archivo,
-el encabezado explica en una línea qué es esa clase de cosa, y el botón Glosario
-lista las siete.
+**Script**, **MCP server**, **Comando**, **Memoria**, **Referencia**,
+**Manifiesto**. Al abrir un archivo, el encabezado explica en una línea qué es
+esa clase de cosa, y el botón Glosario las lista todas.
 
 **Cada etiqueta abre lo que dice ser.** Suena obvio y es la parte que más fácil
 se rompe: un nodo de hook que abre el `.sh` está mintiendo, porque el hook se
@@ -136,6 +136,49 @@ la historia de vuelta al formulario para corregirla y volver a tirar el run.
 
 Como no hay ticket al que escribirle, el PR es el único registro: en este modo la
 descripción lleva los criterios completos en vez de un link.
+
+## Importar LLM
+
+El botón **Importar LLM** pide una sola cosa: el link de un repositorio (o una
+carpeta local). El studio lo clona en el workspace, escanea todo lo que Claude
+Code cargaría ahí y **regenera el mapa del ciclo solo con eso**: los
+componentes del plugin salen de la vista. `Ver plugin` / `Ver importado`
+alterna entre los dos mapas sin perder nada, y `Quitar importación` vuelve al
+estado original.
+
+El escaneo es determinístico y de solo lectura. Cubre las dos formas en que un
+repo aporta componentes:
+
+| De dónde | Qué |
+|---|---|
+| `CLAUDE.md`, `.claude/rules/` | Memoria |
+| `.claude/skills/`, `.claude/commands/`, `.claude/agents/` | Skills, comandos, subagentes del proyecto |
+| `.claude/settings.json`, `.mcp.json` | Hooks y MCP servers del proyecto |
+| `.claude-plugin/` en el root o bajo `plugins/` | Cada plugin del repo, con sus skills, agentes, hooks y MCP |
+
+Como el mapa importado no es el ciclo del skill `us`, la vía de fases se
+reemplaza por el orden en que Claude Code carga lo que hay en ese repo al armar
+una sesión: memoria primero, después los entrypoints, después lo que corre por
+abajo. Solo aparecen los grupos que tienen algo.
+
+**Con más de un plugin o más de un skill**, el rail muestra un selector de
+ciclo: elegís cuál mirar y el mapa se arma solo con los componentes de esa
+fuente. La memoria del proyecto queda siempre, porque Claude la carga se corra
+lo que se corra.
+
+**Interpretar el ciclo de un skill usa Claude, y siempre pregunta antes.** El
+escaneo lista componentes pero no puede saber en qué orden los orquesta un
+skill: eso está en la prosa de su SKILL.md. Al clickear un skill importado, el
+panel ofrece *Interpretar ciclo con Claude*; recién con tu confirmación corre
+el CLI —gasta tokens de tu sesión— y el mapa pasa a mostrar las fases que
+Claude leyó, con sus subagentes colgando. Es la lectura de un texto, no
+telemetría: si el skill cambia, reinterpretalo. El import en sí **nunca**
+invoca al modelo por su cuenta.
+
+Qué **no** hace importar: no modifica el repo importado (sus archivos se abren
+en solo lectura), no instala nada, no corre ningún componente y no toca el
+plugin propio. Lo único que cambia fuera del mapa es que el repo importado
+queda como repo objetivo en Configuración, así el próximo run corre contra él.
 
 ## Sesión de Claude Code
 
@@ -295,6 +338,13 @@ guardas puestas:
 - La historia escrita a mano es la única escritura fuera del plugin, y va
   siempre a `.claude/run/<ID>/story.json` del repo objetivo: el ID pasa por la
   misma validación y la ruta resuelta se verifica contra ese directorio.
+- Los archivos de un repo importado se sirven en solo lectura y únicamente de
+  directorios que pasaron por `/api/import` en esta sesión del servidor: sin
+  esa lista el endpoint sería un lector de disco arbitrario con un parámetro
+  `dir`. La ruta además se verifica contra el directorio, como en el plugin.
+- Interpretar un skill con Claude solo corre tras la confirmación explícita en
+  la UI. El prompt le pide al modelo no usar herramientas: todo lo que necesita
+  viaja en el mensaje.
 - El studio nunca ve ni almacena credenciales: el login lo hace el CLI en su
   propio proceso, y el studio solo muestra su salida y le pasa lo que escribas
   en el campo de código.

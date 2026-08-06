@@ -285,6 +285,193 @@ async function scanPlugin() {
   return out;
 }
 
+// ------------------------------------------------- importación de otro repo
+//
+// "Importar LLM": se pega el link de un repo y el studio arma el mapa con todo
+// lo que Claude Code cargaría ahí — memoria, skills, comandos, subagentes,
+// hooks, MCP servers y plugins propios del repo. El escaneo es de solo
+// lectura y genérico: no asume el ciclo del skill `us` ni ningún layout más
+// allá de las convenciones de Claude Code (.claude/, .claude-plugin/, .mcp.json).
+
+/**
+ * Directorios ya importados en esta sesión del studio. El endpoint de lectura
+ * de archivos importados solo sirve lo que está acá adentro: sin esto sería un
+ * lector de disco arbitrario con un parámetro `dir`.
+ */
+const importedDirs = new Set();
+
+const readIf = async f => { try { return await fsp.readFile(f, 'utf8'); } catch { return null; } };
+
+async function scanSkillsInto(skillsDir, source, rel, out) {
+  let names = [];
+  try {
+    names = (await fsp.readdir(skillsDir, { withFileTypes: true }))
+      .filter(d => d.isDirectory()).map(d => d.name).sort();
+  } catch { return; }
+  for (const name of names) {
+    const file = path.join(skillsDir, name, 'SKILL.md');
+    const text = await readIf(file);
+    if (text === null) continue;
+    const fm = parseFrontmatter(text);
+    out.skills.push({
+      kind: 'skill', name: fm.data?.name || name, path: rel(file),
+      description: fm.data?.description || '', source,
+    });
+  }
+}
+
+async function scanAgentsInto(agentsDir, source, rel, out) {
+  for (const f of await listDir(agentsDir, n => n.endsWith('.md'))) {
+    const file = path.join(agentsDir, f);
+    const text = await readIf(file);
+    if (text === null) continue;
+    const d = parseFrontmatter(text).data || {};
+    const denied = Array.isArray(d.disallowedTools)
+      ? d.disallowedTools
+      : String(d.disallowedTools || '').split(',').map(s => s.trim()).filter(Boolean);
+    out.agents.push({
+      kind: 'agent', name: d.name || f.replace(/\.md$/, ''), path: rel(file),
+      description: d.description || '', model: d.model || '(heredado)',
+      readOnly: denied.includes('Write') && denied.includes('Edit'), source,
+    });
+  }
+}
+
+/** Los comandos se namespacian por subcarpeta: `commands/db/reset.md` → `db:reset`. */
+async function scanCommandsInto(cmdDir, source, rel, out, prefix = '') {
+  let entries = [];
+  try { entries = await fsp.readdir(cmdDir, { withFileTypes: true }); } catch { return; }
+  for (const e of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    if (e.isDirectory()) {
+      await scanCommandsInto(path.join(cmdDir, e.name), source, rel, out, `${prefix}${e.name}:`);
+      continue;
+    }
+    if (!e.name.endsWith('.md')) continue;
+    const file = path.join(cmdDir, e.name);
+    const fm = parseFrontmatter((await readIf(file)) || '');
+    out.commands.push({
+      kind: 'command', name: prefix + e.name.replace(/\.md$/, ''), path: rel(file),
+      description: fm.data?.description || '', source,
+    });
+  }
+}
+
+/** El mismo esquema `{"hooks": {...}}` sirve para hooks.json de un plugin y para settings.json. */
+function collectHooksInto(data, relPath, source, out) {
+  for (const [event, entries] of Object.entries(data.hooks || {})) {
+    for (const entry of entries || []) {
+      for (const h of entry.hooks || []) {
+        const scriptName = (String(h.command || '').match(/([A-Za-z0-9._-]+\.sh)/) || [])[1] || null;
+        out.hooks.push({
+          kind: 'hook', event, matcher: entry.matcher || '*',
+          description: h.description || '', script: scriptName, path: relPath, source,
+        });
+      }
+    }
+  }
+}
+
+function collectMcpInto(data, relPath, source, out) {
+  for (const [name, cfg] of Object.entries(data.mcpServers || {})) {
+    out.mcp.push({
+      kind: 'mcp', name,
+      transport: cfg.type || (cfg.command ? 'stdio' : 'desconocido'),
+      target: cfg.url || [cfg.command, ...(cfg.args || [])].filter(Boolean).join(' '),
+      path: relPath, source,
+    });
+  }
+}
+
+/**
+ * Escanea un repo cualquiera buscando lo que Claude Code cargaría ahí.
+ *
+ * Cubre las dos formas en que un repo aporta componentes: la configuración de
+ * proyecto (`CLAUDE.md`, `.claude/`, `.mcp.json`) y los plugins que el repo
+ * trae consigo (`.claude-plugin/` en el root o bajo `plugins/`). Cada
+ * componente lleva `source` para distinguir de dónde salió.
+ */
+async function scanClaudeRepo(rootDir) {
+  const rel = p => path.relative(rootDir, p).split(path.sep).join('/');
+  const out = {
+    dir: rootDir, memory: [], skills: [], commands: [], agents: [],
+    hooks: [], mcp: [], plugins: [], problems: [],
+  };
+
+  // memoria: CLAUDE.md y las reglas que importa
+  for (const f of ['CLAUDE.md', '.claude/CLAUDE.md']) {
+    const text = await readIf(path.join(rootDir, f));
+    if (text !== null) {
+      out.memory.push({ kind: 'memory', name: f, path: f, bytes: Buffer.byteLength(text), source: 'proyecto' });
+    }
+  }
+  const rulesDir = path.join(rootDir, '.claude/rules');
+  for (const f of await listDir(rulesDir, n => n.endsWith('.md'))) {
+    out.memory.push({ kind: 'memory', name: `rules/${f}`, path: rel(path.join(rulesDir, f)), source: 'proyecto' });
+  }
+
+  // configuración de proyecto
+  const dot = path.join(rootDir, '.claude');
+  await scanSkillsInto(path.join(dot, 'skills'), 'proyecto', rel, out);
+  await scanAgentsInto(path.join(dot, 'agents'), 'proyecto', rel, out);
+  await scanCommandsInto(path.join(dot, 'commands'), 'proyecto', rel, out);
+  try {
+    collectHooksInto(
+      JSON.parse(await fsp.readFile(path.join(dot, 'settings.json'), 'utf8')),
+      '.claude/settings.json', 'proyecto', out,
+    );
+  } catch { /* sin settings o sin hooks */ }
+  try {
+    collectMcpInto(
+      JSON.parse(await fsp.readFile(path.join(rootDir, '.mcp.json'), 'utf8')),
+      '.mcp.json', 'proyecto', out,
+    );
+  } catch { /* opcional */ }
+
+  // plugins del repo: en el root o bajo plugins/
+  const pluginDirs = [];
+  if (fs.existsSync(path.join(rootDir, '.claude-plugin/plugin.json'))) pluginDirs.push(rootDir);
+  const plugRoot = path.join(rootDir, 'plugins');
+  try {
+    for (const d of (await fsp.readdir(plugRoot, { withFileTypes: true })).filter(x => x.isDirectory())) {
+      if (fs.existsSync(path.join(plugRoot, d.name, '.claude-plugin/plugin.json'))) {
+        pluginDirs.push(path.join(plugRoot, d.name));
+      }
+    }
+  } catch { /* sin plugins/ */ }
+
+  for (const pdir of pluginDirs) {
+    let name = path.basename(pdir);
+    try {
+      name = JSON.parse(await fsp.readFile(path.join(pdir, '.claude-plugin/plugin.json'), 'utf8')).name || name;
+    } catch (e) {
+      out.problems.push(`${rel(path.join(pdir, '.claude-plugin/plugin.json'))}: ${e.message}`);
+    }
+    out.plugins.push({ kind: 'plugin', name, path: rel(path.join(pdir, '.claude-plugin/plugin.json')) });
+    await scanSkillsInto(path.join(pdir, 'skills'), name, rel, out);
+    await scanAgentsInto(path.join(pdir, 'agents'), name, rel, out);
+    await scanCommandsInto(path.join(pdir, 'commands'), name, rel, out);
+    try {
+      collectHooksInto(
+        JSON.parse(await fsp.readFile(path.join(pdir, 'hooks/hooks.json'), 'utf8')),
+        rel(path.join(pdir, 'hooks/hooks.json')), name, out,
+      );
+    } catch { /* sin hooks */ }
+    try {
+      collectMcpInto(
+        JSON.parse(await fsp.readFile(path.join(pdir, '.mcp.json'), 'utf8')),
+        rel(path.join(pdir, '.mcp.json')), name, out,
+      );
+    } catch { /* opcional */ }
+  }
+
+  const total = out.memory.length + out.skills.length + out.commands.length
+    + out.agents.length + out.hooks.length + out.mcp.length;
+  if (!total) {
+    out.problems.push('El repo no tiene componentes de Claude Code: ni CLAUDE.md, ni .claude/, ni plugins.');
+  }
+  return out;
+}
+
 // ------------------------------------------------------- historia manual
 
 // Mismo patrón que valida el endpoint de run: sin puntos ni barras, así que no
@@ -1037,6 +1224,90 @@ const server = http.createServer(async (req, res) => {
       const { url: repoUrl } = JSON.parse(await readBody(req));
       const out = await prepararRepo(repoUrl);
       return json(res, 200, out);
+    }
+
+    // --- Importar LLM: escanear otro repo y redibujar el mapa con lo que hay ---
+    if (p === '/api/import' && req.method === 'POST') {
+      const { url: repoUrl } = JSON.parse(await readBody(req));
+      const repo = await prepararRepo(repoUrl);
+      importedDirs.add(repo.dir);
+      const scan = await scanClaudeRepo(repo.dir);
+      return json(res, 200, { repo, scan });
+    }
+
+    // Lectura de un archivo del repo importado. Solo lectura y solo dentro de
+    // un directorio que pasó por /api/import: el studio escribe únicamente
+    // dentro del plugin, y eso no cambia acá.
+    if (p === '/api/import/file' && req.method === 'GET') {
+      const dir = path.resolve(String(url.searchParams.get('dir') || ''));
+      if (!importedDirs.has(dir)) {
+        return json(res, 403, { error: 'ese directorio no fue importado en esta sesión del studio' });
+      }
+      const abs = path.resolve(dir, String(url.searchParams.get('path') || ''));
+      if (!abs.startsWith(dir + path.sep)) {
+        return json(res, 403, { error: 'ruta fuera del repo importado' });
+      }
+      const text = await fsp.readFile(abs, 'utf8');
+      return json(res, 200, { path: url.searchParams.get('path'), content: text.slice(0, 200_000) });
+    }
+
+    // Interpretación con Claude. El escaneo determinístico lista componentes,
+    // pero el orden en que un skill orquestador los usa está escrito en prosa
+    // en su SKILL.md: eso solo lo puede leer un modelo. Como ejecuta el binario
+    // `claude` y gasta tokens, este endpoint corre únicamente cuando el dev lo
+    // aceptó explícitamente en la UI — nunca como parte del import.
+    if (p === '/api/import/interpret' && req.method === 'POST') {
+      const { dir: rawDir, skillPath } = JSON.parse(await readBody(req));
+      const dir = path.resolve(String(rawDir || ''));
+      if (!importedDirs.has(dir)) {
+        return json(res, 403, { error: 'ese directorio no fue importado en esta sesión del studio' });
+      }
+      const abs = path.resolve(dir, String(skillPath || ''));
+      if (!abs.startsWith(dir + path.sep)) {
+        return json(res, 403, { error: 'ruta fuera del repo importado' });
+      }
+      const skillText = (await fsp.readFile(abs, 'utf8')).slice(0, 60_000);
+      const scan = await scanClaudeRepo(dir);
+      const prompt = [
+        'Te paso el SKILL.md de un skill orquestador de Claude Code y los componentes disponibles en su repo.',
+        'Devolvé SOLO un objeto JSON válido, sin markdown ni texto alrededor, con esta forma exacta:',
+        '{"phases":[{"label":"...","gate":false,"help":"...","agents":["nombre"],"scripts":["archivo.sh"]}]}',
+        'Reglas: las fases en el orden real del ciclo que describe el skill; máximo 10 fases;',
+        '"agents" solo con nombres de la lista de subagentes; "scripts" solo con nombres de la lista de scripts;',
+        '"gate" es true si esa fase puede abortar el run; "help" es una línea en español rioplatense de qué pasa ahí.',
+        'No uses ninguna herramienta: todo lo que necesitás está en este mensaje.',
+        `Subagentes disponibles: ${scan.agents.map(a => a.name).join(', ') || '(ninguno)'}`,
+        `Scripts mencionables: ${[...new Set(scan.hooks.map(h => h.script).filter(Boolean))].join(', ') || '(ninguno)'}`,
+        'SKILL.md:',
+        '---',
+        skillText,
+      ].join('\n');
+
+      const r = await runClaude(['-p', '--output-format', 'json', prompt]);
+      let texto = r.stdout;
+      try {
+        const payload = JSON.parse(r.stdout);
+        if (typeof payload.result === 'string') texto = payload.result;
+      } catch { /* salida no JSON: se busca el objeto en el texto crudo */ }
+      const m = String(texto).match(/\{[\s\S]*\}/);
+      let phases = null;
+      try { phases = m && JSON.parse(m[0]).phases; } catch { /* abajo se reporta */ }
+      if (!Array.isArray(phases) || !phases.length) {
+        return json(res, 502, {
+          error: 'Claude no devolvió un ciclo interpretable',
+          detail: String(r.stderr || texto).slice(0, 400),
+        });
+      }
+      // Se sanea la forma: el front dibuja esto tal cual y no debería poder
+      // romperse por una respuesta creativa del modelo.
+      phases = phases.slice(0, 10).map(f => ({
+        label: String(f.label || 'fase').slice(0, 40),
+        gate: !!f.gate,
+        help: String(f.help || '').slice(0, 200),
+        agents: (Array.isArray(f.agents) ? f.agents : []).map(a => String(a).slice(0, 60)).slice(0, 6),
+        scripts: (Array.isArray(f.scripts) ? f.scripts : []).map(s => String(s).slice(0, 60)).slice(0, 4),
+      }));
+      return json(res, 200, { phases });
     }
 
     if (p === '/api/vcs/login' && req.method === 'POST') {
