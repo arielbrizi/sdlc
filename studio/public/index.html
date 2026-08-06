@@ -294,7 +294,7 @@ input.mono,.field.mono{font-family:var(--mono);font-size:12.5px}
 .card-foot .grow{flex:1}
 
 /* --------------------------------------------------------- tipo de componente */
-/* Los nombres son los de Claude Code —skill, subagente, hook, MCP server— para
+/* Los nombres son los de Claude Code —Skill, Subagent, Hook, MCP server— para
    que usar el studio enseñe el vocabulario real y no uno inventado acá. */
 .kind{
   display:inline-flex;align-items:center;gap:5px;flex-shrink:0;
@@ -408,7 +408,7 @@ table.cat tbody tr[data-open="1"]{background:color-mix(in srgb,var(--accent) 9%,
    un cuarto del ancho para no decir nada, y el mapa —que es lo que se mira—
    quedaba apretado y con scroll horizontal. */
 .ciclo-grid{display:grid;grid-template-columns:1fr;gap:14px;align-items:start}
-.ciclo-grid.with-detail{grid-template-columns:minmax(0,1fr) minmax(280px,23%)}
+.ciclo-grid.with-detail{grid-template-columns:minmax(0,1fr) minmax(360px,32%)}
 @media (max-width:1080px){.ciclo-grid.with-detail{grid-template-columns:1fr}}
 /* El mapa scrollea adentro de su tarjeta en vez de estirar la página: así la
    referencia de estados y el panel de detalle no se van abajo del pliegue. */
@@ -522,8 +522,9 @@ table.cat tbody tr[data-open="1"]{background:color-mix(in srgb,var(--accent) 9%,
 
 /* ------------------------------------------------------- panel de detalle */
 .detail{display:flex;flex-direction:column;gap:12px;padding:16px}
-.detail-head{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
-.detail-head h3{font-size:15px}
+.detail-head{display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding-bottom:2px}
+.detail-head h3{font-size:17px;line-height:1.25}
+.detail-head .detail-status{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}
 .detail-summary{padding:12px 13px;border:1px solid var(--border);border-radius:var(--r-md);
   background:var(--surface-2)}
 .detail-summary .label{display:block;margin-bottom:4px;color:var(--subtle);
@@ -532,6 +533,18 @@ table.cat tbody tr[data-open="1"]{background:color-mix(in srgb,var(--accent) 9%,
 .detail-context{display:flex;flex-direction:column;gap:4px}
 .detail-context .label{color:var(--subtle);font-size:10.5px;font-weight:700;
   letter-spacing:.07em;text-transform:uppercase}
+.detail-facts{display:grid;grid-template-columns:1fr;gap:8px}
+.detail-fact{padding:11px 12px;border:1px solid var(--border);border-radius:var(--r-md);
+  background:var(--surface)}
+.detail-fact .label{display:block;margin-bottom:5px;color:var(--subtle);font-size:10.5px;
+  font-weight:700;letter-spacing:.07em;text-transform:uppercase}
+.detail-fact code{display:inline-block;margin-bottom:5px;color:var(--text);font-size:12px;
+  overflow-wrap:anywhere}
+.detail-values{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:5px}
+.detail-values code{margin:0;padding:2px 6px;border:1px solid var(--border);
+  border-radius:5px;background:var(--surface-2);overflow-wrap:normal}
+.detail-fact p{margin:0;color:var(--muted);font-size:12px;line-height:1.5}
+.detail-run strong{color:var(--text)}
 .detail-actions{display:flex;gap:8px;flex-wrap:wrap}
 .agent-progress{padding:12px 13px;border:1px solid var(--border);border-radius:var(--r-md);
   background:var(--surface-2)}
@@ -1082,7 +1095,7 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
         </div>
 
         <div class="card">
-          <div class="card-head"><h2>Permisos y herramientas</h2>
+          <div class="card-head"><h2>Permisos y Tools</h2>
             <span class="sub">qué puede hacer la sesión</span></div>
           <div class="card-body">
             <div class="notice" style="margin-bottom:18px">
@@ -1101,7 +1114,7 @@ dialog::backdrop{background:rgba(10,14,20,.55);backdrop-filter:blur(2px)}
                 </select>
               </div>
               <div class="f">
-                <label class="f-label" for="allowedTools">Herramientas permitidas <code>--allowedTools</code></label>
+                <label class="f-label" for="allowedTools">Tools permitidas <code>--allowedTools</code></label>
                 <input class="field mono" id="allowedTools" placeholder="Bash,Write,Edit" aria-describedby="hTools">
                 <span class="f-help" id="hTools">Acepta patrones: <code>Bash(git *)</code>.</span>
               </div>
@@ -1507,39 +1520,56 @@ const KINDS = {
   skill: {
     label: 'Skill',
     what: 'Un instructivo que Claude Code carga cuando la tarea lo amerita. Este es el que corre cuando escribís /us: define el ciclo completo y en qué orden interviene cada quien.',
+    docs: 'https://code.claude.com/docs/en/skills',
   },
   agent: {
-    label: 'Subagente',
-    what: 'Claude trabajando en una sesión aparte, con su propio instructivo y sus propias herramientas. No ve el contexto de la sesión principal, y por eso puede auditar sin arrastrar lo que ya se venía decidiendo.',
+    label: 'Subagent',
+    what: 'Un asistente especializado que corre en su propio context window, con un system prompt, tools y permisos propios. Devuelve el resultado a la conversación principal.',
+    docs: 'https://code.claude.com/docs/en/sub-agents',
   },
   hook: {
     label: 'Hook',
-    what: 'Un comando que Claude Code ejecuta por su cuenta, antes o después de usar una herramienta. Es código, no una instrucción: se cumple siempre, sin depender de que el modelo se acuerde.',
+    what: 'Una automatización que Claude Code ejecuta cuando ocurre un hook event. El matcher group decide cuándo aplica y el hook handler realiza la acción.',
+    docs: 'https://code.claude.com/docs/en/hooks',
   },
   script: {
     label: 'Script',
-    what: 'Un archivo .sh que vive en el plugin. Lo llama un hook o el skill; Claude no lo ejecuta por su cuenta.',
+    what: 'Un archivo ejecutable del plugin. Puede ser invocado por un Skill o funcionar como command hook handler; no se carga como instrucciones.',
+    docs: 'https://code.claude.com/docs/en/plugins-reference',
   },
   mcp: {
     label: 'MCP server',
-    what: 'Model Context Protocol: la conexión a un sistema externo —Jira, Azure DevOps, GitHub— que le agrega herramientas nuevas a Claude para leer y escribir ahí.',
+    what: 'Un servidor Model Context Protocol que expone tools y resources de sistemas externos —como Jira, Azure DevOps o GitHub— a Claude Code.',
+    docs: 'https://code.claude.com/docs/en/mcp',
   },
   reference: {
-    label: 'Referencia',
-    what: 'Un archivo que el skill trae consigo y abre solo cuando lo necesita. No ocupa contexto hasta que se lee.',
+    label: 'Supporting file',
+    what: 'Un archivo adicional de un Skill —documentación, ejemplos, templates o scripts— que Claude abre solamente cuando SKILL.md indica que hace falta.',
+    docs: 'https://code.claude.com/docs/en/skills#add-supporting-files',
   },
   manifest: {
-    label: 'Manifiesto',
-    what: 'plugin.json: declara el plugin —nombre, descripción— y las opciones que cada equipo puede configurar al instalarlo.',
+    label: 'Plugin manifest',
+    what: 'El archivo .claude-plugin/plugin.json que define metadata y configuración del Plugin, como nombre, versión y opciones.',
+    docs: 'https://code.claude.com/docs/en/plugins-reference#plugin-manifest-schema',
   },
   tool: {
-    label: 'Herramienta',
-    what: 'Lo que Claude puede hacer además de escribir texto: Bash, Read, Edit, Write, Task. En la consola vas a ver cada una a medida que la usa.',
+    label: 'Tool',
+    what: 'Una capacidad que Claude Code puede invocar, como Bash, Read, Edit, Write o Agent. Cada tool call aparece en la consola mientras se ejecuta.',
+    docs: 'https://code.claude.com/docs/en/tools-reference',
   },
   plugin: {
     label: 'Plugin',
     what: 'El paquete que junta todo lo anterior y se instala desde un marketplace. Acá el plugin es sdlc.',
+    docs: 'https://code.claude.com/docs/en/plugins-reference',
   },
+};
+
+// Los nombres de esta tabla son hook events de Claude Code. La explicación se
+// mantiene corta para que el panel enseñe el lifecycle sin reemplazar la docs.
+const HOOK_EVENT_HELP = {
+  PreToolUse: 'Se dispara antes de ejecutar una tool call. El hook handler puede inspeccionarla y bloquearla.',
+  PostToolUse: 'Se dispara después de que una tool call termina correctamente.',
+  SubagentStop: 'Se dispara cuando un Subagent termina y devuelve el control a la conversación principal.',
 };
 
 // Qué pasa en cada fase, en una línea y sin jerga.
@@ -2185,20 +2215,20 @@ const FIELD_HELP = {
     help: 'Tope de idas y vueltas antes de cortar. Es la red contra un agente que se queda en loop.',
   },
   disallowedTools: {
-    label: 'Herramientas prohibidas',
+    label: 'Tools prohibidas',
     help: 'Separadas por coma. "Write, Edit" deja al agente en modo solo lectura: puede auditar pero no tocar código. Es la separación entre quien escribe y quien evalúa.',
   },
 };
 
 /** Etiqueta del cuerpo según el tipo de componente: no todos son instrucciones. */
 const BODY_LABEL = {
-  agent: 'Instrucciones del subagente',
-  skill: 'Instrucciones del skill',
-  script: 'Contenido del script',
-  hook: 'Definición de los hooks',
+  agent: 'Instrucciones del Subagent',
+  skill: 'Instrucciones del Skill',
+  script: 'Contenido del Script',
+  hook: 'Definición de los Hooks',
   mcp: 'Definición de los MCP servers',
-  manifest: 'Manifiesto',
-  reference: 'Contenido',
+  manifest: 'Plugin manifest',
+  reference: 'Supporting file',
 };
 
 /** Un campo del frontmatter: etiqueta en criollo, clave real, control y ayuda. */
@@ -2870,7 +2900,7 @@ function onEvent(ev) {
 
 // El tipo crudo del evento no le dice nada a quien no escribió el servidor.
 const EV_LABEL = {
-  start: 'inicio', init: 'conexión', ready: 'lista', phase: 'fase', agent: 'subagente',
+  start: 'inicio', init: 'conexión', ready: 'lista', phase: 'fase', agent: 'Subagent',
   activity: 'actividad', recovery: 'recuperación',
   tool: 'herramienta', output: 'salida', say: 'claude', ask: 'vos', artifact: 'archivo',
   hook: 'hook',
@@ -2920,7 +2950,7 @@ function logEvent(ev) {
         ? 'La herramienta terminó con error y no informó más detalles.'
         : ev.success || 'Operación completada correctamente.'))}</span>`
     : ev.t === 'tool'
-    ? `<span class="ev-m ev-tool"><b>${esc(ev.agent ? 'Subagente' : ev.name)}</b> ${esc(ev.summary || '')}</span>`
+    ? `<span class="ev-m ev-tool"><b>${esc(ev.agent ? 'Subagent' : ev.name)}</b> ${esc(ev.summary || '')}</span>`
     : `<span class="ev-m">${esc(ev.text || ev.message || ev.reason || ev.detail ||
         ev.file || ev.cmd || ev.agent || ev.script || ev.status || '')}</span>`;
 
@@ -2979,7 +3009,7 @@ const STATE_WORD = {
   active: 'en curso', paused: 'en pausa', done: 'listo',
   blocked: 'bloqueado', error: 'interrumpido',
 };
-const activationLabel = count => `${count} ${count === 1 ? 'activación' : 'activaciones'}`;
+const activationLabel = count => `${count} ${count === 1 ? 'ejecución' : 'ejecuciones'}`;
 const agentSteps = name => PLUGIN?.agents.find(a => a.name === name)?.progressSteps || [];
 const agentProgress = name => {
   const steps = agentSteps(name);
@@ -3127,7 +3157,7 @@ function renderGraph() {
     const hookCount = n.kind === 'hook' ? (HOOK_COUNTS[n.id] || 0) : null;
     const hookState = hookCount == null
       ? null
-      : hookCount === 0 ? 'sin activaciones' : activationLabel(hookCount);
+      : hookCount === 0 ? 'sin ejecuciones' : activationLabel(hookCount);
     const sub = apagado
       ? 'deshabilitado · no participa'
       : warning ? '⚠ falta link de Figma'
@@ -3300,16 +3330,17 @@ function renderNodeDetail() {
   const file = nodeFile(id);
   // Un hook se declara en hooks.json y ejecuta un script: son dos componentes,
   // y desde el nodo se llega a los dos por separado.
-  const hookScript = kind === 'hook'
-    ? PLUGIN.hooks[Number(id.split(':')[2])]?.scriptPath
-    : null;
+  const hook = kind === 'hook' ? PLUGIN.hooks[Number(id.split(':')[2])] : null;
+  const hookScript = hook?.scriptPath || null;
 
   const faseDe = n => PHASES.find(p => String(p.id) === n)?.label || n;
   const title = kind === 'phase' ? faseDe(name)
     : kind === 'main' ? `Sesión principal · ${faseDe(name)}`
     : name;
 
-  const estado = STATE_WORD[nodeState(id)];
+  // Un Hook no tiene un lifecycle de "listo": cada hook event puede dispararlo
+  // muchas veces. Su dato útil es cuántas ejecuciones tuvo en este run.
+  const estado = kind === 'hook' ? null : STATE_WORD[nodeState(id)];
   const hookCount = kind === 'hook' ? (HOOK_COUNTS[id] || 0) : null;
   const esDiseno = (kind === 'phase' && name === '3') || (kind === 'agent' && name === 'ux');
   const warningFigma = esDiseno && uxSinFigma();
@@ -3330,28 +3361,64 @@ function renderNodeDetail() {
       }).join('')}</ol>
     </div>` : '';
 
-  const cuerpo = entries.length
+  const cuerpo = kind === 'hook' ? '' : entries.length
     ? entries.map(e => `
         <div class="out ${e.kind}">
           <header>${esc(e.title)}</header>${esc(e.text)}
         </div>`).join('')
-    : `<p class="prose">${kind === 'hook'
-        ? 'Este hook todavía no se activó en el run actual.'
-        : 'Todavía no hay salida de este componente en el run actual.'}</p>`;
+    : '<p class="prose">Todavía no hay salida de este componente en el run actual.</p>';
+
+  const kindInfo = KINDS[NODE_KIND[kind] || 'skill'];
+  const matcherValues = String(hook?.matcher || '*').split(/[|,]/)
+    .map(value => value.trim()).filter(Boolean);
+  const matcherHtml = matcherValues.length > 1
+    ? `<span class="detail-values">${matcherValues.map(value => `<code>${esc(value)}</code>`).join('')}</span>`
+    : `<code>${esc(matcherValues[0] || '*')}</code>`;
+  const hookDetail = hook ? `
+    <div class="detail-summary">
+      <span class="label">Qué hace este Hook</span>
+      <p>${esc(hook.description || 'Este Hook no declara una description.')}</p>
+    </div>
+    <div class="detail-facts">
+      <div class="detail-fact">
+        <span class="label">Hook event</span>
+        <code>${esc(hook.event)}</code>
+        <p>${esc(HOOK_EVENT_HELP[hook.event] || 'Punto del lifecycle de Claude Code que dispara este Hook.')}</p>
+      </div>
+      <div class="detail-fact">
+        <span class="label">Matcher group</span>
+        ${matcherHtml}
+        <p>${hook.matcher && hook.matcher !== '*'
+          ? 'Filtra por tool name: el hook handler solo corre para las Tools que coinciden.'
+          : 'Sin filtro: el hook handler corre cada vez que ocurre este hook event.'}</p>
+      </div>
+      <div class="detail-fact">
+        <span class="label">Hook handler · command</span>
+        <code>${esc(hook.script || 'command')}</code>
+        <p>Claude Code le pasa el JSON del hook event por stdin e interpreta su exit code y output según ese evento.</p>
+      </div>
+    </div>
+    <div class="detail-summary detail-run">
+      <span class="label">Run actual</span>
+      <p><strong>${esc(activationLabel(hookCount))}.</strong> El contador indica cuántas veces corrió el hook handler; no cuántas tool calls bloqueó.</p>
+    </div>` : '';
 
   $('nodeDetail').innerHTML = `
     <div class="detail">
       <div class="detail-head">
         ${kindBadge(NODE_KIND[kind] || 'skill')}
         <h3>${esc(title)}</h3>
-        ${estado ? `<span class="tag">${esc(estado)}</span>` : ''}
-        ${hookCount != null ? `<span class="tag">${activationLabel(hookCount)}</span>` : ''}
+        <span class="detail-status">
+          ${estado ? `<span class="tag">${esc(estado)}</span>` : ''}
+          ${hookCount != null ? `<span class="tag">${activationLabel(hookCount)}</span>` : ''}
+        </span>
       </div>
       ${kind === 'phase' && PHASE_HELP[name] ? `<p class="prose">${esc(PHASE_HELP[name])}</p>` : ''}
       ${warningFigma ? `<div class="notice warn">
         <span><b>Falta configurar el link de Figma.</b><br>
         @ux está habilitado, pero no tiene una pantalla de referencia para esta feature.</span>
       </div>` : ''}
+      ${hookDetail}
       ${agente ? `
         <div class="detail-summary">
           <span class="label">Qué hace</span>
@@ -3362,9 +3429,12 @@ function renderNodeDetail() {
           <p class="prose">${esc(KINDS.agent.what)}</p>
         </div>
         ${progresoHtml}` : `
-        <p class="prose">${kind === 'main'
+        ${hook ? '' : `<div class="detail-context">
+          <span class="label">Qué es un ${esc(kindInfo?.label || 'componente')}</span>
+          <p class="prose">${kind === 'main'
           ? 'La sesión que corre el skill, no un subagente. Orquesta el ciclo: pasa el contexto a cada agente, encadena las fases y abre el PR.'
-          : esc(KINDS[NODE_KIND[kind] || 'skill']?.what || '')}</p>`}
+          : esc(kindInfo?.what || '')}</p>
+        </div>`}`}
       ${kind === 'agent' ? `
         <div class="detail-toggle">
           <button class="switch" id="ndToggle" aria-pressed="${agenteOn(name)}"
@@ -3378,6 +3448,7 @@ function renderNodeDetail() {
         ${esDiseno ? '<button class="btn sm primary" id="ndDesignConfig">Configurar diseño</button>' : ''}
         ${file ? '<button class="btn sm" id="ndOpen">Abrir archivo</button>' : ''}
         ${hookScript ? '<button class="btn sm" id="ndScript">Abrir el script</button>' : ''}
+        ${kindInfo?.docs ? `<a class="btn sm ghost" href="${esc(kindInfo.docs)}" target="_blank" rel="noreferrer">Docs de Claude Code</a>` : ''}
       </div>
       ${cuerpo}
     </div>`;
