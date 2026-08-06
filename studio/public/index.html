@@ -3478,6 +3478,7 @@ async function prepararRepo() {
 
       renderRepoMeta(r.dir);
       await loadConfig();
+      guardar();
 
       const accion = r.created ? 'Proyecto nuevo creado'
         : r.clonado ? 'Repositorio clonado'
@@ -3761,7 +3762,7 @@ $('btnGlosClose').addEventListener('click', () => $('dlgGlosario').close());
 // eventos y los repite al reconectar, así que alcanza con recordar el id y
 // volver a engancharse: el replay reconstruye fases, grafo, log y sesión.
 const LS = 'sdlc-studio';
-const CAMPOS = ['source', 'story',
+const CAMPOS = ['source', 'story', 'repoDir', 'baseBranch', 'repoScope', 'branchStrategy',
                 'permMode', 'allowedTools', 'extraFlags', 'stTitle', 'stDesc', 'stAc', 'stRepoHint'];
 
 function requestReset() {
@@ -3867,13 +3868,47 @@ async function restaurar() {
   }
   if (typeof datos.isolateRepo === 'boolean') $('isolateRepo').checked = datos.isolateRepo;
   syncSource();
-  if (!datos.run) return;
+  if (!datos.run) {
+    if ($('repoDir').value.trim()) {
+      renderRepoMeta($('repoDir').value.trim());
+      await loadConfig();
+      await loadReports({ quiet: true });
+    }
+    return;
+  }
 
   // Si el run ya no existe —el servidor se reinició— no se reengancha.
   let info;
-  try { info = await api(`/api/run/${datos.run}`); } catch { return guardar(run = null); }
-
+  try { info = await api(`/api/run/${datos.run}`); } catch {
+    run = null;
+    guardar();
+    if ($('repoDir').value.trim()) {
+      renderRepoMeta($('repoDir').value.trim());
+      await loadConfig();
+      await loadReports({ quiet: true });
+    }
+    return;
+  }
   run = datos.run;
+
+  // Versiones anteriores no persistían el proyecto. Si todavía existe el run,
+  // su contexto es la fuente más confiable para recuperar Informes tras un F5.
+  if (!$('repoDir').value.trim() && info.sourceRepo) $('repoDir').value = info.sourceRepo;
+  for (const [id, value] of [['baseBranch', info.baseBranch], ['repoScope', info.scope]]) {
+    if (!value || $(id).value) continue;
+    if (!$(id).querySelector(`option[value="${CSS.escape(value)}"]`)) {
+      $(id).insertAdjacentHTML('beforeend', `<option value="${esc(value)}">${esc(value)}</option>`);
+    }
+    $(id).value = value;
+    $(id).disabled = false;
+  }
+  if ($('repoDir').value.trim()) {
+    renderRepoMeta($('repoDir').value.trim());
+    await loadConfig();
+    await loadReports({ quiet: true });
+  }
+  guardar();
+
   $('btnReport').hidden = true;
   RUN_MODEL = {
     status: info.status || 'none', phase: info.phase ?? null,

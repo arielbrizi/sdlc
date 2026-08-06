@@ -1571,7 +1571,7 @@ function startRun({ storyId, repoDir, sourceRepo, sourceScope, manual, baseBranc
 
   const startedAt = Date.now();
   const run = {
-    id, storyId, prompt, args, cwd: repoDir, sourceRepo, sourceScope, workspaceInfo,
+    id, storyId, prompt, args, cwd: repoDir, sourceRepo, sourceScope, baseBranch, workspaceInfo,
     startedAt, status: 'running', elapsedMs: 0,
     activeStartedAt: prompt ? startedAt : null,
     phase: null, phaseHistory: [], blocked: null, pendingBlock: null, cycleComplete: false,
@@ -2095,7 +2095,9 @@ const server = http.createServer(async (req, res) => {
         correctionRound: run.correctionRound, maxCorrectionRounds: MAX_CORRECTION_ROUNDS,
         correctionCounts: run.correctionCounts,
         usagePlan: run.accountUsagePlan, tokenUsage: run.tokenUsage,
-        cwd: run.cwd, sourceRepo: run.sourceRepo, workspaceInfo: run.workspaceInfo,
+        cwd: run.cwd, sourceRepo: run.sourceRepo, sourceScope: run.sourceScope,
+        scope: path.relative(run.sourceRepo || run.sourceScope, run.sourceScope || run.sourceRepo) || '.',
+        baseBranch: run.baseBranch, workspaceInfo: run.workspaceInfo,
         prompt: run.prompt, vivo: !!run.child,
       });
     }

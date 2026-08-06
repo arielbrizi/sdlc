@@ -89,6 +89,7 @@ printf '%s\n' '{"type":"result","is_error":false,"result":"Turno terminado","num
     assert.match(home, /Proyecto existente/);
     assert.match(home, /Proyecto nuevo/);
     assert.match(home, /Informes de corridas/);
+    assert.match(home, /const CAMPOS = \['source', 'story', 'repoDir', 'baseBranch', 'repoScope'/);
     assert.match(home, /Ciclos correctivos/);
     assert.match(home, /deshabilitado · no participa/);
     assert.doesNotMatch(home, /gloop-source/);
@@ -170,6 +171,9 @@ printf '%s\n' '{"type":"result","is_error":false,"result":"Turno terminado","num
 
     for (let i = 0; i < 40; i += 1) {
       const info = await fetch(`${baseUrl}/api/run/${run.runId}`).then(r => r.json());
+      assert.equal(info.sourceRepo, fs.realpathSync(repo));
+      assert.equal(info.scope, 'apps/web');
+      assert.equal(info.baseBranch, 'main');
       if (!info.vivo) break;
       await new Promise(resolve => setTimeout(resolve, 25));
     }
